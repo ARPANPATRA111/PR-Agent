@@ -1,0 +1,1042 @@
+**🌟 𝐖𝐞𝐞𝐤-𝟏 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**This week was relatively short, with just 4️⃣ days. During this time, I revisited and practiced some previously solved 𝐃𝐒𝐀 💻 questions, focusing on 𝐚𝐫𝐫𝐚𝐲𝐬 📊 to strengthen my foundational knowledge.**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝:**
+
+**I am planning to start my 𝐰𝐞𝐛 𝐝𝐞𝐯𝐞𝐥𝐨𝐩𝐦𝐞𝐧𝐭 𝐣𝐨𝐮𝐫𝐧𝐞𝐲 🌐 from scratch next week. It’s a step I’ve been eagerly waiting to take!**
+
+**🔗 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐓𝐫𝐚𝐜𝐤𝐢𝐧𝐠:**
+
+**📂 𝟑𝟔𝟓_𝐃𝐒𝐀 𝐑𝐞𝐩𝐨𝐬𝐢𝐭𝐨𝐫𝐲:- https://github.com/ARPANPATRA111/365_DSA**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤:**
+
+**The journey of a thousand miles begins with a single step.**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓!**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟐 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**This week was filled with exciting progress! I dived into the basics of HTML 🌐 as part of my web development journey and solved some complex array questions in Java 💻 to challenge my problem-solving skills. I also had the privilege of attending a fantastic session on ”GitHub Basics” by @Nishant Kaushal, which was incredibly insightful! 🙌**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝:**
+
+**For next week, I plan to take my web development skills further by starting CSS 🎨 and practicing string manipulation questions to improve my understanding of algorithms and data structures.**
+
+**🔗 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐓𝐫𝐚𝐜𝐤𝐢𝐧𝐠:**
+
+**📂 365 DSA Repository: https://github.com/ARPANPATRA111/365_DSA**
+
+**📂 Web-Dev Repository: https://github.com/ARPANPATRA111/Web-Dev**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤:**
+
+**"The best way to predict the future is to create it – one line of code at a time." 🚀**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓!**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟑 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**This week was productive and fast-paced! 🌟 I leveled up my CSS skills 🎨, tackled some challenging string DSA questions 💻, and attended an insightful session with Saara Khan, where we built a portfolio website from scratch using HTML, CSS, and JavaScript. 🙌**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝:**
+
+**For the upcoming week, I’m thrilled to start working on a personal project—a tourist guide for Pachmarhi 🏞, a picturesque place I visited last year. This project will showcase must-visit spots and will be crafted using HTML and CSS, perfectly aligned with my current expertise. Can’t wait to bring this idea to life! ✨**
+
+**🔗 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐓𝐫𝐚𝐜𝐤𝐢𝐧𝐠:**
+
+**📂 365 DSA Repository: https://github.com/ARPANPATRA111/365_DSA**
+
+**📂 Web-Dev Repository: https://github.com/ARPANPATRA111/Web-Dev**
+
+**📂 GDG Portfolio Repository: https://github.com/ARPANPATRA111/Web-Dev**
+
+**💡 𝐒𝐡𝐨𝐰𝐜𝐚𝐬𝐢𝐧𝐠 𝐓𝐡𝐞 𝐏𝐫𝐨𝐣𝐞𝐜𝐭:**
+
+**🎨 GDG Portfolio Website: https://arpanpatra111.github.io/GDG_potfolio2025/**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤:**
+
+**"The only place where success comes before work is in the dictionary." 🔥**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓!**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟒 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**This week was tiring and slightly unproductive as I was occupied with a wedding during the start of the week. 💒 Despite the busy schedule, I’m glad to have maintained my daily coding streak. 🙌 I managed to solve a few easy-level string questions and successfully completed a small project. Small steps still count! 💪**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝:**
+
+**Next week, I plan to dive into 2D array questions in DSA, which are tricky but rewarding. 📊 With college resuming, I’m a bit uncertain about managing time, but I’m ready to take on the challenge! 🚀**
+
+**🔗 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐓𝐫𝐚𝐜𝐤𝐢𝐧𝐠:**
+
+**📂 365 DSA Repository: https://github.com/ARPANPATRA111/365_DSA**
+
+**📂 Web-Dev Repository: https://github.com/ARPANPATRA111/Web-Dev**
+
+**📂 Pachmarhi2025: https://github.com/ARPANPATRA111/Pachmarhi2025**
+
+**💡 𝐒𝐡𝐨𝐰𝐜𝐚𝐬𝐢𝐧𝐠 𝐓𝐡𝐞 𝐏𝐫𝐨𝐣𝐞𝐜𝐭:**
+
+**🏞️ Pachmarhi-Tourist-Guide: https://arpanpatra111.github.io/Pachmarhi2025/**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐓𝐡𝐞 𝐖𝐞𝐞𝐤:**
+
+**"Believe you can and you're halfway there." 🌟✨**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓!**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟓 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**This week was a mix of highs and lows. 🌈 While the start of the week was productive, I later found myself dealing with stress and anxiety, which made it challenging to maintain the same pace. 🧠💤 Recognizing the need for mental peace, I took a step back and allowed myself the time to recover, focusing on quality over quantity. 🕊️✨**
+
+**On the bright side, 🌞 I successfully completed a 6-hour course on HTML & CSS. 🖥️📚 Although much of it was a revision of familiar concepts, it served as a great refresher of foundational topics. 🔄 To put this knowledge into action, I created a Gaming Chair website, 🎮🪑 showcasing the power of core HTML & CSS concepts. 💻 The project highlights a responsive design crafted purely with HTML and CSS, demonstrating what can be achieved with just the basics. 🌐✨**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝:**
+
+**With the commencement of college 🎓📚, balancing academics and coding has become challenging. My primary goal for the upcoming week is to maintain my streak 🔥 while adapting to this new schedule. Survival and consistency are the key focuses for now! 💪📅**
+
+**🔗 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐓𝐫𝐚𝐜𝐤𝐢𝐧𝐠:**
+
+**📂 Gaming-Chair2025 : https://github.com/ARPANPATRA111/GamingChair2025**
+
+**💡 𝐒𝐡𝐨𝐰𝐜𝐚𝐬𝐢𝐧𝐠 𝐓𝐡𝐞 𝐏𝐫𝐨𝐣𝐞𝐜𝐭:**
+
+**🌟 EpicChairs : https://arpanpatra111.github.io/GamingChair2025/**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐓𝐡𝐞 𝐖𝐞𝐞𝐤:**
+
+**"Even the darkest night will end, and the sun will rise." 🌅🌄**
+
+**Hang in there—brighter days are always ahead! 💪✨**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓! 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟔 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**This week was quite challenging in terms of my overall development. 😔**
+
+**I struggled with 2D array questions, finding myself reliant on solutions multiple times. To regain confidence, I decided to step back and revisit the basics. 🔄📘**
+
+**On the web development front, my progress was limited. Although I planned to create a restaurant website to showcase menus and franchise locations, ⏳🏢 I couldn't find enough time to work on it.**
+
+**With college resuming, 📚 I’ve been busy managing coursework, which includes subjects like:**
+
+**Cloud Computing ☁**
+
+**Operating Systems 🖥**
+
+**Human-Computer Interaction 👨‍💻**
+
+**System Analysis and Design 🛠**
+
+**These added responsibilities have made it harder to maintain my daily streak 🔥 and DSA practice.**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝:**
+
+**Right now, I’m unsure about the next steps as I’m already facing challenges with my current workload. However, I plan to:**
+
+**1️⃣ Focus on building the restaurant app. 🍽**
+
+**2️⃣ Continue maintaining my streak and slowly progress with DSA practice. 💡**
+
+**🔗 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐓𝐫𝐚𝐜𝐤𝐢𝐧𝐠:**
+
+**📂 My_Restaurent: https://github.com/ARPANPATRA111/My_Restaurent**
+
+**💡 𝐒𝐡𝐨𝐰𝐜𝐚𝐬𝐢𝐧𝐠 𝐓𝐡𝐞 𝐏𝐫𝐨𝐣𝐞𝐜𝐭:**
+
+**🌟 Gourmet Restaurant: https://arpanpatra111.github.io/My_Restaurent/**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐓𝐡𝐞 𝐖𝐞𝐞𝐤:**
+
+**"Programming isn't about what you know; it's about what you can figure out." - Chris Pine 🔍**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓! 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟕 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**This week was slow but consistent 🎯💫.**
+
+**In the initial days, I focused on enhancing my previous project, "Gourmet Restaurant Website" 🍽✨, by adding a cart feature 🛒💫—a noticeable improvement!**
+
+**Later in the week, I began my JavaScript journey 🚀👨‍💻. Though progress is gradual 🌱, I'm enjoying the process while balancing it with college responsibilities 📚⚖.**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝:**
+
+**With mid-semester tests 📚✍ just around the corner 📅, my focus will shift toward managing college work 💪.**
+
+**Alongside academics 🎓, I aim to solve at least one DSA question daily on LeetCode 💻 to maintain my 365-day coding streak 🔥⚡.**
+
+**Consistency remains the key! 🎯✨**
+
+**🔗 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐓𝐫𝐚𝐜𝐤𝐢𝐧𝐠:**
+
+**📂 My_Restaurent: https://github.com/ARPANPATRA111/My_Restaurent**
+
+**💡 𝐒𝐡𝐨𝐰𝐜𝐚𝐬𝐢𝐧𝐠 𝐓𝐡𝐞 𝐏𝐫𝐨𝐣𝐞𝐜𝐭:**
+
+**🌟 Gourmet Restaurant: https://my-restaurent.vercel.app/**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐓𝐡𝐞 𝐖𝐞𝐞𝐤:**
+
+**"The only way to learn a new programming language is by writing programs in it." - Dennis Ritchie 🔍**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓! 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟖 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**This week was great despite having MSTs (Mid-Sem Tests) 📚✍! I managed to learn the basics of JavaScript 💻✨ and even built a Tic-Tac-Toe Game Project 🎮❌⭕.**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝:**
+
+**With the mid-sem tests now over 🎉, the college workload has lightened significantly ⚖.**
+
+**I plan to focus more on DSA 🔥, starting with Linked Lists 🧵 as my new topic.**
+
+**Additionally, I’ll brainstorm ideas for my final-year project 💡📂.**
+
+**🔗 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐓𝐫𝐚𝐜𝐤𝐢𝐧𝐠:**
+
+**📂 Tic-Tac-Toe: https://github.com/ARPANPATRA111/Tic-Tac-Toe**
+
+**💡 𝐒𝐡𝐨𝐰𝐜𝐚𝐬𝐢𝐧𝐠 𝐓𝐡𝐞 𝐏𝐫𝐨𝐣𝐞𝐜𝐭:**
+
+**🌟 Tic-Tac-Toe Game: https://tic-tac-toe-gamma-nine-28.vercel.app/**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐓𝐡𝐞 𝐖𝐞𝐞𝐤:**
+
+**"Code is like humor. When you have to explain it, it's bad." - Cory House 🔍**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓! 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟗 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**This week was like a wake-up call for me as I finally got time to work on all my pending tasks 📚⏳.**
+
+**The start of the week was quite slow due to a cold 🤒 that lasted 3-4 days. However, after recovering 💪, I managed to achieve my weekly goals 🎯, which included a minor web development project. You can check it out below 👇.**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝:**
+
+**I’m not entirely sure what to focus on next 🤔, as I feel I need more confidence in my current skill set 💡.**
+
+**So, for now, sharpening my existing skills will be my prime focus 🎯💻.**
+
+**🔗 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐓𝐫𝐚𝐜𝐤𝐢𝐧𝐠:**
+
+**📂 C-Connect: https://github.com/ARPANPATRA111/ClimateConnect**
+
+**💡 𝐒𝐡𝐨𝐰𝐜𝐚𝐬𝐢𝐧𝐠 𝐓𝐡𝐞 𝐏𝐫𝐨𝐣𝐞𝐜𝐭:**
+
+**🌟 Climate-Connect: https://arpanpatra111.github.io/ClimateConnect/**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐓𝐡𝐞 𝐖𝐞𝐞𝐤:**
+
+**"The function of good software is to make the complex problems appear to be simple." - GeeksForGeeks 🔍**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓! 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟏𝟎 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**This week, I faced several challenges with LinkedList problem-solving 🔗💡. I came very close to solving the questions independently but needed some help refining my approach 🛠✨. While DSA problem-solving was tough, web development felt more manageable. Most of my time was spent working on the frontend of my Password Generator Website 💻🌟.**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝:**
+
+**Next week, I’m excited to continue working on my Password Generator project! 🔒**
+
+**The basic frontend is already designed 🎨✅, and now I’ll focus on implementing the functionality using JavaScript 🖥⚙. My goal is to complete it by next week 🚀.**
+
+**🔗 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐓𝐫𝐚𝐜𝐤𝐢𝐧𝐠:**
+
+**📂 365 DSA Repository: https://github.com/ARPANPATRA111/365_DSA**
+
+**🏅 𝐁𝐚𝐝𝐠𝐞 𝐒𝐡𝐨𝐰𝐜𝐚𝐬𝐞 🏆**
+
+**🎉 Thrilled to announce that I've earned the 50 Days Streak Badge on LeetCode! 🏅**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐓𝐡𝐞 𝐖𝐞𝐞𝐤:**
+
+**"It takes courage to grow up and become who you really are." - E.E. Cummings**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag *#𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓*! 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟏𝟏 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**This week truly tested my patience as I encountered several challenges in both DSA problem-solving 🧩 and web development 🌐. Sorting a LinkedList 🌀 turned out to be much tougher than I had anticipated! 😅**
+
+**On the bright side, I successfully completed my Password Generator Website! 🔐✨🎉**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝:**
+
+**For the next couple of weeks, I’ll be focusing on my college's minor project 🎓📚, which means taking a short break 🛑 from other project development.**
+
+**I also plan to use this time to brainstorm 💭 and finalize ✅ my next project idea before diving into development! 🚀💡**
+
+**🔗 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐓𝐫𝐚𝐜𝐤𝐢𝐧𝐠:**
+
+**📂 PassCode Repository: https://github.com/ARPANPATRA111/PassCode**
+
+**💡 𝐒𝐡𝐨𝐰𝐜𝐚𝐬𝐢𝐧𝐠 𝐓𝐡𝐞 𝐏𝐫𝐨𝐣𝐞𝐜𝐭:**
+
+**🌟 PassCode Website: https://pass-code-delta.vercel.app/**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐓𝐡𝐞 𝐖𝐞𝐞𝐤:**
+
+**"The best way to predict the future is to create it." - Peter Drucker**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓! 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟏𝟐 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**This week started on a high note as I was praised by my classmates for completing the 50 Days milestone on LeetCode! 🏆🎉 Alongside that, they were inspired to join me in DSA practice and even created a WhatsApp group for collaborative learning. 🤝✨ It’s incredibly motivating to see people coming together to improve their coding skills! 💻🔥**
+
+**On another note, I’ve started working on my college’s minor project 🎓📚, and I’m optimistic about completing it just in time! 🕒✅**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝:**
+
+**For the next week, I’ll be focusing on my college studies 📖✏ as midterms are just around the corner 🗓. I’ll continue DSA practice as much as possible before the midterms hit, or until I’m fully consumed by the project workload. 🔧💡**
+
+**🔗 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐓𝐫𝐚𝐜𝐤𝐢𝐧𝐠:**
+
+**📂 365DSA Repository: https://github.com/ARPANPATRA111/365_DSA**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐓𝐡𝐞 𝐖𝐞𝐞𝐤:**
+
+**"Success is not the key to happiness. Happiness is the key to success. If you love what you are doing, you will be successful." - Albert Schweitzer**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓! 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟏𝟑 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**This week was nothing short of incredible! ⭐ I've pushed myself to the limits, and now I think my body deserves a well-earned break 😴😂. Here's a recap of the highlights: 📝**
+
+**💫 𝐆𝐨𝐨𝐝 𝐍𝐞𝐰𝐬 𝐅𝐢𝐫𝐬𝐭**
+
+**1️⃣ 45-Day Internship Completed 🎉🥳**
+
+**I'm thrilled to share that I've successfully completed my 45-day internship at the Indore Municipal Corporation's IT Department! 🏅🏢 It was an enriching on-site experience where we worked 20 hours a week. As a team, we even built a project that I'm excited to showcase soon (once I get permission to disclose the details) 🤫💡.**
+
+**2️⃣ Major Progress in College Project 🔧⚙️**
+
+**The college project has come a long way in just two weeks. Sleepless nights 🌙, endless debugging 🐛, and relentless determination 💪 are finally paying off! Watching the project take shape and function as intended is immensely satisfying 😌. I'm optimistic about it impressing the mentors during evaluations ✨.**
+
+**3️⃣ DSA Practice 💻📊**
+
+**Despite the busy schedule, I managed to squeeze in some Linked List practice 🔗. While I didn't tackle the hardest problems, staying consistent with DSA remains a priority 🎯.**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝**
+
+**Next week, I'm shifting gears to focus entirely on midterms 📖✏️📚. My previous scores were not up to the mark 📉, and I'm determined to ensure my CGPA doesn't take a hit this semester 📈. A brief pause on coding and projects to prioritize academics is in order! 🧠🤓**
+
+**🏅 𝐀𝐜𝐡𝐢𝐞𝐯𝐞𝐦𝐞𝐧𝐭 𝐔𝐧𝐥𝐨𝐜𝐤𝐞𝐝**
+
+**45-Day Internship at Indore Municipal Corporation's IT Department (IMC) ✅🎖️**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**"Don't watch the clock; do what it does. Keep going." ⏰🔄**
+
+**— Sam Levenson**
+
+**✨ Let's 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓 🚀🎉✨**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟏𝟒 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**This week was a bit on the slower side 💤 as most of my energy went into prepping for midterms 📚✏️. After the exams, I took a well-deserved short break to recharge 🧘‍♂️💤.**
+
+**Unfortunately, I couldn’t dedicate time to DSA this week 😕—which is a concern, as I’ve started to feel some of the core concepts slipping away. To tackle this, I’m planning to revisit and retry some previously solved problems to reinforce my learning 🔁💡.**
+
+**On a brighter note, I participated in Google Arcade 2024 (Jul–Dec) and this week I received the Premium Milestone Swags 🎁—a small but motivating reminder to keep pushing forward! 💪🌟**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝**
+
+**Next week, I’m all set to get back into rhythm 🎯. The plan is to resume work on my college project 🛠️ while managing consistent DSA problem-solving sessions to regain momentum.**
+
+**🏅 𝐀𝐜𝐡𝐢𝐞𝐯𝐞𝐦𝐞𝐧𝐭 𝐔𝐧𝐥𝐨𝐜𝐤𝐞𝐝**
+
+**Received Google Arcade 2024 Premium Swags ✅🎖️**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**"Sometimes the bravest and most important thing you can do is just show up."**
+
+**— Brené Brown**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟏𝟓 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**Riding high on last week’s excitement of receiving Google Arcade swags 🎁✨, I began this week on a positive note full of motivation and energy ⚡🙌.**
+
+**But that energy quickly shifted into crisis mode when I realized my Android Studio lab assignment had been gathering dust for over 4 weeks 😅📅. What I assumed would be a quick fix turned into a 3-day-long grind 🧠💻—and it still wasn’t fully wrapped up by the end!**
+
+**In the process, I figured others might be in the same boat 🛶, so I decided to help out by creating a public GitHub repo and sharing it with my classmates 🌍💡. Hopefully, it lightens someone’s load!**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝**
+
+**The first half of next week will still revolve around assignment completion 🗂️, after which I’ll shift gears towards end-sem exam prep 📖✍️.**
+
+**DSA might stay on pause a bit longer, but I’m staying optimistic and determined to bounce back soon! 💪🌱**
+
+**🔗 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐓𝐫𝐚𝐜𝐤𝐢𝐧𝐠:**
+
+**📂 Android Studio Lab Assignment: https://github.com/ARPANPATRA111/AndroidStudio_Assignment**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**"Success is the sum of small efforts, repeated day in and day out."**
+
+**— Robert Collier**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟏𝟔 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**This week was incredibly tiring and stressful as submission deadlines loomed over every subject 📚⏳. Completing college assignments took more time than anticipated, only to be followed by the daunting task of wrapping up semester projects before the end-semester exams 🎯🕒.**
+
+**The whirlwind of tasks consumed all my focus and energy 🔄💻, and now I find myself in the last lap—working on project reports to ensure everything is neatly wrapped up for submission 📝✅. It’s been exhausting, but every step feels like progress towards the finish line 🏁✨.**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝**
+
+**Next week marks the start of end-semester exams 📝🎓, so I’ll be taking a break from weekly updates to focus entirely on preparations.**
+
+**I’m shelving all other activities and putting my 100% effort into exam prep 📖⚡.**
+
+**Here’s hoping my hard work pays off and paves the way for the opportunities I’ve been working towards! 🌟💪**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**"Difficult roads often lead to beautiful destinations." 🌈**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟏𝟗 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**First, let me address the gap—there were no Week 17 & 18 updates because my end-semester exams were demanding undivided attention 🎓🕒. The written exams are finally over, but a few viva sessions are still on my plate, keeping me occupied for now 📝💬. Despite the lingering academic responsibilities, I’m starting to feel the relief of crossing major milestones! 🎉🌈**
+
+**In other news, I’m exploring opportunities for an in-house internship provided by the college itself 🌟✨. It feels like a promising step towards bridging the gap between academic learning and practical application 🛠️📚.**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝**
+
+**As the vivas wrap up, I’m setting my sights on getting back into my rhythm 🌟. My priorities include rebooting my DSA journey, refining coding skills, and steadily working towards my personal and professional goals 👨‍💻⚡. With a clear path forward, I’m excited to regain momentum and make meaningful progress 🎯🚀.**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**"Success is the sum of small efforts, repeated day in and day out." 🌱**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟐𝟎 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**This week marks an exciting milestone in my career as I’ve been selected for the In-house Summer Internship at IIPS 🎉🌟. The selection process was challenging, involving two rounds—DSA and HR 🛠️👥. It was my first-ever interview with a senior/working professional in my field, and while it was an eye-opener, I realized I could have performed even better with thorough preparation 🧠⚡.**
+
+**The experience taught me a lot, and I’ve identified key areas for improvement to work on moving forward 🚀📚. Last Saturday, I also attended an alumni session at IIPS, meeting inspiring seniors from the 2003 and 2005 batches 👥✨. Their insightful suggestions and guidance were invaluable, providing me with motivation and direction for the future 💡🌱.**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝**
+
+**What’s next?! Two months of collaborative work in a growth-oriented environment 🌟💼. I’m eager to learn, contribute, and grow with this incredible opportunity. Let’s make it count Guys! 🌱🎯**
+
+**🏅 𝐀𝐜𝐡𝐢𝐞𝐯𝐞𝐦𝐞𝐧𝐭 𝐔𝐧𝐥𝐨𝐜𝐤𝐞𝐝**
+
+**60-Day Internship at IIPS✅🎖[ 15th May - 15th Jul ]**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**"Opportunities don't happen. You create them." 🌟**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓 🚀🎉**
+
+---
+
+🌟 𝐖𝐞𝐞𝐤-𝟐𝟏 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀
+
+Finally, graduation is complete 🎓✨! While the degree is yet to be conferred, the sense of accomplishment is real, and it feels fantastic to reach this milestone 🏅🌟. Meanwhile, the summer internship is in full swing, and every day brings exciting learning opportunities 📚💻.
+
+Initially, we were tasked with upgrading a pre-developed project, but its constraints made it an impractical solution 🚧🤔. After discussions with alumni and domain experts, we decided to rebuild the project from scratch using the latest technologies and scalable features 🚀🛠. This pivot feels promising, and I’m thrilled about what lies ahead! 🌟✨
+
+🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝
+
+The next three weeks are crucial for the project’s development timeline 🕒📈. It’s going to demand a lot of focus and effort, but I’m ready to give it my all! 💪💻. Unfortunately, my DSA journey is taking a back seat for now as the project demands most of my attention 📋⚡. Here’s hoping everything falls into place as planned! 🙏🌟
+
+🏅 𝐀𝐜𝐡𝐢𝐞𝐯𝐞𝐦𝐞𝐧𝐭 𝐔𝐧𝐥𝐨𝐜𝐤𝐞𝐝
+
+🎓 Bachelor of Computer Applications (B.C.A) Completed from IIPS ✅🎖 [Jul 2022 – May 2025]
+
+💙 𝐅𝐫𝐨𝐦 𝐭𝐡𝐞 𝐇𝐞𝐚𝐫𝐭
+
+No matter which path you choose, it’s never going to be easy 💡🌱. I’ve felt this kind of pressure before, and I’m ready to face it again 🛠✨. The challenge isn’t just meeting deadlines but also proving myself in my first collaborative environment 👥💼. I want to absorb as much knowledge and experience as possible 🌟📚.
+
+💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤
+
+"Pressure is a privilege—it only comes to those who earn it." 🌟
+
+✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓 🚀🎉
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟐𝟐 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**The internship is at its peak 🏃‍♂️💻, with deadlines looming closer than ever 🕒⚡. The pressure is building up, leaving no room for rest or distractions ⏳🔥. Every moment counts as we race towards completing the project on time 🎯🚀. It’s a whirlwind of activity, and I’m giving it everything I’ve got while juggling challenges along the way 💪💼.**
+
+**Right now, personal time is a luxury we can’t afford 😓⏲. It’s an intense learning phase, not just about coding but also about resilience and teamwork 🤝📚. While it’s tough, I know this experience is shaping me for the better 🌟🛠.**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝**
+
+**Completing the project on time is the top priority 🚀📋. Unfortunately, this pace has taken a toll on my daily progress tracking 📝, but I’m determined to catch up. Once the project wraps up, I’ll share more insights and details about what we’ve built 🛠✨.**
+
+**💙 𝐅𝐫𝐨𝐦 𝐭𝐡𝐞 𝐇𝐞𝐚𝐫𝐭**
+
+**Hard work pushes boundaries, and this phase is a true test of grit 💡🔥. I’ve never felt more challenged, but with challenges come growth 🌱🌟. Let’s keep pushing forward and make this happen!**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**"Success is not final; failure is not fatal. It is the courage to continue that counts." 🌟**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟐𝟑 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**This week was an emotional rollercoaster 🎢, packed with significant progress and unexpected challenges 🌟💻. The major breakthrough in the project demanded long hours of work—weekends included 😴⏳—sacrificing sleep and free time to implement crucial changes 🔧✨.**
+
+**But Monday hit hard 😔⏰. After pulling an all-nighter till 4 AM 🕓, I ended up late for college, leading to an attendance penalty 📉. For a moment, I froze 🧊, unable to process the irony of being penalized for sheer dedication 💔. However, my mentor's wise advice brought clarity 🧠🙏, helping me stay composed and focused instead of reacting impulsively 🔄💬. Grateful for that support! 💙🙌**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝**
+
+**The coming week will be the toughest yet 🚀🔥. With the project deadline looming 🕒⚡, several key functionalities still need attention 🛠✨. The plan is to power through 💪, wrap things up before the weekend 🏁, and finally take that much-needed break 🍃🍹.**
+
+**💙 𝐅𝐫𝐨𝐦 𝐭𝐡𝐞 𝐇𝐞𝐚𝐫𝐭**
+
+**This journey has taught me that progress isn’t always linear 📈💡. Some days, it feels like nothing is moving forward 😓, but persistence pays off 🌱✨. Every small step brings us closer to our goals 🏆🚀.**
+
+**🎖 𝐀𝐜𝐡𝐢𝐞𝐯𝐞𝐦𝐞𝐧𝐭 𝐔𝐧𝐥𝐨𝐜𝐤𝐞𝐝**
+
+**Completed Red Hat System Administration I (RH124) Version 9.3 ✅🏅**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**"It’s better to do something than to sit back and watch someone else do better." 🌟💪**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟐𝟒 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**This week started with an intense challenge 💥💻—I was tasked with implementing two critical components of the project 🔑⚙️. These weren’t just any features; they were brand new and absolutely pivotal 🌟✨. It didn’t require sleepless nights this time, but it was a marathon of non-stop, breathtaking hard work 🏃‍♂️🔥. The moment I saw the core functionalities coming together, it was immensely satisfying 🎉🚀.**
+
+**Just when things seemed to be falling into place, a major issue cropped up 🛑⚡—one that required rethinking the project’s entire architecture 🔄🏗️. The team now has to regroup and decide on the next steps 🤝🧠, but for me, it’s time to take a much-needed break to reconnect with my roots 🌿✨ and preserve my core values.**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝**
+
+**I’m taking a week-long break 🛋️⛱️—no project work, no studies, and no computer time 🖥️❌. Or at least that’s the plan! Knowing myself, the “I miss my work” feeling will kick in soon 🤷‍♂️😂, and it already has! 💡✨ A new project idea struck me, and I couldn’t resist diving into it, even during the vacation 🛠️🎯.**
+
+**💙 𝐅𝐫𝐨𝐦 𝐭𝐡𝐞 𝐇𝐞𝐚𝐫𝐭**
+
+**The relentless grind over the past three weeks has cost me sleep 💤, disrupted my eating schedule 🍴⏰, and pushed me to the brink emotionally and mentally 🌀😓. But do I regret it? Not one bit 💪✨.**
+
+**This internship is more than work; it’s a glimpse into post-college life 🌟🎓—a test of resilience, adaptability, and perseverance 🌱🚀. It’s these very challenges that will fuel my growth in the long run 🌟💡.**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**"The harder the battle, the sweeter the victory." 🌟💪**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟐𝟓 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**The much-anticipated week-long break is over 🛋️✨, but its aftermath wasn’t what I expected. What started as a sweet respite 🍭 quickly turned bitter 🍋, leaving me questioning whether the break was worth it at all. Time, people, and places offered lessons, but not the kind that fill you with hope—they were stark reminders of how fleeting and hollow our pursuits can be 🌫️⏳.**
+
+**Standing by the Ganga riverbank 🌊🍃, I felt the breeze stirring gratitude and reflection 🙏✨. But alongside it came the sharp realization of how fake and fragile the world often feels 🖤💔. Happiness, it turns out, isn’t what we think—it’s fleeting, an illusion we chase while neglecting the present 🌍⏱️.**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝**
+
+**Returning home was like stepping into chaos 🏠🌪️. The announcement of a demo presentation 📊💻 hit me with anxiety like a freight train 😰⏱️. The project, now laden with unfamiliar changes 🔄⚙️, feels like an uphill battle I’m not ready for.**
+
+**Yet, there’s no room for regret or hesitation. It’s time to dig deep, understand the modifications, and prepare to represent the work we’ve done 💪💼. Regret won’t rewrite the past, so I’ll face the challenge head-on and make sense of the chaos.**
+
+**💙 𝐅𝐫𝐨𝐦 𝐭𝐡𝐞 𝐇𝐞𝐚𝐫𝐭**
+
+**Gratitude might have momentarily softened the edges, but this week also revealed betrayal and disillusionment 🖤🌀. The people you trust and admire the most? They’re often the ones who let you down the hardest 🩹💔.**
+
+**I’ve had enough of trying to please those who don’t value me. From now on, I prioritize those who prioritize me 🧍‍♂️🤝. If someone thinks they can walk over me, they’re in for a reality check 🔥👊. Growth isn’t just about positivity; it’s about resilience, knowing when to push back, and walking away from what no longer serves you 🚪🚶‍♂️.**
+
+**This journey isn’t about bitterness—it’s about transformation 🌱🏆. Every harsh experience sharpens me, making me stronger and wiser.**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**"People love giving advice, but they hate it when the mirror reflects their own flaws. Look in the mirror before you preach to others." 💭⚖️**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟐𝟔 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**🔥 This week was exactly what I needed 🎯✨. After a refreshing break, rejoining the team felt overwhelming at first 🌀🤔, but I quickly realized there hadn’t been much progress in my absence anyway 😅😂. While there’s not much to report in terms of direct progress, I’d like to take this moment to showcase what a positively aligned development mindset can achieve 🌟⚡.**
+
+**💻 For the past 5-6 weeks, I’ve been a part of my college’s summer internship program 🎓🚀, working on transformative projects for the administration 🏫✨. While I can’t share the full details yet 🤫🔐, a personal challenge during my pre-break trip sparked an idea I’m thrilled to showcase today!**
+
+**But before that, let me share how this internship has shaped my work ethic💡✨. On June 13th, just hours before a 5 AM train 🚆, I found myself brainstorming project ideas instead of resting 🕐💭. That’s when the idea for this project struck, and the rest is Infront of you🛠️✨.**
+
+**🌟 𝐏𝐫𝐨𝐣𝐞𝐜𝐭 𝐒𝐩𝐨𝐭𝐥𝐢𝐠𝐡𝐭:- 𝐓𝐫𝐢𝐩-𝐁𝐮𝐝𝐠𝐞𝐭 🛤️💰**
+
+**Trip-Budget is an intuitive, real-time expense management platform 📊✨, crafted specifically for group travel enthusiasts 🌍🚐. Born from my personal struggle with chaotic expense tracking via WhatsApp 💬🧾, this app aims to simplify trip budgeting while fostering transparency and accountability among travelers 💸. Whether you’re planning a casual road trip or a detailed international tour, Trip-Budget adapts seamlessly to your needs:**
+
+**🔹 𝐊𝐞𝐲 𝐅𝐞𝐚𝐭𝐮𝐫𝐞𝐬:**
+
+- **🧾 Personalized Expense Tracking: Effortlessly manage individual and group expenses with detailed logs and insights.**
+- **📊 Real-Time Analytics: Access instant group spending summaries with visually engaging charts and filters.**
+- **💳 Dynamic Budget Management: Monitor remaining budgets tailored for both personal and group needs.**
+- **🛠️ Smart Planning Tools: Utilize advanced search and customizable group budgets for better financial control and trip optimization.**
+
+**💡 𝐒𝐡𝐨𝐰𝐜𝐚𝐬𝐢𝐧𝐠 𝐓𝐡𝐞 𝐏𝐫𝐨𝐣𝐞𝐜𝐭 :**
+
+**🔗 Trip-Budget Repository 🌐📂-: https://github.com/ARPANPATRA111/TripBudget**
+
+**🔗 Live Website 🌐🚀-: https://trip-budget.vercel.app/**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝:**
+
+**With the college project still underway 🏗️💻 and classes resuming soon 📚📆, the road ahead feels uncertain but exciting 🌈✨. Having evolved from my past self, I’m ready to focus only on those who truly support me 🤝🌟.**
+
+**💙 𝐅𝐫𝐨𝐦 𝐭𝐡𝐞 𝐇𝐞𝐚𝐫𝐭**
+
+**This week, I’ve realized there’s far more potential in me than I give myself credit for 🌟⚡. Whenever deadlines close in and pressure builds 💼⏳, I find myself outperforming expectations 🔥🚀. This sense of satisfaction—the realization of how far I’ve come—is indescribable ✨🌈.**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**"A new beginning is not a reset—it’s the chance to rise higher than before." 🌟💪**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟐𝟕 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**This week moved at a calmer pace 🧘‍♂️⏳—but sometimes, that’s exactly what’s needed to reflect and refocus 🌱✨. The week kicked off strong 💪💻 as I was assigned to squash a tricky little bug 🐞🔧 in the project, which took two days to resolve. Watching the app stabilize again was oddly satisfying 🔄✅.**
+
+**Midweek, we shifted gears into planning and review mode 🧠📋—discussing future enhancements and polishing what’s already been built 💬🚀. There’s a certain relief now... the core of the project is complete 🏗️🎯, and only minor tweaks remain. We’re finally entering the refinement phase—and that feels like a win 🏁🌟.**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝**
+
+**Time to revive my DSA journey 📘⚔️! This time, I’m planning something different—no more just solving problems blindly. I’ve got a small side project idea brewing 💭💡, and I’ll be working on it alongside the internship. It may seem simple now, but who knows? It might evolve into something meaningful down the road 🛤🔥. Let’s build and see!**
+
+**🎓 𝐂𝐞𝐫𝐭𝐢𝐟𝐢𝐜𝐚𝐭𝐢𝐨𝐧 𝐔𝐧𝐥𝐨𝐜𝐤𝐞𝐝 🏅**
+
+**Earlier this week, I stumbled upon a Prompt Engineering course 🤖🧠. Initially, I thought—“Do I even need this?” But curiosity won 🧐➡️📘. Surprisingly, it added some fresh perspectives on leveraging AI tools effectively 💡🤖. Some concepts were familiar, some refreshingly new—but all in all, a worthwhile dive into the fundamentals. A gentle reminder that there's always more to learn 🛠️🌐.**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**"Not every step has to be loud. Some of the quietest moves lead to the loudest growth." 🌿🤫📈**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟐𝟖 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**This week was a mix of momentum, motivation, and midweek meltdown 🌪️📈😷. Riding the high from last week, I was super pumped to finally begin work on something that’s been on my checklist for ages: the DSA Website 💻📘—a project I’ve always wanted to build but never got around to.**
+
+**I kicked things off with energy and vision 🔥📊, but midweek I got hit by a cold again 🤒🧊. It drained my pace for three days, and while I’ve recovered mostly, I’m still not back at 100% 💭💤. Frustrating? Yes. But did it stop me entirely? Nope 💪.**
+
+**🕹️ 𝐇𝐚𝐜𝐤𝐚𝐭𝐡𝐨𝐧 𝐔𝐩𝐝𝐚𝐭𝐞𝐬 🎮💡**
+
+**This Saturday, my team [node_modules/uploders] 💻⚙️ participated in the Preliminary Round of a hackathon 🧠🕒. We were handed a raw problem statement and given just 6 hours to go from idea to implementation 🛠️🚀. The start was rocky—config issues, tech snags, and classic chaos 💥📉. But, somehow we managed to pull off a working solution just in time ⚡✅.**
+
+**It wasn’t perfect—but it was progress. That’s what counts.**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝**
+
+**With the weekend wrapping up 📆🎬, it's officially the end of summer break 🌞🏁. A new chapter begins—Postgrad (MCA) life is starting 🎓🚀. It’s rare that I’m excited to step back into college, but this time, something feels different... maybe it's growth, maybe it’s grit 🔄🧠. Whatever it is—I’m ready.**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**"When your body is tired but your soul is still hungry—that’s when you know you’re built different." 🔥💭🧠**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟐𝟗 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**This week was a rollercoaster of tasks, thoughts, and tech experiments . Honestly, my mind’s buzzing as I write this—from installing Docker 🐳, to exploring Arch Linux 🐧, and juggling project deployment at IIPS 🛠. A lot went down.**
+
+**Somewhere amidst all that, I also had a few conversations—a mix of advice and perspective shifts 🗣. When I started writing these weekly progress reports, the goal was simple: self-accountability 📅.**
+
+**But recently, I received some feedback—constructive, honest, and much appreciated. It’s a reminder that how we present ourselves matters, even when our intentions are in the right place. So yes, going forward, I’ll be refining the way I share things. 🙇🏻**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝**
+
+**Next up: Time to wrap up the TTMS project once and for all 🎯. There’s not much left, so I’m planning to knock it out in a single sprint⚡. Alongside that, I’ve got to balance college life and revive my DSA journey 📚.**
+
+**This time—no more excuses, just execution. 🔥**
+
+**💙 𝐅𝐫𝐨𝐦 𝐭𝐡𝐞 𝐇𝐞𝐚𝐫𝐭**
+
+**Lately, it’s hitting me—the clock’s ticking ⏳. There isn’t much time left before placements begin, and honestly, I’m not quite where I want to be yet.**
+
+**But here’s what I do know: with the right mindset and a grind-till-you-shine attitude, progress will follow 💥🚶‍♂➡🏃‍♂.**
+
+**Let’s lock in and level up.**
+
+**🏅 𝐁𝐚𝐝𝐠𝐞 𝐒𝐡𝐨𝐰𝐜𝐚𝐬𝐞**
+
+**Opened LeetCode for 100 Days ! Rest of the time was all about debugging and fixing logs**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**"The comeback is always stronger than the setback." 🔁**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓 🚀🎉**
+
+---
+
+**🌟𝐖𝐞𝐞𝐤-𝟑𝟎 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭**
+
+**This week was simple and fast-paced. As I mentioned last week, I’m continuing my DSA journey—and I stayed on track. The pace is a bit slow, and that’s okay—because balancing college workload, project deadlines, and learning consistently is no easy task.**
+
+**I’ve also been working steadily on my DSA website, which is now nearly ready for deployment. The purpose of this website is not to show off, but to build something that helps me revise and revisit solutions in an organized way. Once that’s done, the next step is clear: it’s time to dive deep into backend technologies again and solidify my fundamentals.**
+
+**🔮𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝**
+
+**Next week, my primary focus will be the core subjects of this semester. Computer Networks and Computer Architecture aren’t just important academically—they’re placement-critical. It's time to give them the attention they deserve.**
+
+**❗𝐒𝐭𝐮𝐩𝐢𝐝 𝐌𝐢𝐬𝐭𝐚𝐤𝐞𝐬 𝐈 𝐌𝐚𝐝𝐞 𝐓𝐡𝐢𝐬 𝐖𝐞𝐞𝐤**
+
+- **Forgetting that if a < b, then a % b = a. (Rookie mistake).**
+- **Misinterpreting Java’s pass-by-value behavior. Java passes everything by value—but for objects, the value is a reference, so changes to content are reflected, not reassignments**
+
+**💬𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**What is discipline?**
+
+**"Discipline is choosing between what you want now and what you want the most"**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞, 𝐠𝐫𝐨𝐰, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟑𝟏 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭**
+
+**This week was slow but steady. With college classes resuming, a good chunk of my time went into attending them and settling back into the academic routine. That said, I still carved out time post-classes to get some meaningful work done—and I’m glad to say that my DSA website is finally complete.**
+
+**When I started this project, my vision was simple: build a platform where I could easily access and revise DSA solutions, even on my phone. At the time, most online coding platforms weren’t mobile-friendly.**
+
+**🔗 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐓𝐫𝐚𝐜𝐤𝐢𝐧𝐠**
+
+**📂 GitHub Repository: https://github.com/ARPANPATRA111/Dsa-Website**
+
+**💡 𝐒𝐡𝐨𝐰𝐜𝐚𝐬𝐢𝐧𝐠 𝐓𝐡𝐞 𝐏𝐫𝐨𝐣𝐞𝐜𝐭:**
+
+**💡 Live Project: https://dsa-website-nine.vercel.app/**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝**
+
+**Next week, my goal is two-fold:**
+
+**Explore AWS—just get a basic understanding of the services it offers and how they fit into backend workflows.**
+
+**Revise Computer Networks—this subject is both academically essential and crucial for placements.**
+
+**Also, I’ll continue progress on the ongoing college project alongside these goals.**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**"Don’t count the days. Make the days count."**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞, 𝐠𝐫𝐨𝐰, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟑𝟐 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**This week was steady but uneventful. I managed to stick to my planned goals, particularly making a start with AWS and exploring its core services. On the personal side, the week felt a bit off—I wasn’t feeling my best, and the high humidity certainly didn’t help. Still, small progress is better than no progress.**
+
+**🔗 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐓𝐫𝐚𝐜𝐤𝐢𝐧𝐠:**
+
+**📂 Aws Repo: https://github.com/ARPANPATRA111/aws**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝:**
+
+**Mid-semester tests are right around the corner, so the coming week will be all about preparation. The actual exams are scheduled for next week, which means my learning progress outside academics will naturally slow down during this period. The focus will be on consolidating knowledge rather than chasing new skills.**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**"Sometimes slow progress is the best progress—it means you’re still moving forward."**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟑𝟑 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**With mid-semester exams just around the corner, this entire week was dedicated to preparation. I started by wrapping up the DAA assignment, then spent some time revising Computer Networks, and now I’m shifting focus to Computer Architecture to round things out.**
+
+**🔗 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐓𝐫𝐚𝐜𝐤𝐢𝐧𝐠:**
+
+**📂 Aws Repo: https://github.com/ARPANPATRA111/aws**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝:**
+
+**Next week will be fully occupied with exams. My goal is simple: stay consistent with AWS modules in small chunks and solve a few easy LeetCode problems to keep the coding rhythm alive.**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**"Discipline today is the foundation of freedom tomorrow."**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟑𝟒 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**Mid-semester tests are finally over — and now it’s time to refocus on what truly matters. This entire week revolved around college exams, but Sunday brought something exciting and refreshing!**
+
+**🎯 𝐃𝐂-𝐇𝐚𝐜𝐤𝐞𝐭𝐡𝐨𝐧 :**
+
+**Our Development Club (DC) hosted an 8-hour hackathon featuring 3rd & 4th year M.Tech and MCA students — and I was part of the organizing committee.**
+
+**The event was an great success! From start to finish, it was competitive, challenging, and packed with energy. Everything ran smoothly, and the juniors truly exceeded our expectations. The spirit of innovation was contagious — every team gave their all.**
+
+**Watching them brought back memories of when I stood in their shoes two years ago. I hope this hackathon becomes a positive spark for all participants to dive deeper into the world of development.**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝:**
+
+**Some problem statements from the hackathon have caught my attention, and I’m planning to implement a few myself. Meanwhile, my DSA and AWS learning tracks will continue alongside these experiments.**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**"Challenges are where growth begins—face them head-on, and you’ll come out stronger every time."**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟑𝟓 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭**
+
+**This week was packed with meaningful progress. I kicked things off by starting a Development Club Hackathon project — a terminal-based multiplayer Snake game.**
+
+**The project refreshed some Operating System and Networking concepts, and after completing the core logic, I explored Python’s TUI libraries to add some interactive styling.**
+
+**I also attended a Data Analytics workshop over the weekend, where I gained insights into data visualization and modeling. As part of the session, I built a Store-Sales Dashboard using Power BI. It was a refreshing change of pace — something new and genuinely enjoyable compared to my usual DSA and web development routine.**
+
+**🔗 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐓𝐫𝐚𝐜𝐤𝐢𝐧𝐠:**
+
+**📂 Snake Game Repo: https://github.com/ARPANPATRA111/Snake_Food**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝:**
+
+**No major events are lined up for now, but I have some backlogs to clear. Still, the world of data visualization has piqued my interest — I might explore it further. Beyond that, I’m also curious to take my first steps into AI.**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**"Stay calm, stay consistent, and let steady effort turn into lasting progress."**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞, 𝐠𝐫𝐨𝐰, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟑𝟔 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭**
+
+**The week started strong but slowed down towards the end. Building on my new interest, I worked on a Fitness Dashboard project using Power BI. This project gave me a solid understanding of Power BI’s features and how to apply them effectively. Alongside this, I managed to revisit and solve some previously attempted DSA questions, keeping the problem-solving rhythm alive.**
+
+**Unfortunately, the weekend took a hit as I fell sick — the heavy rainfall and sudden weather changes always seem to affect me.**
+
+**🔗 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐓𝐫𝐚𝐜𝐤𝐢𝐧𝐠:**
+
+**📂 Fitness Dashboard: https://github.com/ARPANPATRA111/Fitness-Dashboard**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝:**
+
+**My main focus for the upcoming week is to complete the AWS course and start planning for the projects and commitments lined up ahead.**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**"Consistency builds momentum, and momentum drives results."**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞, 𝐠𝐫𝐨𝐰, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓**
+
+---
+
+🌟 𝐖𝐞𝐞𝐤-𝟑𝟕 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭
+
+This week wasn’t the most productive, as I had to deal with some unexpected personal issues early on and only managed to dedicate a little time to college studies. Mid-week brought an unexpected setback regarding SIH 2025, but I quickly regrouped with friends and directed my energy towards preparing the presentation and prototype for the upcoming internal hackathon.
+
+🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝:
+
+The internal hackathon is scheduled for Saturday, just 5 days away. The next few days will be crucial, and I’m prepared to put in the extra effort — even if it means missing classes or pulling all-nighters — to make it a success.
+
+💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤
+
+"Setbacks are just setups for comebacks — rise stronger, work harder, and keep moving forward."
+
+✨ Let’s 𝐜𝐨𝐝𝐞, 𝐠𝐫𝐨𝐰, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟑𝟖 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**This week was nothing short of chaos, started off with a placement guidance session by Ccube. The key takeaway for me was clear: the tech industry never stays still, so we must keep exploring and upgrading ourselves. After the session, they rewarded participants who answered their questions, and I was glad to be among the winners.**
+
+**From Tuesday onwards, the week turned into an intense grind leading up to the hackathon. Between constant debugging, late-night discussions with my team, and balancing college lectures, the days were packed and sleepless. Every hour counted, and the determination to refine our work kept us pushing through. A huge thanks to the team for standing tall until the end.**
+
+**🎯𝐇𝐚𝐜𝐤𝐚𝐭𝐡𝐨𝐧 𝐔𝐩𝐝𝐚𝐭𝐞𝐬💡**
+
+**The night before the hackathon was brutal as I barely managed four hours of sleep. By 10 a.m. our team regrouped at the IET DAVV campus, only to learn that our presentation had been postponed. While this initially felt like a relief, the delay dragged the day out, and by the time our turn came, both we and the evaluators were drained. Still, we presented our work with focus, explained as much as we could, and wrapped it.**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝:**
+
+**We’ve now submitted our PPT and implementation plan for the screening round and are awaiting official confirmation. Once the results are clear, I plan to shift my focus back to other pending tasks and continue building on this momentum.**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**After the storm of sleepless nights comes the calm of accomplishment**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟑𝟗 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**After the intense grind of last week’s SIH hackathon, I thought of taking a short break. But the pause didn’t last long — I was called in for some urgent Android development work. At first, I was hesitant, but eventually jumped in… and yes, the sleepless nights continued! Right now, I’m still deep into development, making steady progress despite the hectic pace.**
+
+**🌊 𝐅𝐥𝐨𝐚𝐭-𝐂𝐡𝐚𝐭 𝐀𝐈 [𝐒𝐈𝐇𝟐𝟓𝟎𝟒𝟎]**
+
+**FloatChat AI is a platform built to make complex oceanographic data from the ARGO program accessible to everyone. Through a conversational interface, users can ask questions in plain English and instantly receive interactive visualizations and clear summaries — turning hours of analysis into a seamless dialogue.**
+
+**🔑 Key Technical Features:**
+
+**Automated Data Pipeline: Converts raw NetCDF files into a queryable format using Python, xarray, and pandas.**
+
+**AI-Powered Queries: A RAG system with LangChain, ChromaDB, and a local LLM (via Ollama) translates natural language into accurate, PostGIS-enabled SQL queries.**
+
+**Dynamic Visualizations: An interactive, theme-aware dashboard built with Streamlit, featuring professional charts and maps powered by Plotly and Pydeck.**
+
+**💡 𝐒𝐡𝐨𝐰𝐜𝐚𝐬𝐢𝐧𝐠 𝐓𝐡𝐞 𝐏𝐫𝐨𝐣𝐞𝐜𝐭:**
+
+**📂 GitHub Repository: https://github.com/ARPANPATRA111/Float-Chat**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝**
+
+**Nothing major is lined up for this week. I’ll continue going with the flow while staying focused on ongoing SIH-related development tasks.**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**"Overthinking is the enemy of action — sometimes, doing is better than pondering."**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓 🚀🎉**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟒𝟎 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭**
+
+**As planned last week, this week I focused on developing the Android app for the SIH project. Faced a few challenges during both development and deployment, but managed to resolve them successfully. After that, I took a short break around Dussehra, only to be slowed down again by a cold soon after. Currently, I’m on the mend and recovering smoothly.**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝**
+
+**Once I’ve fully recovered, I plan to shift my focus back to college studies, as the second internal tests are just around the corner. Alongside that, I might also start exploring a small side project to keep the momentum going.**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**"Rest isn’t wasted time — it’s the fuel that powers your next breakthrough."**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞, 𝐠𝐫𝐨𝐰, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓**
+
+---
+
+**🌟 𝐖𝐞𝐞𝐤-𝟒𝟏 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀**
+
+**After recovering from the cold, I found myself slacking off a bit — recovery took longer than expected, probably due to a viral hit of some sort. Initially, I planned to focus on college studies, but concentration wasn’t at its best either. Overall, it turned out to be a mid-level week in terms of progress, but I can assure you that next week is going to be a powerhouse — I’m fully locked-in and refocused on my project now.**
+
+**The project attached in this post is something close to my heart — a Hospital Management System I built back in my 2nd semester. I realized I never pushed it to GitHub, so I gave it a quick revamp and uploaded it. Sure, it’s nowhere near my current level, but that’s exactly where it all began — the spark that ignited my journey.**
+
+**🔗 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐓𝐫𝐚𝐜𝐤𝐢𝐧𝐠:**
+
+**📂 Hospital Management System Repo: https://github.com/ARPANPATRA111/Hospital_Management2023**
+
+**🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝:**
+
+**The upcoming week is shaping up to be hectic yet rewarding as I’ve got to balance project deadlines, personal work, and the festive preparations that have already begun at home. It’s going to be a test of focus, time, and discipline.**
+
+**💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤**
+
+**“When the fire within burns brighter than the challenges outside — that’s when real progress begins.” 🔥**
+
+**✨ Let’s 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together with the hashtag #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐𝟓 🚀🎉**
+
+---
+
+🌟 **Week-43 Progress Report 🚀**
+
+This week moved at a slower pace—progress was modest but meaningful. I made several **improvements to my Portfolio Website** from last week and wrote **detailed documentation** to make future updates easier and more structured.
+
+On a brighter note, I also received my **certificate for the summer internship**, officially closing that chapter.
+
+✨ **Timetable Management Portal**
+
+During my **two-month summer internship at IIPS**, I helped build a **Timetable Management System** for our college. It was a true **collaborative experience**—filled with brainstorming sessions, technical challenges, and plenty of teamwork.
+
+Over those two months, I pushed **30+ pull requests**, pulled a few **all-nighters**, and learned the real essence of **building together**.
+
+Although the repository is private, the experience itself was priceless—a perfect blend of **growth, collaboration, and mentorship**.
+
+🔮 **Looking Ahead**
+
+The festive break is finally over, and it's time to **get back on track**. With **end-semester exams and assignment submissions** approaching, I'll need to carefully balance academics and ongoing development work in the coming weeks.
+
+💬 **Quote of the Week**
+
+> "Take a deep breath, refocus, and begin again—progress never truly stops."
+> 
+
+✨ Let's **code 👨‍💻, grow 🌱, and achieve 🎯** together with the hashtag **#LetsCode2025 🚀🎉**
+
+---
+
+- applicable to all (shaders language) :glsl [full form Open gl shading language]
+
+applicable to all (shaders language) :glsl 
+
+Open GL uses CPU GPU at high level. -very old but simplest  
+
+Open GL pr odin bindings.
