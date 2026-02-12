@@ -28,6 +28,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Mic,
   Search,
   Filter,
@@ -35,6 +45,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
+  Trash2,
 } from 'lucide-react';
 import { fetchAPIWithUser, getTelegramId, formatDate, formatRelativeTime } from '@/lib/utils';
 
@@ -83,6 +94,8 @@ export function EntriesView() {
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null);
+  const [entryToDelete, setEntryToDelete] = useState<Entry | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchEntries = async () => {
     try {
@@ -120,6 +133,26 @@ export function EntriesView() {
   const handleSearch = () => {
     setPage(1);
     fetchEntries();
+  };
+
+  const handleDelete = async () => {
+    if (!entryToDelete) return;
+    
+    const telegramId = getTelegramId();
+    if (!telegramId) return;
+    
+    try {
+      setDeleting(true);
+      await fetchAPIWithUser(`/api/entries/${entryToDelete.id}`, {
+        method: 'DELETE',
+      });
+      setEntryToDelete(null);
+      fetchEntries();
+    } catch (err) {
+      console.error('Failed to delete entry:', err);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   if (error) {
@@ -227,13 +260,23 @@ export function EntriesView() {
                             {formatDate(entry.date)}
                           </span>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setSelectedEntry(entry)}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSelectedEntry(entry)}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEntryToDelete(entry)}
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                       <p className="line-clamp-2 text-sm">{entry.raw_text}</p>
                       {entry.structured_data?.keywords &&
@@ -356,6 +399,27 @@ export function EntriesView() {
           )}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!entryToDelete} onOpenChange={() => setEntryToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Entry</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this entry? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

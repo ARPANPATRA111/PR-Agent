@@ -566,7 +566,7 @@ Always respond with valid JSON."""
         style_context = ""
         if posted_reports:
             style_context = "\n\nMY ACTUAL PAST POSTS (this is my writing style - match it exactly):\n"
-            for report in posted_reports[:2]:
+            for report in posted_reports[:5]:
                 style_context += f"\n--- Week {report['week_number']} ---\n{report['content']}\n"
         
         hashtag_year = "2026" if week_number > 52 else "2025"
@@ -576,46 +576,40 @@ Always respond with valid JSON."""
         header = f"🌟 𝐖𝐞𝐞𝐤-{week_bold} 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀"
         footer = f"✨ Let's 𝐜𝐨𝐝𝐞 👨‍💻, 𝐠𝐫𝐨𝐰 🌱, and 𝐚𝐜𝐡𝐢𝐞𝐯𝐞 🎯 together! #𝐋𝐞𝐭𝐬𝐂𝐨𝐝𝐞𝟐𝟎𝟐{year_digit} 🚀🎉"
         
-        project_section = ""
-        if project_links:
-            project_section = "\n".join([f"📂 {link}" for link in project_links])
-        
         specific_work = "\n".join([f"• {detail}" for detail in entry_details[:8]]) if entry_details else "No detailed logs"
         specific_activities = ", ".join(all_activities) if all_activities else "General work"
         specific_accomplishments = "\n".join([f"• {acc}" for acc in all_accomplishments]) if all_accomplishments else "Various tasks completed"
         specific_learnings = ", ".join(all_learnings) if all_learnings else "Technical skills"
         
-        system_prompt = """You write LinkedIn posts EXACTLY like the user's past posts shown below.
-Match their tone, sentence structure, emoji usage, and level of detail.
-DO NOT write generic corporate speak. Be specific and technical.
-DO NOT write header or footer - they are added separately.
-BANNED words: "excited", "thrilled", "amazing", "incredible", "journey", "passionate", "proud", "grateful", "significant progress"."""
+        system_prompt = """You are writing a personal weekly update post exactly in the user's voice. Study their past posts and match:
+- Their casual, direct tone (like talking to friends)
+- How they mention real life events (college, hackathons, personal stuff)  
+- Short sentences, no corporate fluff
+- When they use bullet points vs flowing text
+- Their emoji patterns
 
-        user_prompt = f"""Write my Week-{week_number} progress report body.
+This is NOT a professional report. It's a personal update about their week.
+DO NOT include header or footer - they are added separately.
+NEVER use: "excited", "thrilled", "journey", "passionate", "proud", "significant progress", "making strides", "I'm happy to share", "I had the opportunity"."""
 
-ACTUAL WORK LOGGED THIS WEEK ({len(entries)} entries):
+        user_prompt = f"""Write my Week-{week_number} personal update (body only).
+
+WHAT I ACTUALLY DID THIS WEEK:
 {specific_work}
 
-SPECIFIC ACTIVITIES:
-{specific_activities}
-
-ACCOMPLISHMENTS:
-{specific_accomplishments}
-
-LEARNINGS:
-{specific_learnings}
-
-THEMES: {', '.join(summary.main_themes) if summary.main_themes else 'Development work'}
+Activities: {specific_activities}
+Accomplishments: {specific_accomplishments}
+Learnings: {specific_learnings}
 {style_context}
-{f"PROJECTS: {project_section}" if project_section else ""}
-{f"EXTRA NOTES: {custom_instructions}" if custom_instructions else ""}
+{f"Project link: {project_links[0]}" if project_links else ""}
+{f"Notes: {custom_instructions}" if custom_instructions else ""}
 
-WRITE ONLY (match my past posts exactly):
-1. 2-3 short paragraphs describing the actual work (use bullet points like my past posts)
-2. 🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝 section (1-2 sentences, what I'll work on next)
-3. 💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤 (short relevant quote with author)
-
-Use the SPECIFIC details from my logs. No fluff."""
+Write like my past posts above. Be specific about what I actually worked on.
+- Start with how the week felt or a specific event
+- Mention what I worked on naturally (not in bullet lists unless I use them in past posts)
+- Keep it real and personal
+- End with 🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝 (1-2 sentences) and 💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤
+- Include GitHub link naturally if provided"""
         
         response = self._call_llm(
             system_prompt,

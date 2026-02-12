@@ -520,10 +520,10 @@ Send a voice note or text with #log to start logging.
         for e in entries:
             cat = e.category.value if hasattr(e.category, 'value') else str(e.category)
             categories[cat] = categories.get(cat, 0) + 1
-            if e.main_topics:
-                all_text.extend(e.main_topics[:2])
-            if e.description:
-                all_text.append(e.description[:100])
+            if e.keywords:
+                all_text.extend(e.keywords[:2])
+            if e.summary:
+                all_text.append(e.summary[:100])
         
         is_single_day = start_date.date() == end_date.date()
         date_str = start_date.strftime('%B %d') if is_single_day else f"{start_date.strftime('%b %d')} - {end_date.strftime('%b %d')}"

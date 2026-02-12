@@ -5,12 +5,10 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple, Generator
 from contextlib import contextmanager
 
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Float, Boolean, ForeignKey, JSON, text
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Float, Boolean, ForeignKey, JSON, text, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session
 from sqlalchemy.pool import StaticPool
-import chromadb
-from chromadb.config import Settings as ChromaSettings
 
 from config import settings
 from models import (
@@ -156,20 +154,39 @@ class PostedReportDB(Base):
     
     user = relationship("UserDB")
 
+
+class SearchableEntryDB(Base):
+    __tablename__ = "searchable_entries"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    entry_id = Column(Integer, nullable=False, index=True)
+    telegram_id = Column(Integer, nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    keywords = Column(Text, nullable=True)
+    metadata_json = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class SearchablePostDB(Base):
+    __tablename__ = "searchable_posts"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    post_id = Column(Integer, nullable=False, index=True)
+    telegram_id = Column(Integer, nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class MemoryManager:
     
     def __init__(self):
         self._ensure_directories()
         self._init_sqlite()
-        self._init_chromadb()
         logger.info("Memory manager initialized successfully")
     
     def _ensure_directories(self):
         data_dir = Path("./data")
         data_dir.mkdir(exist_ok=True)
-        
-        chroma_dir = Path(settings.chroma_persist_dir)
-        chroma_dir.mkdir(parents=True, exist_ok=True)
         
         audio_dir = Path(settings.audio_temp_dir)
         audio_dir.mkdir(parents=True, exist_ok=True)
@@ -246,24 +263,6 @@ class MemoryManager:
                     logger.warning(f"Migration check for {table}.{column}: {e}")
             
             conn.commit()
-    
-    def _init_chromadb(self):
-        self.chroma_client = chromadb.PersistentClient(
-            path=settings.chroma_persist_dir,
-            settings=ChromaSettings(
-                anonymized_telemetry=False
-            )
-        )
-        
-        self.entries_collection = self.chroma_client.get_or_create_collection(
-            name="entries",
-            metadata={"description": "Voice note entries for semantic search"}
-        )
-        
-        self.posts_collection = self.chroma_client.get_or_create_collection(
-            name="posts",
-            metadata={"description": "Generated LinkedIn posts for similarity checking"}
-        )
     
     @contextmanager
     def get_session(self) -> Generator[Session, None, None]:
@@ -459,85 +458,120 @@ class MemoryManager:
 
     def add_to_vector_memory(self, entry_id: int, text: str, 
                             metadata: Dict[str, Any]) -> None:
-        self.entries_collection.add(
-            ids=[str(entry_id)],
-            documents=[text],
-            metadatas=[metadata]
-        )
-        logger.debug(f"Added entry {entry_id} to vector memory")
+        with self.get_session() as session:
+            try:
+                existing = session.query(SearchableEntryDB).filter(
+                    SearchableEntryDB.entry_id == entry_id
+                ).first()
+                if existing:
+                    return
+                
+                keywords = metadata.get('keywords', [])
+                keywords_str = ' '.join(keywords) if isinstance(keywords, list) else str(keywords)
+                
+                searchable = SearchableEntryDB(
+                    entry_id=entry_id,
+                    telegram_id=metadata.get('telegram_id', 0),
+                    content=text,
+                    keywords=keywords_str,
+                    metadata_json=metadata
+                )
+                session.add(searchable)
+                logger.debug(f"Added entry {entry_id} to search index")
+            except Exception as e:
+                logger.error(f"Error adding to search index: {e}")
     
     def search_similar_entries(self, query: str, n_results: int = 5,
                                telegram_id: Optional[int] = None) -> List[Dict[str, Any]]:
-        where_filter = None
-        if telegram_id:
-            where_filter = {"telegram_id": telegram_id}
-        
-        results = self.entries_collection.query(
-            query_texts=[query],
-            n_results=n_results,
-            where=where_filter
-        )
-        
-        if not results["documents"]:
-            return []
-        
-        return [
-            {
-                "id": results["ids"][0][i],
-                "document": results["documents"][0][i],
-                "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
-                "distance": results["distances"][0][i] if results["distances"] else 0
-            }
-            for i in range(len(results["documents"][0]))
-        ]
+        with self.get_session() as session:
+            try:
+                query_filter = SearchableEntryDB.content.ilike(f'%{query}%') | \
+                               SearchableEntryDB.keywords.ilike(f'%{query}%')
+                
+                base_query = session.query(SearchableEntryDB).filter(query_filter)
+                
+                if telegram_id:
+                    base_query = base_query.filter(SearchableEntryDB.telegram_id == telegram_id)
+                
+                results = base_query.order_by(SearchableEntryDB.created_at.desc()).limit(n_results).all()
+                
+                return [
+                    {
+                        "id": str(r.entry_id),
+                        "document": r.content,
+                        "metadata": r.metadata_json or {},
+                        "distance": 0
+                    }
+                    for r in results
+                ]
+            except Exception as e:
+                logger.error(f"Error searching entries: {e}")
+                return []
     
     def get_recent_post_embeddings(self, telegram_id: int, 
                                    n_results: int = 3) -> List[str]:
-        results = self.posts_collection.query(
-            query_texts=["recent LinkedIn post"],
-            n_results=n_results,
-            where={"telegram_id": telegram_id}
-        )
-        
-        if not results["documents"]:
-            return []
-        
-        return results["documents"][0]
+        with self.get_session() as session:
+            try:
+                results = session.query(SearchablePostDB).filter(
+                    SearchablePostDB.telegram_id == telegram_id
+                ).order_by(SearchablePostDB.created_at.desc()).limit(n_results).all()
+                
+                return [r.content for r in results]
+            except Exception as e:
+                logger.error(f"Error getting recent post content: {e}")
+                return []
     
     def add_post_to_vector_memory(self, post_id: int, content: str,
                                   telegram_id: int) -> None:
-        self.posts_collection.add(
-            ids=[str(post_id)],
-            documents=[content],
-            metadatas=[{"telegram_id": telegram_id, "created_at": datetime.utcnow().isoformat()}]
-        )
+        with self.get_session() as session:
+            try:
+                existing = session.query(SearchablePostDB).filter(
+                    SearchablePostDB.post_id == post_id
+                ).first()
+                if existing:
+                    return
+                
+                searchable = SearchablePostDB(
+                    post_id=post_id,
+                    telegram_id=telegram_id,
+                    content=content
+                )
+                session.add(searchable)
+                logger.debug(f"Added post {post_id} to search index")
+            except Exception as e:
+                logger.error(f"Error adding post to search index: {e}")
     
     def detect_themes(self, telegram_id: int, 
                      n_clusters: int = 5) -> List[Dict[str, Any]]:
-        results = self.entries_collection.get(
-            where={"telegram_id": telegram_id}
-        )
-        
-        if not results["documents"]:
-            return []
-        
-        from collections import Counter
-        
-        all_keywords = []
-        for metadata in results["metadatas"] or []:
-            if "keywords" in metadata:
-                keywords = metadata["keywords"]
-                if isinstance(keywords, str):
-                    keywords = json.loads(keywords)
-                all_keywords.extend(keywords)
-        
-        theme_counts = Counter(all_keywords)
-        themes = [
-            {"theme": theme, "count": count}
-            for theme, count in theme_counts.most_common(n_clusters)
-        ]
-        
-        return themes
+        with self.get_session() as session:
+            try:
+                results = session.query(SearchableEntryDB).filter(
+                    SearchableEntryDB.telegram_id == telegram_id
+                ).all()
+                
+                if not results:
+                    return []
+                
+                from collections import Counter
+                
+                all_keywords = []
+                for r in results:
+                    metadata = r.metadata_json or {}
+                    keywords = metadata.get('keywords', [])
+                    if isinstance(keywords, str):
+                        keywords = json.loads(keywords) if keywords else []
+                    all_keywords.extend(keywords)
+                
+                theme_counts = Counter(all_keywords)
+                themes = [
+                    {"theme": theme, "count": count}
+                    for theme, count in theme_counts.most_common(n_clusters)
+                ]
+                
+                return themes
+            except Exception as e:
+                logger.error(f"Error detecting themes: {e}")
+                return []
 
     def save_daily_summary(self, summary: DailySummary) -> int:
         with self.get_session() as session:

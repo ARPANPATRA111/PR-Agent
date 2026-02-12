@@ -1,0 +1,34 @@
+app = "weekly-progress-agent"
+primary_region = "sin"
+
+[build]
+  dockerfile = "backend/Dockerfile"
+  [build.args]
+    # Build context is the repo root
+
+[env]
+  CHROMA_PERSIST_DIR = "/data/chroma"
+  DEBUG = "false"
+  LOG_LEVEL = "INFO"
+  WHISPER_MODEL = "base"
+
+[mounts]
+  source = "weekly_agent_data"
+  destination = "/data"
+
+[[services]]
+  internal_port = 8000
+  protocol = "tcp"
+
+  [[services.ports]]
+    handlers = ["http"]
+    port = 80
+
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
+
+  [[services.http_checks]]
+    path = "/health"
+    interval = 10000
+    timeout = 2000

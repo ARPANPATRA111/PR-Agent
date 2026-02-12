@@ -6,9 +6,6 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime
 from dataclasses import dataclass, field, asdict
 
-import chromadb
-from chromadb.config import Settings as ChromaSettings
-
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -241,24 +238,11 @@ class HistoricalPostParser:
         return None
 
 class HistoricalExamplesDB:
-    COLLECTION_NAME = "historical_linkedin_posts"
     
     def __init__(self, persist_directory: Optional[str] = None):
-        self.persist_directory = persist_directory or str(
-            Path(settings.chroma_persist_dir).parent / "historical_examples"
-        )
-        
-        self.client = chromadb.Client(ChromaSettings(
-            persist_directory=self.persist_directory,
-            anonymized_telemetry=False
-        ))
-        
-        self.collection = self.client.get_or_create_collection(
-            name=self.COLLECTION_NAME,
-            metadata={"description": "Historical LinkedIn posts for few-shot learning"}
-        )
-        
-        logger.info(f"Historical examples DB initialized at {self.persist_directory}")
+        self._posts: Dict[int, Dict[str, Any]] = {}
+        self._populated = False
+        logger.info("Historical examples DB initialized (in-memory)")
     
     def populate_from_parser(self, parser: HistoricalPostParser) -> int:
         if not parser.posts:
@@ -268,74 +252,57 @@ class HistoricalExamplesDB:
             logger.warning("No posts to populate")
             return 0
         
-        existing_count = self.collection.count()
-        if existing_count > 0:
-            logger.info(f"Clearing {existing_count} existing examples")
-            all_data = self.collection.get()
-            if all_data['ids']:
-                self.collection.delete(ids=all_data['ids'])
-        
-        ids = []
-        documents = []
-        metadatas = []
+        self._posts.clear()
         
         for post in parser.posts:
-            ids.append(f"week_{post.week_number}")
-            documents.append(post.summary_section or post.content[:1000])
-            metadatas.append({
+            self._posts[post.week_number] = {
                 "week_number": post.week_number,
+                "content": post.summary_section or post.content[:1000],
+                "full_content": post.content,
                 "has_project_links": len(post.project_links) > 0,
                 "has_showcase_links": len(post.showcase_links) > 0,
                 "looking_ahead_length": len(post.looking_ahead_section),
                 "quote_length": len(post.quote_section)
-            })
+            }
         
-        self.collection.add(
-            ids=ids,
-            documents=documents,
-            metadatas=metadatas
-        )
-        
+        self._populated = True
         logger.info(f"Populated {len(parser.posts)} historical examples")
         return len(parser.posts)
     
     def find_similar_examples(self, query: str, n_results: int = 3) -> List[Dict[str, Any]]:
-        if self.collection.count() == 0:
+        if not self._posts:
             return []
         
-        results = self.collection.query(
-            query_texts=[query],
-            n_results=min(n_results, self.collection.count())
-        )
+        query_lower = query.lower()
+        query_words = set(query_lower.split())
         
-        examples = []
-        for i, doc in enumerate(results['documents'][0]):
-            examples.append({
-                "week_number": results['metadatas'][0][i].get('week_number'),
-                "content": doc,
-                "distance": results['distances'][0][i] if results['distances'] else None
-            })
+        scored_posts = []
+        for week_num, data in self._posts.items():
+            content_lower = data['content'].lower()
+            score = sum(1 for word in query_words if word in content_lower)
+            scored_posts.append((score, data))
         
-        return examples
+        scored_posts.sort(key=lambda x: x[0], reverse=True)
+        
+        return [{
+            "week_number": data['week_number'],
+            "content": data['content'],
+            "distance": None
+        } for score, data in scored_posts[:n_results]]
     
     def get_random_examples(self, count: int = 3) -> List[Dict[str, Any]]:
         import random
         
-        total = self.collection.count()
-        if total == 0:
+        if not self._posts:
             return []
         
-        all_data = self.collection.get(include=['documents', 'metadatas'])
-        
-        if not all_data['ids']:
-            return []
-        
-        indices = random.sample(range(len(all_data['ids'])), min(count, len(all_data['ids'])))
+        week_nums = list(self._posts.keys())
+        selected = random.sample(week_nums, min(count, len(week_nums)))
         
         return [{
-            "week_number": all_data['metadatas'][i].get('week_number'),
-            "content": all_data['documents'][i]
-        } for i in indices]
+            "week_number": self._posts[w]['week_number'],
+            "content": self._posts[w]['content']
+        } for w in selected]
 
 LINKEDIN_POST_FORMAT = """
 🌟 𝐖𝐞𝐞𝐤-{week_number} 𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭 🚀

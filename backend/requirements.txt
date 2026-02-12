@@ -15,9 +15,7 @@ httpx>=0.26.0
 sqlalchemy>=2.0.25
 aiosqlite>=0.19.0
 psycopg2-binary>=2.9.9  # PostgreSQL support for production
-
-# Vector Store
-chromadb>=0.4.22
+pgvector>=0.2.4  # PostgreSQL vector extension
 
 # Speech-to-Text (Whisper)
 # Note: Requires FFmpeg to be installed on the system
