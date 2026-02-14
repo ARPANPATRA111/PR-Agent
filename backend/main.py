@@ -61,15 +61,32 @@ app = FastAPI(
 )
 
 from rate_limiter import setup_rate_limiting, limiter, RATE_LIMITS
+
+# Rate limiter first, then CORS added LAST so it runs FIRST on requests
 setup_rate_limiting(app)
 
+# CORS must be the LAST middleware added so it handles preflight OPTIONS first
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
+    allow_origins=["https://pragent-eta.vercel.app", "http://localhost:3000"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
+# Explicit OPTIONS handler to ensure preflight works
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(rest_of_path: str):
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "https://pragent-eta.vercel.app",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Allow-Credentials": "true",
+        }
+    )
 
 @app.get("/", tags=["Health"])
 @limiter.limit(RATE_LIMITS["health"])
