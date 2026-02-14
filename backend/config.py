@@ -162,7 +162,7 @@ class Settings(BaseSettings):
         description="Secret key for JWT tokens"
     )
     cors_origins: str = Field(
-        default="http://localhost:3000",
+        default="http://localhost:3000,https://pragent-eta.vercel.app",
         description="Comma-separated list of allowed CORS origins"
     )
     
