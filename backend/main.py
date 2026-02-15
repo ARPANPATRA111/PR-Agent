@@ -108,13 +108,39 @@ async def health_check(request: Request, response: Response):
     
     from error_recovery import circuit_breakers
     
+    # Check database connection
+    db_connected = False
+    try:
+        from sqlalchemy import text
+        session = memory.SessionLocal()
+        session.execute(text("SELECT 1"))
+        session.close()
+        db_connected = True
+    except:
+        pass
+    
+    # Check Telegram connection
+    telegram_connected = False
+    try:
+        telegram = TelegramClient(settings.telegram_bot_token)
+        webhook_info = await telegram.get_webhook_info()
+        telegram_connected = webhook_info.get("ok", False)
+    except:
+        pass
+    
+    scheduler_running = scheduler.scheduler.running if scheduler else False
+    
     return {
         "status": "healthy",
         "version": "1.1.0",
+        "database_connected": db_connected,
+        "vector_store_connected": db_connected, 
+        "telegram_connected": telegram_connected,
+        "scheduler_running": scheduler_running,
         "components": {
-            "database": "connected",
-            "vector_store": "connected",
-            "scheduler": "running" if scheduler.scheduler.running else "stopped"
+            "database": "connected" if db_connected else "disconnected",
+            "vector_store": "connected" if db_connected else "disconnected",
+            "scheduler": "running" if scheduler_running else "stopped"
         },
         "circuit_breakers": {
             name: cb.get_status() for name, cb in circuit_breakers.items()
