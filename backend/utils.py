@@ -7,23 +7,11 @@ from datetime import datetime
 import asyncio
 
 import httpx
-import whisper
 
 from config import settings
 
 logger = logging.getLogger(__name__)
-_whisper_model = None
 
-
-def get_whisper_model():
-    global _whisper_model
-    
-    if _whisper_model is None:
-        logger.info(f"Loading Whisper model: {settings.whisper_model}")
-        _whisper_model = whisper.load_model(settings.whisper_model)
-        logger.info("Whisper model loaded successfully")
-    
-    return _whisper_model
 
 async def download_telegram_audio(file_id: str, bot_token: str) -> Tuple[str, bytes]:
     async with httpx.AsyncClient() as client:
@@ -59,38 +47,6 @@ def save_audio_file(audio_bytes: bytes, file_id: str) -> str:
     return str(filepath)
 
 
-def convert_ogg_to_wav(ogg_path: str) -> str:
-    import subprocess
-    
-    wav_path = ogg_path.replace(".ogg", ".wav")
-    
-    try:
-        result = subprocess.run(
-            [
-                "ffmpeg", "-y",
-                "-i", ogg_path,
-                "-ar", "16000",
-                "-ac", "1",
-                "-c:a", "pcm_s16le",
-                wav_path
-            ],
-            capture_output=True,
-            text=True,
-            timeout=60
-        )
-        
-        if result.returncode != 0:
-            logger.error(f"FFmpeg error: {result.stderr}")
-            raise RuntimeError(f"FFmpeg conversion failed: {result.stderr}")
-        
-        logger.debug(f"Converted audio: {ogg_path} -> {wav_path}")
-        return wav_path
-        
-    except FileNotFoundError:
-        logger.error("FFmpeg not found. Please install FFmpeg.")
-        raise RuntimeError("FFmpeg is required for audio conversion. Please install it.")
-
-
 def cleanup_audio_files(*file_paths: str) -> None:
     for path in file_paths:
         try:
@@ -100,47 +56,35 @@ def cleanup_audio_files(*file_paths: str) -> None:
         except Exception as e:
             logger.warning(f"Failed to clean up {path}: {e}")
 
-def transcribe_audio(audio_path: str) -> str:
-    model = get_whisper_model()
+
+async def transcribe_audio_groq(audio_path: str) -> str:
+    """Transcribe audio using Groq's Whisper API (fast and free)"""
+    logger.info(f"Transcribing with Groq Whisper: {audio_path}")
     
-    logger.info(f"Transcribing: {audio_path}")
-    
-    if audio_path.endswith(".ogg"):
-        wav_path = convert_ogg_to_wav(audio_path)
-        audio_to_transcribe = wav_path
-    else:
-        wav_path = None
-        audio_to_transcribe = audio_path
-    
-    try:
-        language = settings.whisper_language
-        
-        transcribe_options = {
-            "fp16": False,
-            "verbose": False
-        }
-        
-        if language and language.lower() != "auto":
-            transcribe_options["language"] = language
-        
-        result = model.transcribe(
-            audio_to_transcribe,
-            **transcribe_options
-        )
-        
-        transcript = result["text"].strip()
-        detected_language = result.get("language", "unknown")
-        
-        logger.info(
-            f"Transcription complete: {len(transcript)} characters, "
-            f"detected language: {detected_language}"
-        )
-        
-        return transcript
-        
-    finally:
-        if wav_path:
-            cleanup_audio_files(wav_path)
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        with open(audio_path, "rb") as audio_file:
+            files = {
+                "file": (os.path.basename(audio_path), audio_file, "audio/ogg"),
+                "model": (None, "whisper-large-v3"),
+            }
+            
+            response = await client.post(
+                "https://api.groq.com/openai/v1/audio/transcriptions",
+                headers={
+                    "Authorization": f"Bearer {settings.groq_api_key}"
+                },
+                files=files
+            )
+            
+            if response.status_code != 200:
+                logger.error(f"Groq Whisper API error: {response.status_code} - {response.text}")
+                raise RuntimeError(f"Groq Whisper API failed: {response.text}")
+            
+            result = response.json()
+            transcript = result.get("text", "").strip()
+            
+            logger.info(f"Transcription complete: {len(transcript)} characters")
+            return transcript
 
 
 async def transcribe_telegram_voice(file_id: str, bot_token: str) -> str:
@@ -151,12 +95,8 @@ async def transcribe_telegram_voice(file_id: str, bot_token: str) -> str:
         
         ogg_path = save_audio_file(audio_bytes, file_id)
         
-        loop = asyncio.get_event_loop()
-        transcript = await loop.run_in_executor(
-            None,
-            transcribe_audio,
-            ogg_path
-        )
+        # Use Groq's fast Whisper API instead of local model
+        transcript = await transcribe_audio_groq(ogg_path)
         
         return transcript
         

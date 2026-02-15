@@ -17,9 +17,7 @@ aiosqlite>=0.19.0
 psycopg2-binary>=2.9.9  # PostgreSQL support for production
 pgvector>=0.2.4  # PostgreSQL vector extension
 
-# Speech-to-Text (Whisper)
-# Note: Requires FFmpeg to be installed on the system
-openai-whisper>=20231117
+# Speech-to-Text (using Groq Whisper API - no local dependencies needed)
 
 # LLM Integration (Groq)
 groq>=0.4.2
