@@ -99,6 +99,16 @@ async def root(request: Request, response: Response):
     }
 
 
+@app.head("/", tags=["Health"])
+@app.head("/health", tags=["Health"])
+@limiter.limit(RATE_LIMITS["health"])
+async def keep_alive_check(request: Request, response: Response):
+    """
+    Lightweight keep-alive endpoint for UptimeRobot.
+    """
+    return Response(status_code=200)
+
+
 @app.get("/health", tags=["Health"])
 @app.get("/api/health", tags=["Health"])
 @limiter.limit(RATE_LIMITS["health"])
