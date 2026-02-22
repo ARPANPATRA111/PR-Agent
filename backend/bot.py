@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 
 import httpx
 
@@ -314,6 +314,8 @@ class BotHandler:
             "/stats": self._cmd_status,
             "/delete": self._cmd_delete,
             "/recent": self._cmd_recent,
+            "/goal": self._cmd_goal,
+            "/goals": self._cmd_goals,
         }
         
         handler = commands.get(command)
@@ -371,29 +373,33 @@ Send a voice message about:
 <code>#log Worked on API, fixed 3 bugs</code>
 <code>#progress Learned React hooks today</code>
 
-<b>Commands</b>
+<b>📋 Commands</b>
 /status - Your streak and stats
 /summary - Today's logged entries
 /summary DD-MM-YYYY DD-MM-YYYY - Date range summary
 /generate - Generate LinkedIn post
 /recent - Show recent entries
 /delete [ID] - Delete an entry
+/goal [text] - Set a new goal
+/goals - View all your goals
 /help - This help
 
-<b>Examples</b>
-<code>/summary</code> - Today's summary
-<code>/summary 01-02-2026 07-02-2026</code> - Week summary
+<b>🎯 Goals</b>
+Set goals and I'll track your progress:
+<code>/goal Improve DSA skills weekly</code>
+<code>/goals</code> - See all goals
 
 <b>🤖 Features</b>
-• Asks clarifying questions if unclear
+• Automatic entry classification
+• Goal tracking with sub-tasks
 • Morning reminder if no logs
-• Daily reflection at midnight
-• Weekly LinkedIn posts on Sunday
+• Daily reflection summaries
+• Weekly LinkedIn posts
 
-<b>Tips</b>
+<b>💡 Tips</b>
 • Be specific about what you did
 • Mention technologies and projects
-• Regular logging = better posts!"""
+• Regular logging = better tracking!"""
         
         await self.telegram.send_message(chat_id, help_text)
     
@@ -547,32 +553,80 @@ Send a voice note or text with #log to start logging.
             return "• None"
         return "\n".join([f"• {item}" for item in items[:max_items]])
     
+    def _convert_raw_to_structured(self, raw_entries: List[Dict]) -> List:
+        """Convert raw entries to structured format for post generation."""
+        from models import StructuredEntry, EntryCategory
+        
+        structured = []
+        for raw in raw_entries:
+            try:
+                entry = StructuredEntry(
+                    id=raw.get('id', 0),
+                    raw_entry_id=raw.get('id', 0),
+                    category=EntryCategory.OTHER,
+                    activities=[raw.get('raw_text', '')[:100]] if raw.get('raw_text') else [],
+                    blockers=[],
+                    accomplishments=[],
+                    learnings=[],
+                    summary=raw.get('raw_text', '')[:200] if raw.get('raw_text') else '',
+                    keywords=[],
+                    sentiment='neutral'
+                )
+                structured.append(entry)
+            except Exception as e:
+                logger.warning(f"Could not convert raw entry: {e}")
+                continue
+        return structured
+    
     async def _cmd_generate(self, message: TelegramMessage) -> None:
         chat_id = message.chat.get("id")
         user_id = message.from_user.id if message.from_user else 0
         
         await self.telegram.send_message(
             chat_id,
-            "✍️ Generating LinkedIn post drafts... This may take a moment."
+            "✍️ Analyzing your entries... This may take a moment."
         )
         await self.telegram.send_typing_action(chat_id)
         
         try:
+            last_posted_date = self.memory.get_last_posted_report_date(user_id)
+            
+            from datetime import timedelta
+            if last_posted_date:
+                start = last_posted_date + timedelta(hours=1)
+            else:
+                # No previous posts - use last 7 days
+                start = datetime.utcnow() - timedelta(days=7)
+            
+            end = datetime.utcnow() + timedelta(hours=1)
+            
+            logger.info(f"Generating post for user {user_id} with entries from {start} to {end}")
+            
+            entries = self.memory.get_structured_entries_by_date(user_id, start, end)
+            
+            MIN_ENTRIES_THRESHOLD = 1
+            if not entries or len(entries) < MIN_ENTRIES_THRESHOLD:
+                next_week = self.memory.get_next_week_number(user_id)
+                last_week = next_week - 1
+                
+                await self.telegram.send_message(
+                    chat_id,
+                    f"📭 <b>Not enough new content for Week {next_week}</b>\n\n"
+                    f"I found <b>0 new entries</b> since your Week {last_week} post.\n\n"
+                    f"💡 <b>What to do:</b>\n"
+                    f"• Send some voice notes about this week's work\n"
+                    f"• Use <code>#log</code> to add text entries\n"
+                    f"• Then run /generate again\n\n"
+                    f"<i>I need at least {MIN_ENTRIES_THRESHOLD} new entry to create a meaningful post.</i>"
+                )
+                return
+            
+            logger.info(f"Found {len(entries)} new entries for user {user_id}")
+            
             daily_summaries = self.memory.get_daily_summaries(user_id, days=7)
+            logger.info(f"Found {len(daily_summaries)} daily summaries for user {user_id}")
             
             if not daily_summaries:
-                from datetime import timedelta
-                start = datetime.utcnow() - timedelta(days=7)
-                end = datetime.utcnow()
-                entries = self.memory.get_structured_entries_by_date(user_id, start, end)
-                
-                if not entries or len(entries) < 1:
-                    await self.telegram.send_message(
-                        chat_id,
-                        "📭 Not enough data to generate posts. Please send some voice notes first!"
-                    )
-                    return
-                
                 logger.info(f"Creating summary from {len(entries)} entries for user {user_id}")
                 
                 all_activities = []
@@ -778,6 +832,134 @@ Example: <code>/delete {entries[0]['id']}</code>"""
                 chat_id,
                 "❌ Error fetching entries. Please try again."
             )
+    
+    async def _cmd_goal(self, message: TelegramMessage) -> None:
+        """Handle /goal command - set or update a goal."""
+        from models import Goal, GoalStatus
+        
+        chat_id = message.chat.get("id")
+        user_id = message.from_user.id if message.from_user else 0
+        
+        parts = message.text.split(maxsplit=1)
+        if len(parts) < 2:
+            await self.telegram.send_message(
+                chat_id,
+                """🎯 <b>Set a Goal</b>
+
+Usage: <code>/goal Your goal description</code>
+
+<b>Examples:</b>
+• <code>/goal Improve DSA skills - practice daily</code>
+• <code>/goal Complete React course by end of month</code>
+• <code>/goal Build side project MVP</code>
+
+I'll break down your goal into actionable sub-tasks and track your progress!
+
+<i>Use /goals to see all your goals.</i>"""
+            )
+            return
+        
+        goal_text = parts[1].strip()
+        
+        await self.telegram.send_typing_action(chat_id)
+        
+        try:
+            sub_tasks = self.agent.break_goal_into_tasks(goal_text)
+            
+            goal = Goal(
+                telegram_id=user_id,
+                title=goal_text[:100],
+                description=goal_text,
+                status=GoalStatus.ACTIVE,
+                progress=0,
+                sub_tasks=sub_tasks
+            )
+            
+            goal_id = self.memory.save_goal(goal)
+            
+            tasks_text = "\n".join([f"  • {task}" for task in sub_tasks[:5]])
+            
+            response = f"""🎯 <b>Goal Set!</b>
+
+<b>Goal:</b> {goal_text[:100]}
+
+<b>Sub-tasks:</b>
+{tasks_text}
+
+📊 <b>Progress:</b> 0%
+
+<i>I'll track your entries and update your progress automatically. Use /goals to see all goals.</i>"""
+            
+            await self.telegram.send_message(chat_id, response)
+            logger.info(f"Created goal {goal_id} for user {user_id}")
+            
+        except Exception as e:
+            logger.error(f"Error creating goal: {e}")
+            await self.telegram.send_message(
+                chat_id,
+                "❌ Error creating goal. Please try again."
+            )
+    
+    async def _cmd_goals(self, message: TelegramMessage) -> None:
+        """Handle /goals command - list all goals."""
+        chat_id = message.chat.get("id")
+        user_id = message.from_user.id if message.from_user else 0
+        
+        try:
+            goals = self.memory.get_all_goals(user_id)
+            
+            if not goals:
+                await self.telegram.send_message(
+                    chat_id,
+                    """📋 <b>No Goals Yet</b>
+
+Set your first goal with:
+<code>/goal Your goal here</code>
+
+<b>Examples:</b>
+• <code>/goal Learn Docker and Kubernetes</code>
+• <code>/goal Build full-stack app with Next.js</code>"""
+                )
+                return
+            
+            active_goals = [g for g in goals if g.status.value == "active"]
+            completed_goals = [g for g in goals if g.status.value == "completed"]
+            
+            def format_goal(g, show_status=False):
+                progress_bar = self._get_progress_bar(g.progress)
+                status_icon = "✅" if g.status.value == "completed" else "🎯"
+                status_text = f" ({g.status.value})" if show_status else ""
+                return f"{status_icon} <b>#{g.id}</b> {g.title[:50]}{status_text}\n   {progress_bar} {g.progress}%"
+            
+            response_parts = ["📋 <b>Your Goals</b>\n"]
+            
+            if active_goals:
+                response_parts.append("<b>Active:</b>")
+                for g in active_goals[:5]:
+                    response_parts.append(format_goal(g))
+                response_parts.append("")
+            
+            if completed_goals:
+                response_parts.append("<b>Completed:</b>")
+                for g in completed_goals[:3]:
+                    response_parts.append(format_goal(g, True))
+            
+            response_parts.append("\n<i>Set new goal: /goal [description]</i>")
+            
+            await self.telegram.send_message(chat_id, "\n".join(response_parts))
+            
+        except Exception as e:
+            logger.error(f"Error listing goals: {e}")
+            await self.telegram.send_message(
+                chat_id,
+                "❌ Error fetching goals. Please try again."
+            )
+    
+    def _get_progress_bar(self, progress: int) -> str:
+        """Generate a visual progress bar."""
+        filled = int(progress / 10)
+        empty = 10 - filled
+        return "▓" * filled + "░" * empty
 
     TEXT_LOG_PREFIXES = ["#log", "#progress", "/log"]
     

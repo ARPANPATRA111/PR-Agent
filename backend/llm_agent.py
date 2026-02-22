@@ -565,9 +565,20 @@ Always respond with valid JSON."""
         
         style_context = ""
         if posted_reports:
-            style_context = "\n\nMY ACTUAL PAST POSTS (this is my writing style - match it exactly):\n"
-            for report in posted_reports[:5]:
-                style_context += f"\n--- Week {report['week_number']} ---\n{report['content']}\n"
+            style_context = "\n\n=== MY ACTUAL PAST POSTS (STUDY MY WRITING STYLE CAREFULLY) ===\n"
+            style_context += "Pay attention to: my vocabulary, sentence length, when I use emojis, bullet vs paragraph style, how personal I get.\n"
+            for i, report in enumerate(posted_reports[:5]):
+                content_body = report['content']
+                for pattern in ['🌟 𝐖𝐞𝐞𝐤', 'Week-', 'Progress Report']:
+                    if pattern in content_body[:50]:
+                        lines = content_body.split('\n')
+                        content_body = '\n'.join(lines[2:])  # Skip header lines
+                        break
+
+                if '✨ Let' in content_body:
+                    content_body = content_body.split('✨ Let')[0].strip()
+                char_limit = 1200 if i < 2 else 800  # More context from recent posts
+                style_context += f"\n--- Week {report['week_number']} ---\n{content_body[:char_limit]}\n"
         
         hashtag_year = "2026" if week_number > 52 else "2025"
         week_bold = to_unicode_bold_number(week_number)
@@ -581,35 +592,53 @@ Always respond with valid JSON."""
         specific_accomplishments = "\n".join([f"• {acc}" for acc in all_accomplishments]) if all_accomplishments else "Various tasks completed"
         specific_learnings = ", ".join(all_learnings) if all_learnings else "Technical skills"
         
-        system_prompt = """You are writing a personal weekly update post exactly in the user's voice. Study their past posts and match:
-- Their casual, direct tone (like talking to friends)
-- How they mention real life events (college, hackathons, personal stuff)  
-- Short sentences, no corporate fluff
-- When they use bullet points vs flowing text
-- Their emoji patterns
+        last_week_content = ""
+        if posted_reports:
+            last_report = posted_reports[0]
+            last_week_content = f"\n\nLAST WEEK'S POST (Week {last_report['week_number']}) - DO NOT REPEAT THIS CONTENT:\n{last_report['content'][:500]}\n"
+        
+        system_prompt = """You are ghostwriting a weekly update post that must sound EXACTLY like the user wrote it.
 
-This is NOT a professional report. It's a personal update about their week.
-DO NOT include header or footer - they are added separately.
-NEVER use: "excited", "thrilled", "journey", "passionate", "proud", "significant progress", "making strides", "I'm happy to share", "I had the opportunity"."""
+CRITICAL - ANALYZE THEIR PAST POSTS FOR:
+1. Sentence structure: Do they use short punchy sentences or longer flowing ones?
+2. Paragraph style: Bullets, numbered lists, or flowing paragraphs?
+3. Emoji usage: Where and how often do they use emojis?
+4. Personal touches: How do they mention personal life, feelings, struggles?
+5. Technical depth: Do they get into details or stay high-level?
+6. Humor/casual tone: Notice their specific expressions and jokes
 
-        user_prompt = f"""Write my Week-{week_number} personal update (body only).
+STRICT RULES:
+1. DO NOT include ANY header line (no "Week-X Progress Report" etc) - I add it separately
+2. DO NOT include ANY footer line (no "Let's code, grow" etc) - I add it separately
+3. DO NOT repeat content from last week's post
+4. ONLY write about THIS WEEK's activities listed below
+5. MATCH their writing style EXACTLY - not a professional report
 
-WHAT I ACTUALLY DID THIS WEEK:
+FORBIDDEN WORDS (never use): "excited", "thrilled", "journey", "passionate", "proud", "significant progress", "making strides", "I'm happy to share", "I had the opportunity", "milestone", "incredible", "amazing journey"
+
+This post should be INDISTINGUISHABLE from their actual writing."""
+
+        user_prompt = f"""Write my Week-{week_number} personal update (BODY ONLY - no header or footer).
+
+WHAT I ACTUALLY DID THIS WEEK (use ONLY this content):
 {specific_work}
 
 Activities: {specific_activities}
 Accomplishments: {specific_accomplishments}
 Learnings: {specific_learnings}
+{last_week_content}
 {style_context}
 {f"Project link: {project_links[0]}" if project_links else ""}
 {f"Notes: {custom_instructions}" if custom_instructions else ""}
 
-Write like my past posts above. Be specific about what I actually worked on.
+IMPORTANT: Write ONLY about the activities listed above. Do not duplicate last week's content.
 - Start with how the week felt or a specific event
 - Mention what I worked on naturally (not in bullet lists unless I use them in past posts)
 - Keep it real and personal
 - End with 🔮 𝐋𝐨𝐨𝐤𝐢𝐧𝐠 𝐀𝐡𝐞𝐚𝐝 (1-2 sentences) and 💬 𝐐𝐮𝐨𝐭𝐞 𝐨𝐟 𝐭𝐡𝐞 𝐖𝐞𝐞𝐤
-- Include GitHub link naturally if provided"""
+- Include GitHub link naturally if provided
+
+START WRITING DIRECTLY - no header needed."""
         
         response = self._call_llm(
             system_prompt,
@@ -617,7 +646,27 @@ Write like my past posts above. Be specific about what I actually worked on.
             temperature=0.7
         )
         
-        content = f"{header}\n\n{response.strip()}\n\n{footer}"
+        response_clean = response.strip()
+        
+        header_patterns = ['🌟 𝐖𝐞𝐞𝐤', 'Week-', '𝐖𝐞𝐞𝐤-', 'Progress Report', '𝐏𝐫𝐨𝐠𝐫𝐞𝐬𝐬 𝐑𝐞𝐩𝐨𝐫𝐭']
+        lines = response_clean.split('\n')
+        cleaned_lines = []
+        skip_until_content = True
+        
+        for line in lines:
+            if skip_until_content:
+                is_header = any(pattern in line for pattern in header_patterns)
+                if is_header or (line.strip() == '' and not cleaned_lines):
+                    continue
+                skip_until_content = False
+            cleaned_lines.append(line)
+        
+        response_clean = '\n'.join(cleaned_lines)
+        
+        if response_clean.count('✨ Let') > 0:
+            response_clean = response_clean.split('✨ Let')[0].strip()
+        
+        content = f"{header}\n\n{response_clean}\n\n{footer}"
         
         return LinkedInPost(
             telegram_id=summary.telegram_id,
@@ -870,6 +919,147 @@ Do NOT use JSON - just write the insight directly."""
         except Exception as e:
             logger.warning(f"Failed to generate insight: {e}")
             return "Keep up the great work! Regular logging helps track your progress."
+    
+    def break_goal_into_tasks(self, goal_text: str) -> List[str]:
+        """Break a high-level goal into actionable sub-tasks."""
+        system_prompt = """You are a productivity coach who helps break down goals into actionable sub-tasks.
+Given a goal, create 3-5 specific, measurable sub-tasks that will help achieve it.
+Keep each task concise (under 50 characters).
+Focus on practical, achievable steps."""
+
+        user_prompt = f"""Break this goal into 3-5 actionable sub-tasks:
+
+GOAL: {goal_text}
+
+Return JSON:
+{{
+    "tasks": ["task1", "task2", "task3", ...]
+}}"""
+
+        try:
+            response = self._call_llm(
+                system_prompt,
+                user_prompt,
+                temperature=0.3,
+                max_tokens=300,
+                json_mode=True
+            )
+            
+            data = json.loads(response)
+            tasks = data.get("tasks", [])
+            
+            if not tasks:
+                return [
+                    "Research and plan approach",
+                    "Start with first small step",
+                    "Track daily progress",
+                    "Review and adjust weekly"
+                ]
+            
+            return tasks[:5]
+            
+        except (json.JSONDecodeError, Exception) as e:
+            logger.warning(f"Goal breakdown failed: {e}")
+            return [
+                "Define specific milestones",
+                "Work on it daily",
+                "Track progress weekly"
+            ]
+    
+    def critique_report(self, report_content: str, report_type: str) -> Dict[str, Any]:
+        """Self-reflection: Critique a generated report for quality improvement."""
+        system_prompt = """You are a report quality assessor. Evaluate the given report and provide constructive feedback.
+Rate clarity on a scale of 1-10 and suggest specific improvements.
+Be concise and actionable."""
+
+        user_prompt = f"""Evaluate this {report_type} report:
+
+{report_content[:2000]}
+
+Return JSON:
+{{
+    "clarity_score": 1-10,
+    "strengths": ["strength1", "strength2"],
+    "suggestions": ["improvement1", "improvement2"],
+    "key_missing": "what's missing, if anything"
+}}"""
+
+        try:
+            response = self._call_llm(
+                system_prompt,
+                user_prompt,
+                temperature=0.2,
+                max_tokens=400,
+                json_mode=True
+            )
+            
+            data = json.loads(response)
+            return {
+                "clarity_score": data.get("clarity_score", 7),
+                "strengths": data.get("strengths", []),
+                "suggestions": data.get("suggestions", []),
+                "key_missing": data.get("key_missing", "")
+            }
+            
+        except (json.JSONDecodeError, Exception) as e:
+            logger.warning(f"Report critique failed: {e}")
+            return {
+                "clarity_score": 7,
+                "strengths": ["Report generated successfully"],
+                "suggestions": [],
+                "key_missing": ""
+            }
+    
+    def analyze_goal_progress(self, goal: Dict[str, Any], recent_entries: List[str]) -> Dict[str, Any]:
+        """Analyze if recent entries show progress towards a goal."""
+        system_prompt = """You are a goal progress analyzer. Given a goal and recent work entries,
+determine if progress is being made and estimate completion percentage.
+Be realistic but encouraging."""
+
+        entries_text = "\n".join([f"- {e[:100]}" for e in recent_entries[:10]])
+        
+        user_prompt = f"""Analyze progress on this goal:
+
+GOAL: {goal.get('title', 'Unknown')}
+Current Progress: {goal.get('progress', 0)}%
+Sub-tasks: {', '.join(goal.get('sub_tasks', []))}
+
+RECENT WORK ENTRIES:
+{entries_text}
+
+Return JSON:
+{{
+    "progress_made": true/false,
+    "estimated_progress": 0-100,
+    "relevant_activities": ["activity1", "activity2"],
+    "recommendation": "brief suggestion"
+}}"""
+
+        try:
+            response = self._call_llm(
+                system_prompt,
+                user_prompt,
+                temperature=0.3,
+                max_tokens=300,
+                json_mode=True
+            )
+            
+            data = json.loads(response)
+            return {
+                "progress_made": data.get("progress_made", False),
+                "estimated_progress": data.get("estimated_progress", goal.get('progress', 0)),
+                "relevant_activities": data.get("relevant_activities", []),
+                "recommendation": data.get("recommendation", "Keep working towards your goal!")
+            }
+            
+        except (json.JSONDecodeError, Exception) as e:
+            logger.warning(f"Goal progress analysis failed: {e}")
+            return {
+                "progress_made": False,
+                "estimated_progress": goal.get('progress', 0),
+                "relevant_activities": [],
+                "recommendation": "Continue logging your progress to track goal advancement."
+            }
 
 _llm_agent: Optional[LLMAgent] = None
 

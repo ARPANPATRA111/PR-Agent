@@ -525,6 +525,18 @@ async def update_post(post_id: int, update: PostUpdateRequest):
     return {"success": True, "post_id": post_id}
 
 
+@app.delete("/api/posts/{post_id}")
+async def delete_post(post_id: int, telegram_id: int):
+    memory = get_memory_manager()
+    
+    success = memory.delete_linkedin_post(post_id, telegram_id)
+    
+    if not success:
+        raise HTTPException(status_code=404, detail="Post not found")
+    
+    return {"success": True, "message": "Post deleted"}
+
+
 @app.post("/api/posts/{post_id}/publish")
 async def mark_post_published(
     post_id: int,
@@ -566,6 +578,7 @@ class ImportPostRequest(BaseModel):
     week_number: int
     published_at: Optional[datetime] = None
     linkedin_url: Optional[str] = None
+    content_cutoff_date: Optional[datetime] = None
 
 
 @app.post("/api/posts/import")
@@ -581,7 +594,8 @@ async def import_posted_report(
             week_number=request.week_number,
             content=request.content,
             published_at=request.published_at,
-            linkedin_url=request.linkedin_url
+            linkedin_url=request.linkedin_url,
+            content_cutoff_date=request.content_cutoff_date
         )
         
         return {

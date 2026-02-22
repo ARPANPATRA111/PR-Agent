@@ -250,3 +250,38 @@ class ThemeCluster(BaseModel):
     entry_count: int
     sample_entries: List[str]
     trend: str
+
+class GoalStatus(str, Enum):
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    PAUSED = "paused"
+    ABANDONED = "abandoned"
+
+
+class Goal(BaseModel):
+    id: Optional[int] = None
+    telegram_id: int
+    title: str
+    description: Optional[str] = None
+    target_date: Optional[datetime] = None
+    status: GoalStatus = GoalStatus.ACTIVE
+    progress: int = 0  # 0-100
+    sub_tasks: List[str] = []
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    class Config:
+        from_attributes = True
+
+
+class ReportFeedback(BaseModel):
+    id: Optional[int] = None
+    report_type: str  # "daily", "weekly", "linkedin"
+    report_id: int
+    clarity_score: int  # 1-10
+    suggestions: List[str] = []
+    applied_improvements: List[str] = []
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    class Config:
+        from_attributes = True

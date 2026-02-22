@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Card,
   CardContent,
@@ -13,7 +14,6 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
   DialogContent,
@@ -41,6 +41,13 @@ import {
   ChevronLeft,
   ChevronRight,
   Plus,
+  ExternalLink,
+  Eye,
+  AlertTriangle,
+  Hash,
+  TrendingUp,
+  Wand2,
+  Trash2,
 } from 'lucide-react';
 import { fetchAPI, fetchAPIWithUser, getTelegramId, formatDate, getToneColor } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
@@ -65,10 +72,35 @@ interface PostsResponse {
 }
 
 const tones = [
-  { value: 'professional', label: 'Professional', emoji: '💼' },
-  { value: 'casual', label: 'Casual', emoji: '😊' },
-  { value: 'inspirational', label: 'Inspirational', emoji: '✨' },
+  { value: 'professional', label: 'Professional', emoji: '', description: 'Polished, business-appropriate tone' },
+  { value: 'casual', label: 'Casual', emoji: '', description: 'Friendly, conversational tone' },
+  { value: 'inspirational', label: 'Inspirational', emoji: '', description: 'Uplifting, motivational tone' },
 ];
+
+const toneGradients: Record<string, string> = {
+  professional: 'from-blue-500 to-indigo-500',
+  casual: 'from-green-500 to-teal-500',
+  inspirational: 'from-purple-500 to-pink-500',
+};
+
+// Animation variants
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.1 },
+  },
+};
+
+const cardVariants = {
+  hidden: { opacity: 0, y: 20, scale: 0.95 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: { type: 'spring' as const, stiffness: 100, damping: 15 },
+  },
+};
 
 export function PostsView() {
   const [posts, setPosts] = useState<Post[]>([]);
@@ -79,6 +111,7 @@ export function PostsView() {
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [previewPost, setPreviewPost] = useState<Post | null>(null);
   const [editedContent, setEditedContent] = useState('');
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [generateTone, setGenerateTone] = useState('professional');
@@ -87,6 +120,7 @@ export function PostsView() {
   const [manualContent, setManualContent] = useState('');
   const [manualWeekNumber, setManualWeekNumber] = useState('');
   const [importing, setImporting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const { toast } = useToast();
 
   const fetchPosts = async () => {
@@ -104,16 +138,23 @@ export function PostsView() {
       setPosts(data.posts || []);
       setTotalPages(data.total_pages || 1);
       setTotal(data.total || 0);
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load posts');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
   useEffect(() => {
     fetchPosts();
   }, [page]);
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchPosts();
+  };
 
   const handleCopy = async (post: Post) => {
     try {
@@ -159,6 +200,27 @@ export function PostsView() {
       toast({
         title: 'Failed to save',
         description: err instanceof Error ? err.message : 'Could not save post',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleDelete = async (post: Post) => {
+    if (!confirm('Are you sure you want to delete this post?')) return;
+    try {
+      await fetchAPIWithUser(`/api/posts/${post.id}`, {
+        method: 'DELETE',
+      });
+      setPosts((prev) => prev.filter((p) => p.id !== post.id));
+      setTotal((prev) => prev - 1);
+      toast({
+        title: 'Deleted!',
+        description: 'Post has been removed',
+      });
+    } catch (err) {
+      toast({
+        title: 'Failed to delete',
+        description: err instanceof Error ? err.message : 'Could not delete post',
         variant: 'destructive',
       });
     }
@@ -236,141 +298,258 @@ export function PostsView() {
     }
   };
 
+  const getLinkedInShareUrl = (content: string) => {
+    const encodedContent = encodeURIComponent(content);
+    return `https://www.linkedin.com/feed/?shareActive=true&text=${encodedContent}`;
+  };
+
   if (error) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <Card className="w-full max-w-md">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex h-full items-center justify-center p-8"
+      >
+        <Card className="w-full max-w-md premium-card border-destructive/30">
           <CardHeader>
-            <CardTitle className="text-destructive">Error</CardTitle>
+            <CardTitle className="text-destructive flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5" />
+              Error
+            </CardTitle>
             <CardDescription>{error}</CardDescription>
           </CardHeader>
+          <CardContent>
+            <Button 
+              onClick={handleRefresh} 
+              variant="outline" 
+              className="w-full btn-magnetic rounded-xl"
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Try Again
+            </Button>
+          </CardContent>
         </Card>
-      </div>
+      </motion.div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">LinkedIn Posts</h2>
-          <p className="text-muted-foreground">
-            Weekly generated posts ({total} total)
-          </p>
+    <div className="space-y-8 pb-8">
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-card via-card to-muted/30 p-8 border border-border/30"
+      >
+        <div className="absolute -top-24 -right-24 w-48 h-48 bg-[#0A66C2]/15 rounded-full blur-3xl" />
+        <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-primary/10 rounded-full blur-3xl" />
+        
+        <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+          <div className="space-y-2">
+            <div className="flex items-center gap-3">
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: 'spring', stiffness: 200, damping: 15 }}
+                className="p-2.5 rounded-xl bg-[#0A66C2]/10 border border-[#0A66C2]/20"
+              >
+                <Linkedin className="h-6 w-6 text-[#0A66C2]" />
+              </motion.div>
+              <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
+                <span className="bg-gradient-to-r from-[#0A66C2] to-[#0A66C2]/60 bg-clip-text text-transparent">LinkedIn Posts</span>
+              </h1>
+            </div>
+            <p className="text-muted-foreground max-w-md">
+              {total > 0 ? `${total} weekly progress reports generated` : 'Your AI-generated weekly posts'}
+            </p>
+          </div>
+          
+          <div className="flex gap-3 flex-wrap">
+            <Button 
+              variant="outline" 
+              size="icon" 
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="btn-magnetic rounded-xl border-border/50 hover:border-primary/50"
+            >
+              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={() => setShowManualEntryDialog(true)}
+              className="btn-magnetic rounded-xl border-border/50 hover:border-primary/50"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Import
+            </Button>
+            <Button 
+              onClick={() => setShowGenerateDialog(true)} 
+              disabled={generating}
+              className="btn-magnetic rounded-xl bg-gradient-to-r from-[#0A66C2] to-[#0A66C2]/80 hover:from-[#0A66C2]/90 hover:to-[#0A66C2]/70 shadow-lg shadow-[#0A66C2]/25"
+            >
+              {generating ? (
+                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Wand2 className="mr-2 h-4 w-4" />
+              )}
+              Generate
+            </Button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setShowManualEntryDialog(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Manual Entry
-          </Button>
-          <Button onClick={() => setShowGenerateDialog(true)} disabled={generating}>
-            {generating ? (
-              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Sparkles className="mr-2 h-4 w-4" />
-            )}
-            Generate Now
-          </Button>
-        </div>
-      </div>
+      </motion.div>
 
       {/* Posts Grid */}
       {loading ? (
         <div className="grid gap-6 md:grid-cols-2">
           {[...Array(4)].map((_, i) => (
-            <Card key={i}>
+            <Card key={i} className="premium-card shimmer">
               <CardHeader>
-                <Skeleton className="h-6 w-48" />
-                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-6 w-48 bg-muted/50" />
+                <Skeleton className="h-4 w-32 bg-muted/50" />
               </CardHeader>
               <CardContent>
-                <Skeleton className="h-32 w-full" />
+                <Skeleton className="h-32 w-full rounded-xl bg-muted/50" />
               </CardContent>
             </Card>
           ))}
         </div>
       ) : posts.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <FileText className="h-12 w-12 text-muted-foreground" />
-            <h3 className="mt-4 text-lg font-medium">No posts yet</h3>
-            <p className="mt-2 text-center text-sm text-muted-foreground">
-              Posts are automatically generated every Sunday, or you can generate one now.
-            </p>
-            <Button
-              className="mt-4"
-              onClick={() => setShowGenerateDialog(true)}
-              disabled={generating}
-            >
-              <Sparkles className="mr-2 h-4 w-4" />
-              Generate Your First Post
-            </Button>
-          </CardContent>
-        </Card>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+        >
+          <Card className="premium-card">
+            <CardContent className="flex flex-col items-center justify-center py-20">
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: 'spring', stiffness: 200, damping: 15 }}
+                className="p-6 rounded-2xl bg-gradient-to-br from-[#0A66C2]/10 to-[#0A66C2]/5 mb-6"
+              >
+                <Linkedin className="h-12 w-12 text-[#0A66C2]" />
+              </motion.div>
+              <h3 className="text-xl font-semibold mb-2">No posts yet</h3>
+              <p className="text-muted-foreground text-center max-w-md mb-8">
+                Posts are automatically generated every Sunday, or you can generate one right now.
+              </p>
+              <Button
+                className="btn-magnetic rounded-xl bg-gradient-to-r from-[#0A66C2] to-[#0A66C2]/80 shadow-lg shadow-[#0A66C2]/25"
+                onClick={() => setShowGenerateDialog(true)}
+                disabled={generating}
+              >
+                <Sparkles className="mr-2 h-4 w-4" />
+                Generate Your First Post
+              </Button>
+            </CardContent>
+          </Card>
+        </motion.div>
       ) : (
         <>
-          <div className="grid gap-6 md:grid-cols-2">
-            {posts.map((post) => (
-              <Card key={post.id} className="flex flex-col">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="flex items-center gap-2 text-lg">
-                      <Linkedin className="h-5 w-5 text-[#0A66C2]" />
-                      Week of {formatDate(post.week_start)}
-                    </CardTitle>
-                    <Badge
-                      className={getToneColor(post.tone)}
-                      variant="secondary"
-                    >
-                      {tones.find((t) => t.value === post.tone)?.emoji}{' '}
-                      {post.tone}
-                    </Badge>
-                  </div>
-                  <CardDescription className="flex items-center gap-2">
-                    <Calendar className="h-3 w-3" />
-                    {formatDate(post.week_start)} - {formatDate(post.week_end)}
-                    <span className="text-muted-foreground">
-                      • {post.entry_count} entries
-                    </span>
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="flex-1">
-                  <ScrollArea className="h-48">
-                    <p className="whitespace-pre-wrap text-sm">{post.content}</p>
-                  </ScrollArea>
-                </CardContent>
-                <div className="flex gap-2 border-t p-4">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => handleCopy(post)}
-                  >
-                    {copiedId === post.id ? (
-                      <Check className="mr-2 h-4 w-4 text-green-500" />
-                    ) : (
-                      <Copy className="mr-2 h-4 w-4" />
-                    )}
-                    Copy
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => handleEdit(post)}
-                  >
-                    <Edit className="mr-2 h-4 w-4" />
-                    Edit
-                  </Button>
-                </div>
-              </Card>
-            ))}
-          </div>
+          <motion.div 
+            variants={containerVariants}
+            initial="hidden"
+            animate="visible"
+            className="grid gap-6 md:grid-cols-2"
+          >
+            {posts.map((post) => {
+              const toneGradient = toneGradients[post.tone] || toneGradients.professional;
+              const toneInfo = tones.find(t => t.value === post.tone);
+              
+              return (
+                <motion.div key={post.id} variants={cardVariants}>
+                  <Card className="premium-card group relative overflow-hidden h-full">
+                    <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${toneGradient}`} />
+                    
+                    <div className="absolute inset-0 bg-gradient-to-br from-[#0A66C2]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                    
+                    <CardHeader className="pb-3 relative">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="flex items-center gap-2 text-lg">
+                          <div className="p-1.5 rounded-lg bg-[#0A66C2]/10">
+                            <Linkedin className="h-4 w-4 text-[#0A66C2]" />
+                          </div>
+                          Week of {formatDate(post.week_start)}
+                        </CardTitle>
+                        <Badge className={`bg-gradient-to-r ${toneGradient} text-white border-0 rounded-lg`}>
+                          {toneInfo?.emoji} {post.tone}
+                        </Badge>
+                      </div>
+                      <CardDescription className="flex items-center gap-3 text-xs mt-2">
+                        <span className="flex items-center gap-1 font-mono">
+                          <Calendar className="h-3 w-3" />
+                          {formatDate(post.week_start)} - {formatDate(post.week_end)}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Hash className="h-3 w-3" />
+                          {post.entry_count} entries
+                        </span>
+                      </CardDescription>
+                    </CardHeader>
+                    
+                    <CardContent className="pb-3 relative">
+                      <div className="relative">
+                        <ScrollArea className="h-36 rounded-xl bg-muted/30 p-4 border border-border/30">
+                          <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{post.content}</p>
+                        </ScrollArea>
+                        <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-card to-transparent pointer-events-none rounded-b-xl" />
+                      </div>
+                    </CardContent>
+                    
+                    <div className="flex gap-2 border-t border-border/30 p-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 gap-2 rounded-lg border-border/50 hover:border-primary/50"
+                        onClick={() => setPreviewPost(post)}
+                      >
+                        <Eye className="h-4 w-4" />
+                        Preview
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 gap-2 rounded-lg border-border/50 hover:border-primary/50"
+                        onClick={() => handleCopy(post)}
+                      >
+                        {copiedId === post.id ? (
+                          <Check className="h-4 w-4 text-primary" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                        Copy
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 gap-2 rounded-lg border-border/50 hover:border-primary/50"
+                        onClick={() => handleEdit(post)}
+                      >
+                        <Edit className="h-4 w-4" />
+                        Edit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-2 rounded-lg border-border/50 hover:border-destructive/50 hover:text-destructive"
+                        onClick={() => handleDelete(post)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </Card>
+                </motion.div>
+              );
+            })}
+          </motion.div>
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.4 }}
+              className="flex items-center justify-between border-t border-border/30 pt-4"
+            >
+              <p className="text-sm text-muted-foreground font-mono">
                 Page {page} of {totalPages}
               </p>
               <div className="flex gap-2">
@@ -379,6 +558,7 @@ export function PostsView() {
                   size="sm"
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page === 1}
+                  className="gap-1 rounded-lg border-border/50"
                 >
                   <ChevronLeft className="h-4 w-4" />
                   Previous
@@ -388,78 +568,164 @@ export function PostsView() {
                   size="sm"
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
+                  className="gap-1 rounded-lg border-border/50"
                 >
                   Next
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
-            </div>
+            </motion.div>
           )}
         </>
       )}
 
+      <Dialog open={!!previewPost} onOpenChange={() => setPreviewPost(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] rounded-2xl border-border/50">
+          <DialogHeader className="pb-4 border-b border-border/30">
+            <DialogTitle className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-[#0A66C2]/10">
+                <Linkedin className="h-5 w-5 text-[#0A66C2]" />
+              </div>
+              LinkedIn Post Preview
+            </DialogTitle>
+            <DialogDescription className="font-mono text-xs">
+              Week of {previewPost && formatDate(previewPost.week_start)}
+            </DialogDescription>
+          </DialogHeader>
+          {previewPost && (
+            <div className="space-y-4 py-4">
+              <div className="rounded-xl border border-border/50 bg-muted/30 p-4">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="h-12 w-12 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center text-white font-bold text-lg">
+                    U
+                  </div>
+                  <div>
+                    <p className="font-semibold">Your Name</p>
+                    <p className="text-xs text-muted-foreground">Your Title  1st</p>
+                    <p className="text-xs text-muted-foreground">Just now  </p>
+                  </div>
+                </div>
+                <ScrollArea className="max-h-[300px]">
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed">{previewPost.content}</p>
+                </ScrollArea>
+              </div>
+              
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  className="flex-1 rounded-xl"
+                  onClick={() => handleCopy(previewPost)}
+                >
+                  {copiedId === previewPost.id ? (
+                    <Check className="mr-2 h-4 w-4 text-primary" />
+                  ) : (
+                    <Copy className="mr-2 h-4 w-4" />
+                  )}
+                  Copy to Clipboard
+                </Button>
+                <Button
+                  className="flex-1 rounded-xl bg-[#0A66C2] hover:bg-[#0A66C2]/90"
+                  onClick={() => window.open(getLinkedInShareUrl(previewPost.content), '_blank')}
+                >
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Share on LinkedIn
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Edit Dialog */}
       <Dialog open={!!selectedPost} onOpenChange={() => setSelectedPost(null)}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Edit Post</DialogTitle>
-            <DialogDescription>
+        <DialogContent className="max-w-2xl rounded-2xl border-border/50">
+          <DialogHeader className="pb-4 border-b border-border/30">
+            <DialogTitle className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-primary/10">
+                <Edit className="h-5 w-5 text-primary" />
+              </div>
+              Edit Post
+            </DialogTitle>
+            <DialogDescription className="font-mono text-xs">
               Week of {selectedPost && formatDate(selectedPost.week_start)}
             </DialogDescription>
           </DialogHeader>
-          <Textarea
-            value={editedContent}
-            onChange={(e) => setEditedContent(e.target.value)}
-            className="min-h-[300px]"
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSelectedPost(null)}>
+          <div className="space-y-3 py-4">
+            <label className="text-sm font-medium text-muted-foreground">Content</label>
+            <Textarea
+              value={editedContent}
+              onChange={(e) => setEditedContent(e.target.value)}
+              className="min-h-[300px] font-mono text-sm rounded-xl"
+              placeholder="Edit your post content..."
+            />
+            <p className="text-xs text-muted-foreground text-right font-mono">
+              {editedContent.length} characters
+            </p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setSelectedPost(null)} className="rounded-xl">
               Cancel
             </Button>
-            <Button onClick={handleSaveEdit}>Save Changes</Button>
+            <Button onClick={handleSaveEdit} className="rounded-xl">
+              <Check className="mr-2 h-4 w-4" />
+              Save Changes
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Generate Dialog */}
       <Dialog open={showGenerateDialog} onOpenChange={setShowGenerateDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Generate LinkedIn Post</DialogTitle>
+        <DialogContent className="rounded-2xl border-border/50">
+          <DialogHeader className="pb-4 border-b border-border/30">
+            <DialogTitle className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-primary/10">
+                <Wand2 className="h-5 w-5 text-primary" />
+              </div>
+              Generate LinkedIn Post
+            </DialogTitle>
             <DialogDescription>
-              Create a new post based on this week's entries
+              Create a new post based on your recent entries
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
+          <div className="space-y-4 py-6">
+            <div className="space-y-3">
               <label className="text-sm font-medium">Select Tone</label>
-              <Tabs value={generateTone} onValueChange={setGenerateTone}>
-                <TabsList className="grid w-full grid-cols-3">
-                  {tones.map((tone) => (
-                    <TabsTrigger key={tone.value} value={tone.value}>
-                      {tone.emoji} {tone.label}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
+              <div className="grid grid-cols-3 gap-3">
+                {tones.map((tone) => {
+                  const isSelected = generateTone === tone.value;
+                  return (
+                    <motion.button
+                      key={tone.value}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => setGenerateTone(tone.value)}
+                      className={`p-4 rounded-xl border-2 transition-all ${
+                        isSelected 
+                          ? 'border-primary bg-primary/5' 
+                          : 'border-border/50 hover:border-primary/30'
+                      }`}
+                    >
+                      <div className="text-2xl mb-2">{tone.emoji}</div>
+                      <div className="text-sm font-medium">{tone.label}</div>
+                    </motion.button>
+                  );
+                })}
+              </div>
+              <p className="text-sm text-muted-foreground text-center pt-2">
+                {tones.find(t => t.value === generateTone)?.description}
+              </p>
             </div>
-            <p className="text-sm text-muted-foreground">
-              {generateTone === 'professional' &&
-                'A polished, business-appropriate tone for professional networking.'}
-              {generateTone === 'casual' &&
-                'A friendly, conversational tone that feels approachable.'}
-              {generateTone === 'inspirational' &&
-                'An uplifting, motivational tone to inspire your audience.'}
-            </p>
           </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowGenerateDialog(false)}
-            >
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowGenerateDialog(false)} className="rounded-xl">
               Cancel
             </Button>
-            <Button onClick={handleGenerate} disabled={generating}>
+            <Button 
+              onClick={handleGenerate} 
+              disabled={generating}
+              className="rounded-xl bg-gradient-to-r from-primary to-primary/80"
+            >
               {generating ? (
                 <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
               ) : (
@@ -473,14 +739,19 @@ export function PostsView() {
 
       {/* Manual Entry Dialog */}
       <Dialog open={showManualEntryDialog} onOpenChange={setShowManualEntryDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Add Historical Post</DialogTitle>
+        <DialogContent className="max-w-2xl rounded-2xl border-border/50">
+          <DialogHeader className="pb-4 border-b border-border/30">
+            <DialogTitle className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-primary/10">
+                <Plus className="h-5 w-5 text-primary" />
+              </div>
+              Import Historical Post
+            </DialogTitle>
             <DialogDescription>
-              Manually add a previously posted progress report
+              Add a previously posted progress report to your collection
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="space-y-5 py-6">
             <div className="space-y-2">
               <label className="text-sm font-medium">Week Number</label>
               <Input
@@ -489,6 +760,7 @@ export function PostsView() {
                 value={manualWeekNumber}
                 onChange={(e) => setManualWeekNumber(e.target.value)}
                 min={1}
+                className="rounded-xl"
               />
               <p className="text-xs text-muted-foreground">
                 The week number for this progress report
@@ -500,14 +772,14 @@ export function PostsView() {
                 placeholder="Paste your LinkedIn post content here..."
                 value={manualContent}
                 onChange={(e) => setManualContent(e.target.value)}
-                className="min-h-[250px]"
+                className="min-h-[250px] font-mono text-sm rounded-xl"
               />
-              <p className="text-xs text-muted-foreground">
-                Paste the full content of your previously posted progress report
+              <p className="text-xs text-muted-foreground font-mono">
+                {manualContent.length} characters
               </p>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="gap-2">
             <Button
               variant="outline"
               onClick={() => {
@@ -515,16 +787,21 @@ export function PostsView() {
                 setManualContent('');
                 setManualWeekNumber('');
               }}
+              className="rounded-xl"
             >
               Cancel
             </Button>
-            <Button onClick={handleManualEntry} disabled={importing}>
+            <Button 
+              onClick={handleManualEntry} 
+              disabled={importing}
+              className="rounded-xl bg-gradient-to-r from-primary to-primary/80"
+            >
               {importing ? (
                 <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
               ) : (
                 <Plus className="mr-2 h-4 w-4" />
               )}
-              Add Post
+              Import Post
             </Button>
           </DialogFooter>
         </DialogContent>

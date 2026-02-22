@@ -13,7 +13,8 @@ from sqlalchemy.pool import StaticPool
 from config import settings
 from models import (
     RawEntry, StructuredEntry, DailySummary, WeeklySummary,
-    LinkedInPost, User, EntryCategory, PostTone, PostStatus
+    LinkedInPost, User, EntryCategory, PostTone, PostStatus,
+    Goal, GoalStatus, ReportFeedback
 )
 
 logger = logging.getLogger(__name__)
@@ -151,6 +152,7 @@ class PostedReportDB(Base):
     published_at = Column(DateTime, default=datetime.utcnow)
     linkedin_url = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    content_cutoff_date = Column(DateTime, nullable=True)
     
     user = relationship("UserDB")
 
@@ -174,6 +176,37 @@ class SearchablePostDB(Base):
     post_id = Column(Integer, nullable=False, index=True)
     telegram_id = Column(Integer, nullable=False, index=True)
     content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class GoalDB(Base):
+    """User goals for tracking progress"""
+    __tablename__ = "goals"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    telegram_id = Column(Integer, ForeignKey("users.telegram_id"), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    target_date = Column(DateTime, nullable=True)
+    status = Column(String(50), default="active")  # active, completed, paused, abandoned
+    progress = Column(Integer, default=0)  # 0-100
+    sub_tasks = Column(JSON, default=list)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+    
+    user = relationship("UserDB")
+
+
+class ReportFeedbackDB(Base):
+    """Self-reflection feedback on generated reports"""
+    __tablename__ = "report_feedback"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    report_type = Column(String(50), nullable=False)  # daily, weekly, linkedin
+    report_id = Column(Integer, nullable=False, index=True)
+    clarity_score = Column(Integer, nullable=False)  # 1-10
+    suggestions = Column(JSON, default=list)
+    applied_improvements = Column(JSON, default=list)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -238,6 +271,7 @@ class MemoryManager:
             ("linkedin_posts", "linkedin_url", "VARCHAR(500)"),
             ("linkedin_posts", "week_number", "INTEGER"),
             ("linkedin_posts", "version", "INTEGER DEFAULT 1"),
+            ("posted_reports", "content_cutoff_date", "TIMESTAMP" if self.is_postgres else "DATETIME"),
         ]
         
         with self.engine.connect() as conn:
@@ -257,8 +291,6 @@ class MemoryManager:
                     if not exists:
                         conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
                         logger.info(f"Added column {column} to {table}")
-                except Exception as e:
-                    logger.warning(f"Migration check for {table}.{column}: {e}")
                 except Exception as e:
                     logger.warning(f"Migration check for {table}.{column}: {e}")
             
@@ -558,8 +590,13 @@ class MemoryManager:
                 for r in results:
                     metadata = r.metadata_json or {}
                     keywords = metadata.get('keywords', [])
-                    if isinstance(keywords, str):
-                        keywords = json.loads(keywords) if keywords else []
+                    if isinstance(keywords, str) and keywords.strip():
+                        try:
+                            keywords = json.loads(keywords)
+                        except json.JSONDecodeError:
+                            keywords = []
+                    elif not isinstance(keywords, list):
+                        keywords = []
                     all_keywords.extend(keywords)
                 
                 theme_counts = Counter(all_keywords)
@@ -632,7 +669,19 @@ class MemoryManager:
             ).order_by(WeeklySummaryDB.week_end.desc()).first()
             
             if summary:
-                return WeeklySummary.model_validate(summary)
+                return WeeklySummary(
+                    id=summary.id,
+                    telegram_id=summary.telegram_id,
+                    week_start=summary.week_start,
+                    week_end=summary.week_end,
+                    daily_summaries=summary.daily_summary_ids or [],
+                    total_entries=summary.total_entries,
+                    main_themes=summary.main_themes or [],
+                    accomplishments=summary.accomplishments or [],
+                    learnings=summary.learnings or [],
+                    trends=summary.trends or {},
+                    comparison_with_previous=summary.comparison_with_previous
+                )
             return None
 
     def get_next_version_for_week(self, telegram_id: int, week_number: int) -> int:
@@ -736,6 +785,20 @@ class MemoryManager:
             logger.info(f"Marked post {post_id} as published (Week {week_number})")
             return True
     
+    def delete_linkedin_post(self, post_id: int, telegram_id: int) -> bool:
+        """Delete a generated LinkedIn post."""
+        with self.get_session() as session:
+            post = session.query(LinkedInPostDB).filter(
+                LinkedInPostDB.id == post_id,
+                LinkedInPostDB.telegram_id == telegram_id
+            ).first()
+            
+            if post:
+                session.delete(post)
+                logger.info(f"Deleted LinkedIn post {post_id}")
+                return True
+            return False
+    
     def get_published_posts(self, telegram_id: int, limit: int = 50) -> List[LinkedInPost]:
         with self.get_session() as session:
             posts = session.query(LinkedInPostDB).filter(
@@ -765,13 +828,25 @@ class MemoryManager:
             return result or 0
     
     def get_next_week_number(self, telegram_id: int) -> int:
+        """Get next week number based on POSTED reports, not drafts."""
         from config import settings
-        latest = self.get_latest_week_number(telegram_id)
+        latest_posted = self.get_latest_posted_week(telegram_id)
         
-        if latest > 0:
-            return latest + 1
+        if latest_posted > 0:
+            return latest_posted + 1
         else:
             return settings.current_week_number
+    
+    def get_last_posted_report_date(self, telegram_id: int) -> Optional[datetime]:
+        """Get the content cutoff date of the last posted report to determine cutoff for new content."""
+        with self.get_session() as session:
+            report = session.query(PostedReportDB).filter(
+                PostedReportDB.telegram_id == telegram_id
+            ).order_by(PostedReportDB.week_number.desc()).first()
+            
+            if report:
+                return report.content_cutoff_date or report.published_at
+            return None
     
     def log_nudge(self, telegram_id: int, nudge_type: str, message: str) -> None:
         with self.get_session() as session:
@@ -852,20 +927,29 @@ class MemoryManager:
 
     def save_posted_report(self, telegram_id: int, week_number: int, 
                           content: str, published_at: datetime = None,
-                          linkedin_url: str = None) -> int:
+                          linkedin_url: str = None,
+                          content_cutoff_date: datetime = None) -> int:
         with self.get_session() as session:
+            if content_cutoff_date is None:
+                from sqlalchemy import func
+                latest_entry = session.query(func.max(RawEntryDB.timestamp)).filter(
+                    RawEntryDB.telegram_id == telegram_id
+                ).scalar()
+                content_cutoff_date = latest_entry or datetime.utcnow()
+            
             report = PostedReportDB(
                 telegram_id=telegram_id,
                 week_number=week_number,
                 content=content,
                 published_at=published_at or datetime.utcnow(),
                 linkedin_url=linkedin_url,
-                created_at=datetime.utcnow()
+                created_at=datetime.utcnow(),
+                content_cutoff_date=content_cutoff_date
             )
             session.add(report)
             session.flush()
             
-            logger.info(f"Saved posted report for Week {week_number}")
+            logger.info(f"Saved posted report for Week {week_number} with cutoff {content_cutoff_date}")
             return report.id
     
     def get_posted_reports(self, telegram_id: int, limit: int = 10, offset: int = 0) -> List[Dict[str, Any]]:
@@ -880,7 +964,8 @@ class MemoryManager:
                     "week_number": r.week_number,
                     "content": r.content,
                     "published_at": r.published_at,
-                    "linkedin_url": r.linkedin_url
+                    "linkedin_url": r.linkedin_url,
+                    "content_cutoff_date": r.content_cutoff_date
                 }
                 for r in reports
             ]
@@ -960,6 +1045,28 @@ class MemoryManager:
             logger.info(f"Deleted entry with message_id {message_id}")
             return True
     
+    def get_entries(self, telegram_id: int, limit: int = 20) -> List[Dict[str, Any]]:
+        """Get recent raw entries for a user."""
+        try:
+            with self.get_session() as session:
+                entries = session.query(RawEntryDB).filter(
+                    RawEntryDB.telegram_id == telegram_id
+                ).order_by(RawEntryDB.timestamp.desc()).limit(limit).all()
+                
+                return [
+                    {
+                        "id": e.id,
+                        "telegram_id": e.telegram_id,
+                        "raw_text": e.transcript or '',
+                        "timestamp": e.timestamp,
+                        "created_at": e.timestamp
+                    }
+                    for e in entries
+                ]
+        except Exception as ex:
+            logger.error(f"Error fetching entries: {ex}")
+            return []
+    
     def get_recent_entries_for_deletion(self, telegram_id: int, limit: int = 10) -> List[Dict[str, Any]]:
         try:
             with self.get_session() as session:
@@ -1003,6 +1110,156 @@ class MemoryManager:
             ).delete()
             logger.info(f"Cleared {deleted} generated posts for user {telegram_id}")
             return deleted
+    
+    def save_goal(self, goal: Goal) -> int:
+        """Save a new goal or update existing one."""
+        with self.get_session() as session:
+            if goal.id:
+                db_goal = session.query(GoalDB).filter(GoalDB.id == goal.id).first()
+                if db_goal:
+                    db_goal.title = goal.title
+                    db_goal.description = goal.description
+                    db_goal.target_date = goal.target_date
+                    db_goal.status = goal.status.value if isinstance(goal.status, GoalStatus) else goal.status
+                    db_goal.progress = goal.progress
+                    db_goal.sub_tasks = goal.sub_tasks
+                    db_goal.updated_at = datetime.utcnow()
+                    return db_goal.id
+            
+            db_goal = GoalDB(
+                telegram_id=goal.telegram_id,
+                title=goal.title,
+                description=goal.description,
+                target_date=goal.target_date,
+                status=goal.status.value if isinstance(goal.status, GoalStatus) else goal.status,
+                progress=goal.progress,
+                sub_tasks=goal.sub_tasks
+            )
+            session.add(db_goal)
+            session.flush()
+            logger.info(f"Saved goal '{goal.title}' for user {goal.telegram_id}")
+            return db_goal.id
+    
+    def get_active_goals(self, telegram_id: int) -> List[Goal]:
+        """Get all active goals for a user."""
+        with self.get_session() as session:
+            goals = session.query(GoalDB).filter(
+                GoalDB.telegram_id == telegram_id,
+                GoalDB.status == "active"
+            ).order_by(GoalDB.created_at.desc()).all()
+            
+            return [
+                Goal(
+                    id=g.id,
+                    telegram_id=g.telegram_id,
+                    title=g.title,
+                    description=g.description,
+                    target_date=g.target_date,
+                    status=GoalStatus(g.status),
+                    progress=g.progress,
+                    sub_tasks=g.sub_tasks or [],
+                    created_at=g.created_at,
+                    updated_at=g.updated_at
+                )
+                for g in goals
+            ]
+    
+    def get_all_goals(self, telegram_id: int) -> List[Goal]:
+        """Get all goals for a user."""
+        with self.get_session() as session:
+            goals = session.query(GoalDB).filter(
+                GoalDB.telegram_id == telegram_id
+            ).order_by(GoalDB.created_at.desc()).all()
+            
+            return [
+                Goal(
+                    id=g.id,
+                    telegram_id=g.telegram_id,
+                    title=g.title,
+                    description=g.description,
+                    target_date=g.target_date,
+                    status=GoalStatus(g.status),
+                    progress=g.progress,
+                    sub_tasks=g.sub_tasks or [],
+                    created_at=g.created_at,
+                    updated_at=g.updated_at
+                )
+                for g in goals
+            ]
+    
+    def update_goal_progress(self, goal_id: int, progress: int, telegram_id: int) -> bool:
+        """Update goal progress (0-100)."""
+        with self.get_session() as session:
+            goal = session.query(GoalDB).filter(
+                GoalDB.id == goal_id,
+                GoalDB.telegram_id == telegram_id
+            ).first()
+            
+            if goal:
+                goal.progress = min(100, max(0, progress))
+                goal.updated_at = datetime.utcnow()
+                if goal.progress >= 100:
+                    goal.status = "completed"
+                logger.info(f"Updated goal {goal_id} progress to {progress}%")
+                return True
+            return False
+    
+    def update_goal_status(self, goal_id: int, status: str, telegram_id: int) -> bool:
+        """Update goal status."""
+        with self.get_session() as session:
+            goal = session.query(GoalDB).filter(
+                GoalDB.id == goal_id,
+                GoalDB.telegram_id == telegram_id
+            ).first()
+            
+            if goal:
+                goal.status = status
+                goal.updated_at = datetime.utcnow()
+                logger.info(f"Updated goal {goal_id} status to {status}")
+                return True
+            return False
+    
+    def delete_goal(self, goal_id: int, telegram_id: int) -> bool:
+        """Delete a goal."""
+        with self.get_session() as session:
+            goal = session.query(GoalDB).filter(
+                GoalDB.id == goal_id,
+                GoalDB.telegram_id == telegram_id
+            ).first()
+            
+            if goal:
+                session.delete(goal)
+                logger.info(f"Deleted goal {goal_id}")
+                return True
+            return False
+    
+    def save_report_feedback(self, feedback: ReportFeedback) -> int:
+        """Save feedback for a generated report."""
+        with self.get_session() as session:
+            db_feedback = ReportFeedbackDB(
+                report_type=feedback.report_type,
+                report_id=feedback.report_id,
+                clarity_score=feedback.clarity_score,
+                suggestions=feedback.suggestions,
+                applied_improvements=feedback.applied_improvements
+            )
+            session.add(db_feedback)
+            session.flush()
+            logger.info(f"Saved feedback for {feedback.report_type} report {feedback.report_id}")
+            return db_feedback.id
+    
+    def get_feedback_for_prompt_refinement(self, report_type: str, limit: int = 5) -> List[str]:
+        """Get recent feedback suggestions to refine future prompts."""
+        with self.get_session() as session:
+            feedbacks = session.query(ReportFeedbackDB).filter(
+                ReportFeedbackDB.report_type == report_type
+            ).order_by(ReportFeedbackDB.created_at.desc()).limit(limit).all()
+            
+            suggestions = []
+            for f in feedbacks:
+                if f.suggestions:
+                    suggestions.extend(f.suggestions)
+            return list(set(suggestions))[:10]  # Dedupe and limit
 
 memory_manager: Optional[MemoryManager] = None
 
