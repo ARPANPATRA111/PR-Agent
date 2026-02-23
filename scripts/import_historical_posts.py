@@ -70,8 +70,8 @@ def import_posts(telegram_id: int, file_path: str = None, clear_existing: bool =
     try:
         memory.get_or_create_user(
             telegram_id=telegram_id,
-            first_name="Historical Import",
-            username="historical_import"
+            first_name="Arpan",
+            username="ARPANPATRA111"
         )
         print(f"User {telegram_id} ready")
     except Exception as e:
