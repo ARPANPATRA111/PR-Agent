@@ -205,6 +205,10 @@ class User(BaseModel):
     total_entries: int = 0
     preferences: Dict[str, Any] = {}
     
+    @property
+    def timezone(self) -> str:
+        return self.preferences.get("timezone", "UTC")
+    
     class Config:
         from_attributes = True
 

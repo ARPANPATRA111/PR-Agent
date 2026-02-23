@@ -225,15 +225,16 @@ async def get_settings(telegram_id: Optional[int] = None):
         user = memory.get_user(telegram_id)
         
         if user:
+            prefs = user.preferences or {}
             return {
                 "telegram_id": str(user.telegram_id),
                 "timezone": user.timezone or "UTC",
-                "default_tone": "professional",
-                "nudge_enabled": True,
-                "nudge_time": "09:00",
-                "daily_reflection_time": "00:00",
-                "weekly_summary_day": "0",
-                "weekly_summary_time": "20:00",
+                "default_tone": prefs.get("default_tone", "professional"),
+                "nudge_enabled": prefs.get("nudge_enabled", True),
+                "nudge_time": prefs.get("nudge_time", "09:00"),
+                "daily_reflection_time": prefs.get("daily_reflection_time", "00:00"),
+                "weekly_summary_day": prefs.get("weekly_summary_day", "0"),
+                "weekly_summary_time": prefs.get("weekly_summary_time", "20:00"),
             }
     
     return {
@@ -268,6 +269,18 @@ async def update_settings(update: UserSettingsUpdate):
         )
     
     memory.update_user_timezone(telegram_id, update.timezone)
+    
+    # Save nudge and notification settings to preferences
+    prefs = user.preferences or {}
+    prefs.update({
+        "default_tone": update.default_tone,
+        "nudge_enabled": update.nudge_enabled,
+        "nudge_time": update.nudge_time,
+        "daily_reflection_time": update.daily_reflection_time,
+        "weekly_summary_day": update.weekly_summary_day,
+        "weekly_summary_time": update.weekly_summary_time,
+    })
+    memory.update_user_preferences(telegram_id, prefs)
     
     return {
         "success": True,

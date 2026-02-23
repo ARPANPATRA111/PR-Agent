@@ -24,23 +24,23 @@ export function Header({ telegramId, onMenuClick }: HeaderProps) {
   const { logout } = useAuth();
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-14 items-center">
+    <header className="sticky top-0 z-50 w-full border-b bg-background">
+      <div className="container flex h-14 items-center px-4">
         <Button
           variant="ghost"
           size="icon"
-          className="mr-2 lg:hidden"
+          className="mr-3 lg:hidden"
           onClick={onMenuClick}
         >
           <Menu className="h-5 w-5" />
           <span className="sr-only">Toggle menu</span>
         </Button>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
             <span className="text-lg font-bold text-primary-foreground">W</span>
           </div>
-          <span className="hidden font-bold sm:inline-block">
+          <span className="hidden font-semibold sm:inline-block">
             Weekly Progress Agent
           </span>
         </div>

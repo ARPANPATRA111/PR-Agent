@@ -459,8 +459,6 @@ export function PostsView() {
                   <Card className="premium-card group relative overflow-hidden h-full">
                     <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${toneGradient}`} />
                     
-                    <div className="absolute inset-0 bg-gradient-to-br from-[#0A66C2]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                    
                     <CardHeader className="pb-3 relative">
                       <div className="flex items-center justify-between">
                         <CardTitle className="flex items-center gap-2 text-lg">

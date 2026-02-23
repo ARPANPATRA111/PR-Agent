@@ -1,39 +1,39 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { Header } from '@/components/layout/header';
 import { Sidebar, ViewType } from '@/components/layout/sidebar';
-import { Dashboard } from '@/components/dashboard/dashboard';
-import { EntriesView } from '@/components/entries/entries-view';
-import { PostsView } from '@/components/posts/posts-view';
-import { SummariesView } from '@/components/summaries/summaries-view';
-import { PostedReportsView } from '@/components/posted-reports/posted-reports-view';
-import { SettingsView } from '@/components/settings/settings-view';
 import { useAuth } from '@/lib/auth';
 import { LoginForm } from '@/components/auth/login-form';
+
+// Lazy load views for better performance
+const Dashboard = lazy(() => import('@/components/dashboard/dashboard').then(m => ({ default: m.Dashboard })));
+const EntriesView = lazy(() => import('@/components/entries/entries-view').then(m => ({ default: m.EntriesView })));
+const PostsView = lazy(() => import('@/components/posts/posts-view').then(m => ({ default: m.PostsView })));
+const SummariesView = lazy(() => import('@/components/summaries/summaries-view').then(m => ({ default: m.SummariesView })));
+const PostedReportsView = lazy(() => import('@/components/posted-reports/posted-reports-view').then(m => ({ default: m.PostedReportsView })));
+const SettingsView = lazy(() => import('@/components/settings/settings-view').then(m => ({ default: m.SettingsView })));
+
+function LoadingFallback() {
+  return (
+    <div className="flex items-center justify-center min-h-[50vh]">
+      <div className="spinner" />
+    </div>
+  );
+}
 
 export default function Home() {
   const { isAuthenticated, isLoading } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentView, setCurrentView] = useState<ViewType>('dashboard');
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background animated-gradient">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="flex flex-col items-center gap-4"
-        >
-          <div className="w-12 h-12 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-          <span className="text-muted-foreground font-medium">Loading...</span>
-        </motion.div>
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <div className="spinner" />
+          <span className="text-muted-foreground text-sm">Loading...</span>
+        </div>
       </div>
     );
   }
@@ -62,40 +62,20 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-background animated-gradient">
-      {/* Glow orbs for ambient effect */}
-      <div className="glow-orb glow-orb-1" aria-hidden="true" />
-      <div className="glow-orb glow-orb-2" aria-hidden="true" />
-      <div className="glow-orb glow-orb-3" aria-hidden="true" />
-      
-      {/* Noise texture overlay */}
-      <div className="noise-overlay" aria-hidden="true" />
-      
-      {/* Grid pattern */}
-      <div className="fixed inset-0 grid-pattern pointer-events-none" aria-hidden="true" />
-      
-      <Header
-        onMenuClick={() => setSidebarOpen(!sidebarOpen)}
-      />
+    <div className="min-h-screen bg-background">
+      <Header onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
       <Sidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         currentView={currentView}
         onViewChange={setCurrentView}
       />
-      <main className="lg:pl-64 relative z-10">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={currentView}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
-            className="container py-6 px-4 lg:px-8"
-          >
+      <main className="lg:pl-64">
+        <div className="container py-6 px-4 lg:px-8">
+          <Suspense fallback={<LoadingFallback />}>
             {renderView()}
-          </motion.div>
-        </AnimatePresence>
+          </Suspense>
+        </div>
       </main>
     </div>
   );

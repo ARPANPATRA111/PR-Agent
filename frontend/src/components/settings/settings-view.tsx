@@ -46,6 +46,7 @@ import { useToast } from '@/components/ui/use-toast';
 
 interface SettingsData {
   telegram_id: string;
+  timezone: string;
   default_tone: string;
   nudge_enabled: boolean;
   nudge_time: string;
@@ -100,6 +101,7 @@ const cardVariants = {
 export function SettingsView() {
   const [settings, setSettings] = useState<SettingsData>({
     telegram_id: '',
+    timezone: 'UTC',
     default_tone: 'professional',
     nudge_enabled: true,
     nudge_time: '09:00',
@@ -122,8 +124,12 @@ export function SettingsView() {
         setSettings(prev => ({ ...prev, telegram_id: savedTelegramId }));
       }
       
+      const settingsUrl = savedTelegramId 
+        ? `/api/settings?telegram_id=${savedTelegramId}` 
+        : '/api/settings';
+      
       const [settingsData, statusData] = await Promise.all([
-        fetchAPI('/api/settings').catch(() => null),
+        fetchAPI(settingsUrl).catch(() => null),
         fetchAPI('/api/health').catch(() => null),
       ]);
       if (settingsData) {

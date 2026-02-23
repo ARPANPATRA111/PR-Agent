@@ -359,6 +359,32 @@ class MemoryManager:
             
             return user.streak
     
+    def update_user_timezone(self, telegram_id: int, timezone: str) -> bool:
+        with self.get_session() as session:
+            user = session.query(UserDB).filter(
+                UserDB.telegram_id == telegram_id
+            ).first()
+            
+            if not user:
+                return False
+            
+            prefs = user.preferences or {}
+            prefs["timezone"] = timezone
+            user.preferences = prefs
+            return True
+    
+    def update_user_preferences(self, telegram_id: int, preferences: Dict[str, Any]) -> bool:
+        with self.get_session() as session:
+            user = session.query(UserDB).filter(
+                UserDB.telegram_id == telegram_id
+            ).first()
+            
+            if not user:
+                return False
+            
+            user.preferences = preferences
+            return True
+    
     def get_user_stats(self, telegram_id: int) -> Dict[str, Any]:
         with self.get_session() as session:
             user = session.query(UserDB).filter(
