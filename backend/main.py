@@ -210,6 +210,7 @@ async def delete_webhook():
 class UserSettingsUpdate(BaseModel):
     telegram_id: str
     timezone: str = "UTC"
+    display_name: str = ""
     default_tone: str = "professional"
     nudge_enabled: bool = True
     nudge_time: str = "09:00"
@@ -229,6 +230,7 @@ async def get_settings(telegram_id: Optional[int] = None):
             return {
                 "telegram_id": str(user.telegram_id),
                 "timezone": user.timezone or "UTC",
+                "display_name": prefs.get("display_name", user.first_name or ""),
                 "default_tone": prefs.get("default_tone", "professional"),
                 "nudge_enabled": prefs.get("nudge_enabled", True),
                 "nudge_time": prefs.get("nudge_time", "09:00"),
@@ -240,6 +242,7 @@ async def get_settings(telegram_id: Optional[int] = None):
     return {
         "telegram_id": "",
         "timezone": settings.timezone,
+        "display_name": "",
         "default_tone": "professional",
         "nudge_enabled": True,
         "nudge_time": "09:00",
@@ -273,6 +276,7 @@ async def update_settings(update: UserSettingsUpdate):
     # Save nudge and notification settings to preferences
     prefs = user.preferences or {}
     prefs.update({
+        "display_name": update.display_name,
         "default_tone": update.default_tone,
         "nudge_enabled": update.nudge_enabled,
         "nudge_time": update.nudge_time,

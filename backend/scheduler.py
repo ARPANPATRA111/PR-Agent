@@ -159,7 +159,8 @@ class SchedulerManager:
             user = session.query(UserDB).filter(
                 UserDB.telegram_id == user_id
             ).first()
-            user_name = user.first_name if user else "there"
+            prefs = (user.preferences or {}) if user else {}
+            user_name = prefs.get('display_name') or (user.first_name if user else "there")
         
         summary = self.agent.generate_daily_reflection(
             entries=entries,
@@ -314,9 +315,11 @@ Great week! 🎉"""
                     ).first()
                     
                     if not today_entry:
+                        prefs = user.preferences or {}
+                        display_name = prefs.get('display_name') or user.first_name
                         users_to_nudge.append({
                             "id": user.telegram_id,
-                            "name": user.first_name,
+                            "name": display_name,
                             "streak": user.streak
                         })
             
@@ -432,9 +435,12 @@ Great week! 🎉"""
                 
                 now = datetime.now(self.timezone)
                 
+                prefs = user.preferences or {}
+                display_name = prefs.get('display_name') or user.first_name or "there"
+                
                 return {
                     "telegram_id": user_id,
-                    "user_name": user.first_name or "there",
+                    "user_name": display_name,
                     "streak": user.streak or 0,
                     "time_since_last_entry": round(hours_since, 1),
                     "entry_count_today": today_count,
@@ -619,9 +625,11 @@ Great week! 🎉"""
                     ).first()
                     
                     if not today_entry:
+                        prefs = user.preferences or {}
+                        display_name = prefs.get('display_name') or user.first_name
                         users_to_remind.append({
                             'id': user.telegram_id,
-                            'name': user.first_name
+                            'name': display_name
                         })
             
             for user in users_to_remind:

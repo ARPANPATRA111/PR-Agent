@@ -47,6 +47,7 @@ import { useToast } from '@/components/ui/use-toast';
 interface SettingsData {
   telegram_id: string;
   timezone: string;
+  display_name: string;
   default_tone: string;
   nudge_enabled: boolean;
   nudge_time: string;
@@ -102,6 +103,7 @@ export function SettingsView() {
   const [settings, setSettings] = useState<SettingsData>({
     telegram_id: '',
     timezone: 'UTC',
+    display_name: '',
     default_tone: 'professional',
     nudge_enabled: true,
     nudge_time: '09:00',
@@ -358,6 +360,23 @@ export function SettingsView() {
                 <p className="text-xs text-muted-foreground flex items-center gap-1">
                   <HelpCircle className="h-3 w-3" />
                   Send /start to @your_bot to get your ID
+                </p>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium flex items-center gap-2">
+                  Display Name
+                </label>
+                <Input
+                  value={settings.display_name}
+                  onChange={(e) =>
+                    setSettings({ ...settings, display_name: e.target.value })
+                  }
+                  placeholder="Your name for notifications (e.g., Arpan)"
+                  className="rounded-xl"
+                />
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <HelpCircle className="h-3 w-3" />
+                  This name will be used in nudges and reminders
                 </p>
               </div>
             </CardContent>
