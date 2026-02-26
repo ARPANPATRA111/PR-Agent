@@ -331,6 +331,17 @@ class MemoryManager:
                 user_db.last_active = datetime.utcnow()
             
             return User.model_validate(user_db)
+
+    def get_user(self, telegram_id: int) -> Optional[User]:
+        with self.get_session() as session:
+            user_db = session.query(UserDB).filter(
+                UserDB.telegram_id == telegram_id
+            ).first()
+
+            if not user_db:
+                return None
+
+            return User.model_validate(user_db)
     
     def update_user_streak(self, telegram_id: int) -> int:
         with self.get_session() as session:

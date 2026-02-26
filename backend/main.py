@@ -227,15 +227,16 @@ async def get_settings(telegram_id: Optional[int] = None):
         
         if user:
             prefs = user.preferences or {}
+            display_name = (prefs.get("display_name") or "").strip() or (user.first_name or "")
             return {
                 "telegram_id": str(user.telegram_id),
                 "timezone": prefs.get("timezone", settings.timezone),
-                "display_name": prefs.get("display_name", user.first_name or ""),
+                "display_name": display_name,
                 "default_tone": prefs.get("default_tone", "professional"),
                 "nudge_enabled": prefs.get("nudge_enabled", True),
                 "nudge_time": prefs.get("nudge_time", "09:00"),
                 "daily_reflection_time": prefs.get("daily_reflection_time", "00:00"),
-                "weekly_summary_day": prefs.get("weekly_summary_day", "0"),
+                "weekly_summary_day": str(prefs.get("weekly_summary_day", "0")),
                 "weekly_summary_time": prefs.get("weekly_summary_time", "20:00"),
             }
     
