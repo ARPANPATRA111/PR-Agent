@@ -7,7 +7,7 @@ import httpx
 from config import settings
 from models import (
     TelegramUpdate, TelegramMessage, RawEntry, StructuredEntry,
-    EntryCategory, StatusResponse
+    EntryCategory, StatusResponse, ReportFeedback
 )
 from memory import get_memory_manager
 from llm_agent import get_llm_agent
@@ -315,6 +315,7 @@ class BotHandler:
             "/delete": self._cmd_delete,
             "/recent": self._cmd_recent,
             "/goal": self._cmd_goal,
+            "/set_goal": self._cmd_goal,
             "/goals": self._cmd_goals,
         }
         
@@ -381,6 +382,7 @@ Send a voice message about:
 /recent - Show recent entries
 /delete [ID] - Delete an entry
 /goal [text] - Set a new goal
+/set_goal [text] - Set a new goal
 /goals - View all your goals
 /help - This help
 
@@ -622,6 +624,17 @@ Send a voice note or text with #log to start logging.
                 return
             
             logger.info(f"Found {len(entries)} new entries for user {user_id}")
+
+            feedback_suggestions = self.memory.get_feedback_for_prompt_refinement(
+                report_type="linkedin",
+                limit=5
+            )
+            refinement_instructions = ""
+            if feedback_suggestions:
+                refinement_instructions = (
+                    "Apply this quality feedback from previous generated reports:\n"
+                    + "\n".join([f"- {item}" for item in feedback_suggestions])
+                )
             
             daily_summaries = self.memory.get_daily_summaries(user_id, days=7)
             logger.info(f"Found {len(daily_summaries)} daily summaries for user {user_id}")
@@ -676,6 +689,7 @@ Send a voice note or text with #log to start logging.
                 
                 posts = self.agent.generate_linkedin_posts(
                     weekly_summary,
+                    custom_instructions=refinement_instructions,
                     recent_posts=recent_published,
                     week_number=next_week
                 )
@@ -703,14 +717,32 @@ Send a voice note or text with #log to start logging.
                 
                 posts = self.agent.generate_linkedin_posts(
                     weekly_summary,
+                    custom_instructions=refinement_instructions,
                     recent_posts=recent_published,
                     week_number=next_week
                 )
             
+            saved_post_ids = []
             for post in posts:
                 post.telegram_id = user_id
                 post.weekly_summary_id = weekly_summary.id
-                self.memory.save_linkedin_post(post)
+                post_id = self.memory.save_linkedin_post(post)
+                saved_post_ids.append(post_id)
+
+            if posts and saved_post_ids:
+                critique = self.agent.critique_report(
+                    report_content=posts[0].content,
+                    report_type="linkedin"
+                )
+
+                feedback = ReportFeedback(
+                    report_type="linkedin",
+                    report_id=saved_post_ids[0],
+                    clarity_score=int(critique.get("clarity_score", 7)),
+                    suggestions=critique.get("suggestions", [])[:5],
+                    applied_improvements=[]
+                )
+                self.memory.save_report_feedback(feedback)
             
             await self.telegram.send_message(
                 chat_id,
@@ -733,6 +765,16 @@ Send a voice note or text with #log to start logging.
                 chat_id,
                 "💡 <b>Tip:</b> View and edit these posts in the web dashboard for easier copying!"
             )
+
+            if posts and saved_post_ids:
+                top_suggestion = ""
+                if feedback.suggestions:
+                    top_suggestion = f"\n💡 <b>Next improvement:</b> {feedback.suggestions[0]}"
+                await self.telegram.send_message(
+                    chat_id,
+                    f"🪞 <b>Auto Review</b>\n"
+                    f"Clarity score: <b>{feedback.clarity_score}/10</b>{top_suggestion}"
+                )
             
         except Exception as e:
             logger.error(f"Error generating posts: {e}", exc_info=True)

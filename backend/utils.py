@@ -148,6 +148,13 @@ def extract_keywords(text: str, max_keywords: int = 10) -> list:
 def format_duration(seconds: int) -> str:
     if seconds < 60:
         return f"{seconds}s"
+
+    if seconds >= 3600:
+        hours = seconds // 3600
+        remaining_minutes = (seconds % 3600) // 60
+        if remaining_minutes == 0:
+            return f"{hours}h"
+        return f"{hours}h {remaining_minutes}m"
     
     minutes = seconds // 60
     remaining_seconds = seconds % 60

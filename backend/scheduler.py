@@ -101,6 +101,112 @@ class SchedulerManager:
             )
         
         logger.info("Scheduled jobs configured")
+
+    def _upsert_cron_job(self, job_id: str, func, name: str, **cron_kwargs):
+        trigger = CronTrigger(timezone=self.timezone, **cron_kwargs)
+        if self.scheduler.get_job(job_id):
+            self.scheduler.reschedule_job(job_id, trigger=trigger)
+        else:
+            self.scheduler.add_job(
+                func,
+                trigger,
+                id=job_id,
+                name=name,
+                replace_existing=True
+            )
+
+    def _parse_time(self, value: str, fallback_hour: int, fallback_minute: int) -> tuple[int, int]:
+        try:
+            hour_str, minute_str = (value or "").split(":", 1)
+            hour = int(hour_str)
+            minute = int(minute_str)
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                return hour, minute
+        except Exception:
+            pass
+        return fallback_hour, fallback_minute
+
+    def _ui_weekday_to_cron(self, value: str) -> str:
+        mapping = {
+            "0": "sun",
+            "1": "mon",
+            "2": "tue",
+            "3": "wed",
+            "4": "thu",
+            "5": "fri",
+            "6": "sat",
+        }
+        return mapping.get(str(value), "sun")
+
+    def apply_user_schedule(self, preferences: dict):
+        timezone_name = preferences.get("timezone") or settings.timezone
+        try:
+            self.timezone = pytz.timezone(timezone_name)
+        except Exception:
+            logger.warning(f"Invalid timezone '{timezone_name}', using default {settings.timezone}")
+            self.timezone = pytz.timezone(settings.timezone)
+
+        reflection_hour, reflection_minute = self._parse_time(
+            preferences.get("daily_reflection_time", ""),
+            settings.daily_reflection_hour,
+            settings.daily_reflection_minute,
+        )
+        summary_hour, summary_minute = self._parse_time(
+            preferences.get("weekly_summary_time", ""),
+            settings.weekly_summary_hour,
+            settings.weekly_summary_minute,
+        )
+        nudge_hour, nudge_minute = self._parse_time(
+            preferences.get("nudge_time", ""),
+            settings.morning_nudge_hour,
+            settings.morning_nudge_minute,
+        )
+        weekly_day = self._ui_weekday_to_cron(preferences.get("weekly_summary_day", "0"))
+        nudge_enabled = bool(preferences.get("nudge_enabled", True))
+
+        self._upsert_cron_job(
+            job_id="daily_reflection",
+            func=self.run_daily_reflection,
+            name="Daily Reflection Generator",
+            hour=reflection_hour,
+            minute=reflection_minute,
+        )
+
+        self._upsert_cron_job(
+            job_id="weekly_summary",
+            func=self.run_weekly_summary,
+            name="Weekly Summary Generator",
+            day_of_week=weekly_day,
+            hour=summary_hour,
+            minute=summary_minute,
+        )
+
+        if nudge_enabled:
+            self._upsert_cron_job(
+                job_id="morning_nudge",
+                func=self.run_morning_nudge,
+                name="Morning Nudge",
+                hour=nudge_hour,
+                minute=nudge_minute,
+            )
+        elif self.scheduler.get_job("morning_nudge"):
+            self.scheduler.remove_job("morning_nudge")
+
+        logger.info(
+            "Applied user schedule: reflection=%02d:%02d, weekly=%s %02d:%02d, nudge=%s %02d:%02d",
+            reflection_hour,
+            reflection_minute,
+            weekly_day,
+            summary_hour,
+            summary_minute,
+            "enabled" if nudge_enabled else "disabled",
+            nudge_hour,
+            nudge_minute,
+        )
+
+    def _is_nudge_enabled_for_user(self, user) -> bool:
+        prefs = user.preferences or {}
+        return bool(prefs.get("nudge_enabled", True))
     
     def start(self):
         if not self.scheduler.running:
@@ -306,6 +412,9 @@ Great week! 🎉"""
                 users_to_nudge = []
                 
                 for user in active_users:
+                    if not self._is_nudge_enabled_for_user(user):
+                        continue
+
                     day_start, _ = get_day_boundaries()
                     from memory import RawEntryDB
                     
@@ -349,6 +458,12 @@ Great week! 🎉"""
             
             for user_id in users_to_nudge:
                 try:
+                    with self.memory.get_session() as session:
+                        from memory import UserDB
+                        user = session.query(UserDB).filter(UserDB.telegram_id == user_id).first()
+                        if user and not self._is_nudge_enabled_for_user(user):
+                            continue
+
                     user_context = await self._build_user_context(user_id)
                     
                     if not user_context:
@@ -619,6 +734,9 @@ Great week! 🎉"""
                 day_start, _ = get_day_boundaries()
                 
                 for user in active_users:
+                    if not self._is_nudge_enabled_for_user(user):
+                        continue
+
                     today_entry = session.query(RawEntryDB).filter(
                         RawEntryDB.telegram_id == user.telegram_id,
                         RawEntryDB.timestamp >= day_start

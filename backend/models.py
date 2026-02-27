@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from enum import Enum
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, AliasChoices
 
 
 class EntryCategory(str, Enum):
@@ -99,6 +99,7 @@ class ClassificationResult(BaseModel):
     summary: str
     keywords: List[str] = []
     sentiment: str = "neutral"
+    confidence: float = 0.0
 
 
 class DailySummary(BaseModel):
@@ -138,7 +139,9 @@ class WeeklySummary(BaseModel):
 
 class LinkedInPost(BaseModel):
     id: Optional[int] = None
-    telegram_id: int
+    telegram_id: int = Field(
+        validation_alias=AliasChoices("telegram_id", "user_id")
+    )
     weekly_summary_id: Optional[int] = None
     tone: PostTone
     content: str
@@ -149,6 +152,7 @@ class LinkedInPost(BaseModel):
     linkedin_url: Optional[str] = None
     week_number: Optional[int] = None
     version: int = 1
+    hashtags: List[str] = []
     
     class Config:
         from_attributes = True

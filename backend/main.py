@@ -229,7 +229,7 @@ async def get_settings(telegram_id: Optional[int] = None):
             prefs = user.preferences or {}
             return {
                 "telegram_id": str(user.telegram_id),
-                "timezone": user.timezone or "UTC",
+                "timezone": prefs.get("timezone", settings.timezone),
                 "display_name": prefs.get("display_name", user.first_name or ""),
                 "default_tone": prefs.get("default_tone", "professional"),
                 "nudge_enabled": prefs.get("nudge_enabled", True),
@@ -266,30 +266,43 @@ async def update_settings(update: UserSettingsUpdate):
     user = memory.get_user(telegram_id)
     
     if not user:
-        raise HTTPException(
-            status_code=404, 
-            detail="User not found. Please start the bot with /start first."
+        fallback_name = (update.display_name or "").strip() or "User"
+        memory.get_or_create_user(
+            telegram_id=telegram_id,
+            first_name=fallback_name
         )
+        user = memory.get_user(telegram_id)
     
     memory.update_user_timezone(telegram_id, update.timezone)
     
     # Save nudge and notification settings to preferences
-    prefs = user.preferences or {}
+    prefs = (user.preferences or {}) if user else {}
+    cleaned_display_name = (update.display_name or "").strip()
     prefs.update({
-        "display_name": update.display_name,
+        "display_name": cleaned_display_name,
         "default_tone": update.default_tone,
         "nudge_enabled": update.nudge_enabled,
         "nudge_time": update.nudge_time,
         "daily_reflection_time": update.daily_reflection_time,
         "weekly_summary_day": update.weekly_summary_day,
         "weekly_summary_time": update.weekly_summary_time,
+        "timezone": update.timezone,
     })
     memory.update_user_preferences(telegram_id, prefs)
+
+    schedule_applied = False
+    try:
+        scheduler = get_scheduler()
+        scheduler.apply_user_schedule(prefs)
+        schedule_applied = True
+    except Exception as e:
+        logger.warning(f"Failed to apply updated schedule for user {telegram_id}: {e}")
     
     return {
         "success": True,
         "message": "Settings updated successfully",
-        "telegram_id": str(telegram_id)
+        "telegram_id": str(telegram_id),
+        "schedule_applied": schedule_applied
     }
 
 

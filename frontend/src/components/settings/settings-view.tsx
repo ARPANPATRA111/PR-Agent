@@ -145,6 +145,11 @@ export function SettingsView() {
       }
     } catch (err) {
       console.error('Failed to load settings:', err);
+      toast({
+        title: 'Could not load settings',
+        description: err instanceof Error ? err.message : 'Using default values',
+        variant: 'destructive',
+      });
     } finally {
       setLoading(false);
     }
@@ -180,19 +185,15 @@ export function SettingsView() {
       setSaving(true);
       
       setTelegramId(settings.telegram_id);
-      
-      try {
-        await fetchAPI('/api/settings', {
-          method: 'PUT',
-          body: JSON.stringify(settings),
-        });
-      } catch (backendErr) {
-        console.warn('Backend settings save failed (user may need to /start bot first):', backendErr);
-      }
+
+      await fetchAPI('/api/settings', {
+        method: 'PUT',
+        body: JSON.stringify(settings),
+      });
       
       toast({
         title: 'Settings saved!',
-        description: 'Your preferences have been updated. Refresh pages to see changes.',
+        description: 'Your preferences have been updated and scheduling has been refreshed.',
       });
     } catch (err) {
       toast({
