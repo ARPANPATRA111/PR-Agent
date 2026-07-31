@@ -9,8 +9,8 @@ import Script from 'next/script';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Weekly Progress Agent',
-  description: 'Track your daily progress and generate LinkedIn posts automatically',
+  title: 'PR-Agent Mini App',
+  description: 'Private Telegram tracking for work, notes, money, nutrition, goals, and reminders.',
 };
 
 export default function RootLayout({

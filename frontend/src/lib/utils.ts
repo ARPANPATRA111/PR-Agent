@@ -35,6 +35,10 @@ export async function fetchAPI<T = unknown>(
     headers,
   });
 
+  if (response.status === 401 && typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('pr-agent:session-expired'));
+  }
+
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     const detail =

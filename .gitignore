@@ -131,6 +131,7 @@ docs/*
 !docs/LOCAL_DEVELOPMENT.md
 !docs/CORE_CRUD.md
 !docs/NUTRITION.md
+!docs/MINI_APP.md
 changelog.md
 docker-compose.override.yml
 docker-compose.prod.yml

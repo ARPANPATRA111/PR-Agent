@@ -13,6 +13,7 @@ import { fetchAPI, setCsrfToken } from '@/lib/utils';
 
 interface TelegramWebApp {
   initData: string;
+  colorScheme?: 'light' | 'dark';
   ready: () => void;
   expand: () => void;
 }
@@ -65,11 +66,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const webApp = window.Telegram?.WebApp;
       const initData = webApp?.initData;
       if (!initData) {
-        throw new Error('Open this dashboard from the bot in Telegram.');
+        throw new Error('Open this Mini App from the bot in Telegram.');
       }
 
       webApp.ready();
       webApp.expand();
+      if (webApp.colorScheme) {
+        document.documentElement.classList.toggle(
+          'dark',
+          webApp.colorScheme === 'dark',
+        );
+      }
 
       const result = await fetchAPI<TelegramAuthResponse>(
         '/api/auth/telegram',
@@ -97,13 +104,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void authenticate();
   }, [authenticate]);
 
+  useEffect(() => {
+    const handleSessionExpiry = () => {
+      setCsrfToken(null);
+      setUser(null);
+      setError('Your session expired. Reopen or retry the Mini App.');
+    };
+    window.addEventListener('pr-agent:session-expired', handleSessionExpiry);
+    return () => {
+      window.removeEventListener(
+        'pr-agent:session-expired',
+        handleSessionExpiry,
+      );
+    };
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await fetchAPI('/api/auth/logout', { method: 'POST' });
     } finally {
       setCsrfToken(null);
       setUser(null);
-      setError('Open the dashboard from the bot to sign in again.');
+      setError('Open the Mini App from the bot to sign in again.');
     }
   }, []);
 

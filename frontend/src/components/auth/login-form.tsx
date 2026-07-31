@@ -26,7 +26,7 @@ export function LoginForm() {
           </div>
           <CardTitle className="text-2xl text-center">PR-Agent</CardTitle>
           <CardDescription className="text-center">
-            This dashboard is secured by your Telegram account.
+            This Mini App is secured by your Telegram account.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
