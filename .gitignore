@@ -132,6 +132,7 @@ docs/*
 !docs/CORE_CRUD.md
 !docs/NUTRITION.md
 !docs/MINI_APP.md
+!docs/DURABLE_WORKER.md
 changelog.md
 docker-compose.override.yml
 docker-compose.prod.yml

@@ -133,15 +133,13 @@ export interface NutritionPreferences {
   updated_at: string;
 }
 
-export interface AppSettings {
+export interface SchedulePreferences {
+  preference_version: number;
+  digest_version: number;
   timezone: string;
-  display_name: string;
-  default_tone: string;
-  nudge_enabled: boolean;
-  nudge_time: string;
-  daily_reflection_time: string;
-  weekly_summary_day: string;
-  weekly_summary_time: string;
+  sunday_digest_enabled: boolean;
+  sunday_digest_time: string;
+  next_digest_at_utc: string | null;
 }
 
 export type ScreenName =

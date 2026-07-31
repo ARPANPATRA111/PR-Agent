@@ -1,6 +1,6 @@
 """Strict public-v2 request and response schemas."""
 
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 import re
 from typing import Literal
@@ -85,6 +85,25 @@ class IdempotentCreate(StrictSchema):
 
 class VersionedUpdate(StrictSchema):
     version: int = Field(ge=1)
+
+
+class SchedulePreferenceUpdate(StrictSchema):
+    preference_version: int = Field(ge=1)
+    digest_version: int = Field(ge=1)
+    timezone: str = Field(min_length=1, max_length=64)
+    sunday_digest_enabled: bool
+    sunday_digest_time: time
+
+    _timezone = field_validator("timezone")(_validate_timezone)
+
+
+class SchedulePreferenceResponse(StrictSchema):
+    preference_version: int
+    digest_version: int
+    timezone: str
+    sunday_digest_enabled: bool
+    sunday_digest_time: time
+    next_digest_at_utc: datetime | None
 
 
 class WorkLogCreate(IdempotentCreate):

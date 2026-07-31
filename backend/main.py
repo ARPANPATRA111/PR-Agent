@@ -39,14 +39,20 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting Weekly Progress Agent...")
-    
+    legacy_scheduler = None
     try:
         memory = get_memory_manager()
         logger.info("Memory manager initialized")
-        
-        scheduler = get_scheduler()
-        scheduler.start()
-        logger.info("Scheduler started")
+
+        if settings.public_v2_enabled:
+            logger.info(
+                "Public-v2 uses the standalone durable worker; "
+                "legacy in-process schedules are disabled"
+            )
+        else:
+            legacy_scheduler = get_scheduler()
+            legacy_scheduler.start()
+            logger.info("Legacy scheduler started")
         
         logger.info(f"Bot token configured: {'Yes' if settings.telegram_bot_token else 'No'}")
         logger.info(f"Groq API key configured: {'Yes' if settings.groq_api_key else 'No'}")
@@ -63,8 +69,8 @@ async def lifespan(app: FastAPI):
     
     logger.info("Shutting down Weekly Progress Agent...")
     
-    scheduler = get_scheduler()
-    scheduler.shutdown()
+    if legacy_scheduler is not None:
+        legacy_scheduler.shutdown()
     
     logger.info("Shutdown complete")
 

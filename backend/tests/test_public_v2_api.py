@@ -172,6 +172,40 @@ def test_api_core_create_list_and_money_summary(api_client):
     )
 
 
+def test_schedule_preferences_are_versioned_and_sunday_only(api_client):
+    client, _ = api_client
+    current = client.get("/api/v2/schedule-preferences")
+    assert current.status_code == 200
+    settings = current.json()
+    assert settings["sunday_digest_enabled"] is False
+
+    updated = client.patch(
+        "/api/v2/schedule-preferences",
+        json={
+            "preference_version": settings["preference_version"],
+            "digest_version": settings["digest_version"],
+            "timezone": "Asia/Kolkata",
+            "sunday_digest_enabled": True,
+            "sunday_digest_time": "20:00:00",
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["sunday_digest_enabled"] is True
+    assert updated.json()["next_digest_at_utc"] is not None
+
+    stale = client.patch(
+        "/api/v2/schedule-preferences",
+        json={
+            "preference_version": settings["preference_version"],
+            "digest_version": settings["digest_version"],
+            "timezone": "UTC",
+            "sunday_digest_enabled": False,
+            "sunday_digest_time": "20:00:00",
+        },
+    )
+    assert stale.status_code == 409
+
+
 def test_api_invalid_inputs_are_clear_422_responses(api_client):
     client, _ = api_client
     invalid_amount = client.post(

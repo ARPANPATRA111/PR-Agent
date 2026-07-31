@@ -99,16 +99,14 @@ async function mockApi(page: Page, validAuth = true) {
       await json({ success: true });
       return;
     }
-    if (path === '/api/settings') {
+    if (path === '/api/v2/schedule-preferences') {
       await json({
+        preference_version: 1,
+        digest_version: 1,
         timezone: 'UTC',
-        display_name: 'Alice',
-        default_tone: 'professional',
-        nudge_enabled: true,
-        nudge_time: '09:00',
-        daily_reflection_time: '00:00',
-        weekly_summary_day: '0',
-        weekly_summary_time: '20:00',
+        sunday_digest_enabled: false,
+        sunday_digest_time: '20:00:00',
+        next_digest_at_utc: null,
       });
       return;
     }

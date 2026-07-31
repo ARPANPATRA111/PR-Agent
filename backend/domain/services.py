@@ -30,6 +30,7 @@ from domain.schemas import (
     NoteUpdate,
     ReminderCreate,
     ReminderUpdate,
+    SchedulePreferenceUpdate,
     THREE_DECIMAL_CURRENCIES,
     WorkLogCreate,
     WorkLogUpdate,
@@ -42,10 +43,12 @@ from public_models import (
     NutritionLog,
     PublicUser,
     Reminder,
+    ScheduledDigest,
     TrackedGoal,
     UserPreference,
     WorkLog,
 )
+from domain.scheduling import next_weekly_occurrence
 from nutrition.providers import (
     NutritionEstimationProvider,
     NutritionProviderUnavailable,
@@ -135,6 +138,22 @@ class DomainServices:
         )
         if preference is None:
             self.session.add(UserPreference(owner_id=owner.id, timezone="UTC"))
+            self.session.flush()
+        digest = (
+            self.session.query(ScheduledDigest)
+            .filter(ScheduledDigest.owner_id == owner.id)
+            .one_or_none()
+        )
+        if digest is None:
+            self.session.add(
+                ScheduledDigest(
+                    owner_id=owner.id,
+                    timezone=preference.timezone if preference else "UTC",
+                    weekday=6,
+                    scheduled_local_time="20:00:00",
+                    enabled=False,
+                )
+            )
             self.session.flush()
         return owner
 
@@ -743,6 +762,86 @@ class DomainServices:
 
     def delete_reminder(self, owner_id: int, record_id: int) -> None:
         self._delete_owned(self.session, Reminder, owner_id, record_id)
+
+    # Durable per-user schedule preferences
+    def get_schedule_preferences(self, owner_id: int) -> dict[str, Any]:
+        preference = (
+            self.session.query(UserPreference)
+            .filter(UserPreference.owner_id == owner_id)
+            .one_or_none()
+        )
+        if preference is None:
+            preference = UserPreference(owner_id=owner_id, timezone="UTC")
+            self.session.add(preference)
+            self.session.flush()
+        digest = (
+            self.session.query(ScheduledDigest)
+            .filter(ScheduledDigest.owner_id == owner_id)
+            .one_or_none()
+        )
+        if digest is None:
+            digest = ScheduledDigest(
+                owner_id=owner_id,
+                timezone=preference.timezone,
+                weekday=6,
+                scheduled_local_time="20:00:00",
+                enabled=preference.sunday_digest_enabled,
+            )
+            self.session.add(digest)
+            self.session.flush()
+        return {
+            "preference_version": preference.version,
+            "digest_version": digest.version,
+            "timezone": preference.timezone,
+            "sunday_digest_enabled": digest.enabled,
+            "sunday_digest_time": digest.scheduled_local_time,
+            "next_digest_at_utc": digest.next_run_at_utc,
+        }
+
+    def update_schedule_preferences(
+        self,
+        owner_id: int,
+        data: SchedulePreferenceUpdate,
+    ) -> dict[str, Any]:
+        current = self.get_schedule_preferences(owner_id)
+        if (
+            current["preference_version"] != data.preference_version
+            or current["digest_version"] != data.digest_version
+        ):
+            raise ConcurrentUpdate(
+                "Schedule settings changed elsewhere. Reload and try again."
+            )
+        preference = (
+            self.session.query(UserPreference)
+            .filter(UserPreference.owner_id == owner_id)
+            .one()
+        )
+        digest = (
+            self.session.query(ScheduledDigest)
+            .filter(ScheduledDigest.owner_id == owner_id)
+            .one()
+        )
+        local_time = data.sunday_digest_time.replace(tzinfo=None)
+        preference.timezone = data.timezone
+        preference.sunday_digest_enabled = data.sunday_digest_enabled
+        preference.version += 1
+        digest.timezone = data.timezone
+        digest.weekday = 6
+        digest.scheduled_local_time = local_time.isoformat()
+        digest.enabled = data.sunday_digest_enabled
+        digest.next_run_at_utc = (
+            next_weekly_occurrence(
+                timezone_name=data.timezone,
+                weekday=6,
+                scheduled_local_time=local_time.isoformat(),
+                after_utc=utc_now(),
+            )
+            if data.sunday_digest_enabled
+            else None
+        )
+        digest.version += 1
+        self.session.flush()
+        return self.get_schedule_preferences(owner_id)
 
     # Nutrition
     def get_nutrition_preferences(self, owner_id: int) -> UserPreference:

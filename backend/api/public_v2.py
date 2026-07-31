@@ -35,6 +35,8 @@ from domain.schemas import (
     ReminderCreate,
     ReminderResponse,
     ReminderUpdate,
+    SchedulePreferenceResponse,
+    SchedulePreferenceUpdate,
     WorkLogCreate,
     WorkLogResponse,
     WorkLogUpdate,
@@ -360,6 +362,25 @@ def update_reminder(
 def delete_reminder(record_id: int, context: DomainContext = Context):
     context.service.delete_reminder(context.owner_id, record_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/schedule-preferences",
+    response_model=SchedulePreferenceResponse,
+)
+def get_schedule_preferences(context: DomainContext = Context):
+    return context.service.get_schedule_preferences(context.owner_id)
+
+
+@router.patch(
+    "/schedule-preferences",
+    response_model=SchedulePreferenceResponse,
+)
+def update_schedule_preferences(
+    data: SchedulePreferenceUpdate,
+    context: DomainContext = Context,
+):
+    return context.service.update_schedule_preferences(context.owner_id, data)
 
 
 @router.get(

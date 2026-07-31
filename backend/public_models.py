@@ -24,7 +24,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, relationship
 
-
 NAMING_CONVENTION = {
     "ix": "ix_%(table_name)s_%(column_0_N_name)s",
     "uq": "uq_%(table_name)s_%(column_0_N_name)s",
@@ -33,9 +32,7 @@ NAMING_CONVENTION = {
     "pk": "pk_%(table_name)s",
 }
 
-PublicBase = declarative_base(
-    metadata=MetaData(naming_convention=NAMING_CONVENTION)
-)
+PublicBase = declarative_base(metadata=MetaData(naming_convention=NAMING_CONVENTION))
 
 
 def utc_timestamp():
@@ -268,6 +265,11 @@ class Reminder(PublicBase, TimestampMixin):
             "enabled",
             "next_run_at_utc",
         ),
+        Index(
+            "ix_reminders_enabled_next_run_at_utc",
+            "enabled",
+            "next_run_at_utc",
+        ),
     )
 
 
@@ -294,6 +296,10 @@ class ReminderDelivery(PublicBase, TimestampMixin):
     attempt_count = Column(Integer, nullable=False, server_default="0")
     delivered_at_utc = Column(DateTime(timezone=True), nullable=True)
     last_error_category = Column(String(64), nullable=True)
+    next_attempt_at_utc = Column(DateTime(timezone=True), nullable=True)
+    claimed_at_utc = Column(DateTime(timezone=True), nullable=True)
+    lease_expires_at_utc = Column(DateTime(timezone=True), nullable=True)
+    telegram_message_id = Column(BigInteger, nullable=True)
 
     reminder = relationship("Reminder", back_populates="deliveries")
 
@@ -304,7 +310,8 @@ class ReminderDelivery(PublicBase, TimestampMixin):
             name="uq_reminder_delivery_occurrence",
         ),
         CheckConstraint(
-            "status IN ('pending', 'claimed', 'sent', 'failed', 'cancelled')",
+            "status IN "
+            "('pending', 'claimed', 'sent', 'failed', 'dead_letter', 'cancelled')",
             name="status_supported",
         ),
         CheckConstraint(
@@ -315,6 +322,11 @@ class ReminderDelivery(PublicBase, TimestampMixin):
             "ix_reminder_deliveries_owner_id_status",
             "owner_id",
             "status",
+        ),
+        Index(
+            "ix_reminder_deliveries_status_next_attempt_at_utc",
+            "status",
+            "next_attempt_at_utc",
         ),
     )
 
@@ -686,6 +698,11 @@ class ScheduledDigest(PublicBase, TimestampMixin):
             "enabled",
             "next_run_at_utc",
         ),
+        Index(
+            "ix_scheduled_digests_enabled_next_run_at_utc",
+            "enabled",
+            "next_run_at_utc",
+        ),
     )
 
 
@@ -698,11 +715,27 @@ class DigestDelivery(PublicBase, TimestampMixin):
         ForeignKey("app_users.id", ondelete="CASCADE"),
         nullable=False,
     )
+    scheduled_digest_id = Column(
+        Integer,
+        ForeignKey("scheduled_digests.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    scheduled_occurrence_at_utc = Column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
     digest_week_start = Column(Date, nullable=False)
     idempotency_key = Column(String(128), nullable=False, unique=True)
     status = Column(String(24), nullable=False, server_default="pending")
     delivered_at_utc = Column(DateTime(timezone=True), nullable=True)
     last_error_category = Column(String(64), nullable=True)
+    attempt_count = Column(Integer, nullable=False, server_default="0")
+    next_attempt_at_utc = Column(DateTime(timezone=True), nullable=True)
+    claimed_at_utc = Column(DateTime(timezone=True), nullable=True)
+    lease_expires_at_utc = Column(DateTime(timezone=True), nullable=True)
+    telegram_message_id = Column(BigInteger, nullable=True)
+    message_text = Column(Text, nullable=True)
+    payload_snapshot = Column(JSON, nullable=True)
 
     __table_args__ = (
         UniqueConstraint(
@@ -710,10 +743,24 @@ class DigestDelivery(PublicBase, TimestampMixin):
             "digest_week_start",
             name="uq_digest_deliveries_owner_week",
         ),
+        CheckConstraint(
+            "status IN "
+            "('pending', 'claimed', 'sent', 'failed', 'dead_letter', 'cancelled')",
+            name="status_supported",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0",
+            name="attempt_count_nonnegative",
+        ),
         Index(
             "ix_digest_deliveries_owner_id_digest_week_start",
             "owner_id",
             "digest_week_start",
+        ),
+        Index(
+            "ix_digest_deliveries_status_next_attempt_at_utc",
+            "status",
+            "next_attempt_at_utc",
         ),
     )
 

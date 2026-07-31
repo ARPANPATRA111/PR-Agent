@@ -17,11 +17,12 @@ not create public posts or progress-report artifacts.
 - Work logs, notes, reminders, income/expenses, goals, and nutrition records
 - Draft-first nutrition estimates with visible assumptions and manual editing
 - Mobile-first Telegram Mini App with light/dark theme support
+- Durable multi-replica reminder and opt-in Sunday-summary worker
 - Optimistic concurrency, idempotency keys, UTC storage, and minor-unit money
 - Additive Alembic migrations that preserve the legacy schema
 
-Production scheduling, exports/account deletion, agent orchestration, and final
-deployment hardening are being completed in later public-v2 phases.
+Exports/account deletion, agent orchestration, and final deployment hardening
+are being completed in later public-v2 phases.
 
 ## Architecture
 
@@ -107,6 +108,7 @@ PostgreSQL integration tests use the development Compose stack described in
 - [Core CRUD](docs/CORE_CRUD.md)
 - [Nutrition](docs/NUTRITION.md)
 - [Mini App](docs/MINI_APP.md)
+- [Durable worker](docs/DURABLE_WORKER.md)
 - [Deployment](DEPLOYMENT.md)
 - [Secret rotation checklist](docs/SECRET_ROTATION_CHECKLIST.md)
 

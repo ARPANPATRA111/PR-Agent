@@ -26,7 +26,6 @@ import {
 import { fetchAPI, formatDateTime } from '@/lib/utils';
 import { useApiResource } from '@/lib/use-api-resource';
 import type {
-  AppSettings,
   Goal,
   LedgerEntry,
   LedgerSummary,
@@ -36,6 +35,7 @@ import type {
   NutritionPreferences,
   NutritionSummary,
   Reminder,
+  SchedulePreferences,
   ScreenName,
   WorkLog,
 } from '@/lib/public-types';
@@ -1398,7 +1398,7 @@ export function NutritionScreen() {
 export function SettingsScreen() {
   const resource = useApiResource(async () => {
     const [settings, nutrition] = await Promise.all([
-      fetchAPI<AppSettings>('/api/settings'),
+      fetchAPI<SchedulePreferences>('/api/v2/schedule-preferences'),
       fetchAPI<NutritionPreferences>('/api/v2/nutrition/preferences'),
     ]);
     return { settings, nutrition };
@@ -1419,34 +1419,39 @@ export function SettingsScreen() {
         description="Timezone, nutrition targets, and confirmation preferences."
       />
       <SettingsForm
-        key={`${resource.data.nutrition.version}:${resource.data.settings.timezone}`}
+        key={`${resource.data.nutrition.version}:${resource.data.settings.digest_version}`}
         initial={resource.data}
         onSaved={async (payload) => {
           setSaved(false);
           setError(null);
           try {
-            await Promise.all([
-              fetchAPI('/api/settings', {
-                method: 'PUT',
-                body: JSON.stringify({
-                  ...resource.data!.settings,
-                  timezone: payload.timezone,
-                }),
-              }),
-              fetchAPI('/api/v2/nutrition/preferences', {
+            const schedule = await fetchAPI<SchedulePreferences>(
+              '/api/v2/schedule-preferences',
+              {
                 method: 'PATCH',
                 body: JSON.stringify({
-                  version: resource.data!.nutrition.version,
+                  preference_version:
+                    resource.data!.settings.preference_version,
+                  digest_version: resource.data!.settings.digest_version,
                   timezone: payload.timezone,
-                  calorie_target: payload.calorieTarget || null,
-                  protein_target_grams: payload.proteinTarget || null,
-                  default_milk_serving_ml: payload.milkServing,
-                  measurement_system: payload.measurementSystem,
-                  nutrition_confirmation_required:
-                    payload.confirmationRequired,
+                  sunday_digest_enabled: payload.sundayDigestEnabled,
+                  sunday_digest_time: payload.sundayDigestTime,
                 }),
+              },
+            );
+            await fetchAPI('/api/v2/nutrition/preferences', {
+              method: 'PATCH',
+              body: JSON.stringify({
+                version: schedule.preference_version,
+                timezone: payload.timezone,
+                calorie_target: payload.calorieTarget || null,
+                protein_target_grams: payload.proteinTarget || null,
+                default_milk_serving_ml: payload.milkServing,
+                measurement_system: payload.measurementSystem,
+                nutrition_confirmation_required:
+                  payload.confirmationRequired,
               }),
-            ]);
+            });
             setSaved(true);
             await resource.reload();
           } catch (mutationError) {
@@ -1472,7 +1477,10 @@ function SettingsForm({
   initial,
   onSaved,
 }: {
-  initial: { settings: AppSettings; nutrition: NutritionPreferences };
+  initial: {
+    settings: SchedulePreferences;
+    nutrition: NutritionPreferences;
+  };
   onSaved: (values: {
     timezone: string;
     calorieTarget: string;
@@ -1480,6 +1488,8 @@ function SettingsForm({
     milkServing: string;
     measurementSystem: 'metric' | 'imperial';
     confirmationRequired: boolean;
+    sundayDigestEnabled: boolean;
+    sundayDigestTime: string;
   }) => Promise<void>;
 }) {
   const [timezone, setTimezone] = useState(initial.settings.timezone);
@@ -1498,6 +1508,12 @@ function SettingsForm({
   const [confirmationRequired, setConfirmationRequired] = useState(
     initial.nutrition.nutrition_confirmation_required,
   );
+  const [sundayDigestEnabled, setSundayDigestEnabled] = useState(
+    initial.settings.sunday_digest_enabled,
+  );
+  const [sundayDigestTime, setSundayDigestTime] = useState(
+    initial.settings.sunday_digest_time.slice(0, 5),
+  );
 
   return (
     <form
@@ -1511,6 +1527,8 @@ function SettingsForm({
           milkServing,
           measurementSystem,
           confirmationRequired,
+          sundayDigestEnabled,
+          sundayDigestTime,
         });
       }}
     >
@@ -1596,6 +1614,40 @@ function SettingsForm({
         />
         Always require confirmation before nutrition totals count
       </label>
+      <div className="rounded-lg border p-3">
+        <label className="flex min-h-11 items-center gap-3 text-sm">
+          <input
+            type="checkbox"
+            checked={sundayDigestEnabled}
+            onChange={(event) =>
+              setSundayDigestEnabled(event.target.checked)
+            }
+            className="h-5 w-5"
+          />
+          Send my private Sunday summary
+        </label>
+        <FormField
+          label="Sunday delivery time"
+          htmlFor="settings-digest-time"
+          hint="Uses the IANA timezone above."
+        >
+          <input
+            id="settings-digest-time"
+            type="time"
+            required
+            disabled={!sundayDigestEnabled}
+            value={sundayDigestTime}
+            onChange={(event) => setSundayDigestTime(event.target.value)}
+            className={inputClassName}
+          />
+        </FormField>
+        {initial.settings.next_digest_at_utc ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Next delivery:{' '}
+            {formatDateTime(initial.settings.next_digest_at_utc)}
+          </p>
+        ) : null}
+      </div>
       <button type="submit" className={buttonClassName}>
         Save settings
       </button>

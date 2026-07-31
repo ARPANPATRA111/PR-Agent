@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   AccountDeletionScreen,
+  SettingsScreen,
   WorkLogsScreen,
 } from './screens';
 
@@ -121,5 +122,81 @@ describe('important Mini App forms', () => {
         expect.objectContaining({ method: 'DELETE' }),
       ),
     );
+  });
+
+  it('updates shared schedule and nutrition preferences without a version race', async () => {
+    const patchRequests: Array<{ url: string; body: Record<string, unknown> }> =
+      [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (urlValue: string, options?: RequestInit) => {
+        const url = String(urlValue);
+        const method = options?.method || 'GET';
+        if (method === 'PATCH') {
+          const body = JSON.parse(String(options?.body)) as Record<
+            string,
+            unknown
+          >;
+          patchRequests.push({ url, body });
+          if (url.endsWith('/api/v2/schedule-preferences')) {
+            return jsonResponse({
+              preference_version: 2,
+              digest_version: 2,
+              timezone: 'UTC',
+              sunday_digest_enabled: true,
+              sunday_digest_time: '20:00:00',
+              next_digest_at_utc: new Date().toISOString(),
+            });
+          }
+          return jsonResponse({
+            owner_id: 1,
+            version: 3,
+            timezone: 'UTC',
+            calorie_target: null,
+            protein_target_grams: null,
+            carbohydrate_target_grams: null,
+            fat_target_grams: null,
+            default_milk_serving_ml: '250.00',
+            measurement_system: 'metric',
+            nutrition_confirmation_required: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+        }
+        if (url.endsWith('/api/v2/schedule-preferences')) {
+          return jsonResponse({
+            preference_version: 1,
+            digest_version: 1,
+            timezone: 'UTC',
+            sunday_digest_enabled: false,
+            sunday_digest_time: '20:00:00',
+            next_digest_at_utc: null,
+          });
+        }
+        return jsonResponse({
+          owner_id: 1,
+          version: 1,
+          timezone: 'UTC',
+          calorie_target: null,
+          protein_target_grams: null,
+          carbohydrate_target_grams: null,
+          fat_target_grams: null,
+          default_milk_serving_ml: '250.00',
+          measurement_system: 'metric',
+          nutrition_confirmation_required: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<SettingsScreen />);
+    await user.click(await screen.findByText('Send my private Sunday summary'));
+    await user.click(screen.getByRole('button', { name: 'Save settings' }));
+
+    await waitFor(() => expect(patchRequests).toHaveLength(2));
+    expect(patchRequests[0].url).toContain('/schedule-preferences');
+    expect(patchRequests[1].url).toContain('/nutrition/preferences');
+    expect(patchRequests[1].body.version).toBe(2);
   });
 });
