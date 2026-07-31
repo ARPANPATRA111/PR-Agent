@@ -108,6 +108,10 @@ class Settings(BaseSettings):
         default="./data/chroma",
         description="ChromaDB persistence directory"
     )
+    nutrition_provider: Literal["disabled", "reference"] = Field(
+        default="reference",
+        description="Validated nutrition estimation provider",
+    )
     
     whisper_model: str = Field(
         default="base",

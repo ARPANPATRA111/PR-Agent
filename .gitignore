@@ -130,6 +130,7 @@ docs/*
 !docs/DATABASE_MIGRATIONS.md
 !docs/LOCAL_DEVELOPMENT.md
 !docs/CORE_CRUD.md
+!docs/NUTRITION.md
 changelog.md
 docker-compose.override.yml
 docker-compose.prod.yml

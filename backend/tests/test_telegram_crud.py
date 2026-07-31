@@ -7,8 +7,17 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from bot import BotHandler
+from config import settings
 from models import TelegramMessage
-from public_models import LedgerEntry, Note, PublicBase, Reminder, TrackedGoal, WorkLog
+from public_models import (
+    LedgerEntry,
+    Note,
+    NutritionLog,
+    PublicBase,
+    Reminder,
+    TrackedGoal,
+    WorkLog,
+)
 
 
 class FakeTelegramClient:
@@ -152,3 +161,50 @@ async def test_command_output_escapes_user_html(bot_and_factory):
     output = bot.telegram.messages[-1]
     assert "<script>" not in output
     assert "&lt;script&gt;" in output
+
+
+@pytest.mark.asyncio
+async def test_food_preview_confirm_edit_summary_and_delete(
+    bot_and_factory,
+    monkeypatch,
+):
+    bot, factory = bot_and_factory
+    monkeypatch.setattr(settings, "nutrition_provider", "reference")
+    await bot._handle_command(
+        telegram_message(
+            "/food 50 g paneer and one glass of milk",
+            40,
+        )
+    )
+    assert "approximately" in bot.telegram.messages[-1].lower()
+    assert "/confirmfood 1" in bot.telegram.messages[-1]
+
+    await bot._handle_command(telegram_message("/confirmfood 1", 41))
+    await bot._handle_command(telegram_message("/editfood 1 1 100 g 300 20", 42))
+    await bot._handle_command(telegram_message("/nutrition", 43))
+    assert "approximately" in bot.telegram.messages[-1].lower()
+
+    await bot._handle_command(telegram_message("/deletefood 1", 44))
+    session = factory()
+    try:
+        assert session.query(NutritionLog).count() == 0
+    finally:
+        session.close()
+
+
+@pytest.mark.asyncio
+async def test_food_provider_outage_preserves_original_draft(
+    bot_and_factory,
+    monkeypatch,
+):
+    bot, factory = bot_and_factory
+    monkeypatch.setattr(settings, "nutrition_provider", "disabled")
+    await bot._handle_command(telegram_message("/food 100 g paneer", 50))
+    assert "original entry preserved" in bot.telegram.messages[-1].lower()
+    session = factory()
+    try:
+        draft = session.query(NutritionLog).one()
+        assert draft.original_text == "100 g paneer"
+        assert draft.estimation_source == "provider_unavailable"
+    finally:
+        session.close()

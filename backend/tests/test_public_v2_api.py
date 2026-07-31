@@ -12,6 +12,7 @@ import api.public_v2 as public_api
 from auth import TokenData, get_current_user
 from domain.errors import DomainError
 from public_models import PublicBase
+from nutrition.providers import NutritionProviderUnavailable
 
 
 @pytest.fixture()
@@ -198,3 +199,89 @@ def test_api_invalid_inputs_are_clear_422_responses(api_client):
     assert invalid_amount.status_code == 422
     assert invalid_currency.status_code == 422
     assert long_note.status_code == 422
+
+
+def test_nutrition_preview_confirm_edit_summary_and_isolation(api_client):
+    client, identity = api_client
+    preview = client.post(
+        "/api/v2/nutrition",
+        json={
+            "original_text": "50 g paneer and one glass of milk",
+            "meal_name": "lunch",
+            "timezone": "Asia/Kolkata",
+            "idempotency_key": "api-food-key-1",
+        },
+    )
+    assert preview.status_code == 201
+    draft = preview.json()
+    assert draft["status"] == "draft"
+    assert len(draft["items"]) == 2
+    assert any("250" in value for value in draft["visible_assumptions"])
+
+    identity["telegram_id"] = 2002
+    assert client.get(f"/api/v2/nutrition/{draft['id']}").status_code == 404
+    identity["telegram_id"] = 1001
+
+    confirmed = client.post(
+        f"/api/v2/nutrition/{draft['id']}/confirm",
+        json={"version": draft["version"]},
+    )
+    assert confirmed.status_code == 200
+    confirmed_data = confirmed.json()
+    assert confirmed_data["status"] == "confirmed"
+
+    item = confirmed_data["items"][0]
+    edited = client.patch(
+        f"/api/v2/nutrition/{draft['id']}/items/{item['id']}",
+        json={
+            "version": item["version"],
+            "protein_grams": "25.000",
+        },
+    )
+    assert edited.status_code == 200
+    assert edited.json()["user_modified"] is True
+    local_date = edited.json()["user_local_date"]
+    summary = client.get(
+        "/api/v2/nutrition/summary",
+        params={"start_date": local_date, "end_date": local_date},
+    )
+    assert summary.status_code == 200
+    assert summary.json()["confirmed_meals"] == 1
+
+    preferences = client.get("/api/v2/nutrition/preferences").json()
+    targets = client.patch(
+        "/api/v2/nutrition/preferences",
+        json={
+            "version": preferences["version"],
+            "calorie_target": "2000",
+            "protein_target_grams": "100",
+        },
+    )
+    assert targets.status_code == 200
+    assert targets.json()["calorie_target"] == "2000.00"
+    assert client.delete(f"/api/v2/nutrition/{draft['id']}").status_code == 204
+
+
+def test_nutrition_provider_failure_preserves_draft(
+    api_client,
+    monkeypatch,
+):
+    client, _ = api_client
+
+    class Unavailable:
+        def estimate(self, description, **kwargs):
+            del description, kwargs
+            raise NutritionProviderUnavailable("timeout")
+
+    monkeypatch.setattr(
+        public_api,
+        "get_nutrition_provider",
+        lambda name: Unavailable(),
+    )
+    response = client.post(
+        "/api/v2/nutrition",
+        json={"original_text": "100 g paneer", "timezone": "UTC"},
+    )
+    assert response.status_code == 201
+    assert response.json()["original_text"] == "100 g paneer"
+    assert response.json()["estimation_source"] == "provider_unavailable"

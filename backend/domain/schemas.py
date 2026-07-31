@@ -377,3 +377,268 @@ class ReminderResponse(RecordResponse):
     next_run_at_utc: datetime | None
     recurrence_rule: dict | None
     enabled: bool
+
+
+class EstimatedNutritionItem(StrictSchema):
+    original_item_text: str = Field(min_length=1, max_length=1_000)
+    normalized_name: str = Field(min_length=1, max_length=255)
+    quantity_value: Decimal = Field(
+        gt=0,
+        le=Decimal("100000"),
+        max_digits=12,
+        decimal_places=3,
+    )
+    quantity_unit: str = Field(min_length=1, max_length=32)
+    portion_description: str | None = Field(default=None, max_length=255)
+    estimated_grams: Decimal | None = Field(
+        default=None,
+        ge=0,
+        le=Decimal("1000000"),
+        max_digits=12,
+        decimal_places=3,
+    )
+    calories: Decimal = Field(
+        ge=0,
+        le=Decimal("10000000"),
+        max_digits=12,
+        decimal_places=2,
+    )
+    protein_grams: Decimal = Field(
+        ge=0,
+        le=Decimal("1000000"),
+        max_digits=12,
+        decimal_places=3,
+    )
+    carbohydrate_grams: Decimal | None = Field(
+        default=None,
+        ge=0,
+        le=Decimal("1000000"),
+        max_digits=12,
+        decimal_places=3,
+    )
+    fat_grams: Decimal | None = Field(
+        default=None,
+        ge=0,
+        le=Decimal("1000000"),
+        max_digits=12,
+        decimal_places=3,
+    )
+    visible_assumptions: list[str] = Field(default_factory=list, max_length=10)
+    confidence: Decimal | None = Field(
+        default=None,
+        ge=0,
+        le=1,
+        max_digits=5,
+        decimal_places=4,
+    )
+
+    _text = field_validator(
+        "original_item_text",
+        "normalized_name",
+        "portion_description",
+    )(lambda value: _reject_control_characters(value) if value is not None else value)
+
+
+class NutritionEstimate(StrictSchema):
+    items: list[EstimatedNutritionItem] = Field(default_factory=list, max_length=50)
+    visible_assumptions: list[str] = Field(default_factory=list, max_length=30)
+    provider_name: str = Field(min_length=1, max_length=64)
+    provider_version: str = Field(min_length=1, max_length=64)
+    confidence: Decimal | None = Field(
+        default=None,
+        ge=0,
+        le=1,
+        max_digits=5,
+        decimal_places=4,
+    )
+    clarification_required: bool = False
+    clarification_question: str | None = Field(default=None, max_length=1_000)
+
+    @model_validator(mode="after")
+    def result_is_actionable(self):
+        if self.clarification_required and not self.clarification_question:
+            raise ValueError("A clarification question is required")
+        if not self.clarification_required and not self.items:
+            raise ValueError("At least one estimated item is required")
+        return self
+
+
+class NutritionDraftCreate(IdempotentCreate):
+    original_text: str = Field(min_length=1, max_length=MAX_TEXT)
+    meal_name: str | None = Field(default=None, min_length=1, max_length=128)
+    logged_at_local: datetime | None = None
+    timezone: str = Field(default="UTC", min_length=1, max_length=64)
+
+    _timezone = field_validator("timezone")(_validate_timezone)
+    _text = field_validator("original_text", "meal_name")(
+        lambda value: _reject_control_characters(value) if value is not None else value
+    )
+
+
+class NutritionConfirm(VersionedUpdate):
+    pass
+
+
+class NutritionManualSave(VersionedUpdate):
+    items: list[EstimatedNutritionItem] = Field(min_length=1, max_length=50)
+    visible_assumptions: list[str] = Field(default_factory=list, max_length=30)
+
+
+class NutritionItemUpdate(VersionedUpdate):
+    quantity_value: Decimal | None = Field(
+        default=None,
+        gt=0,
+        le=Decimal("100000"),
+        max_digits=12,
+        decimal_places=3,
+    )
+    quantity_unit: str | None = Field(default=None, min_length=1, max_length=32)
+    portion_description: str | None = Field(default=None, max_length=255)
+    estimated_grams: Decimal | None = Field(
+        default=None,
+        ge=0,
+        le=Decimal("1000000"),
+        max_digits=12,
+        decimal_places=3,
+    )
+    calories: Decimal | None = Field(
+        default=None,
+        ge=0,
+        le=Decimal("10000000"),
+        max_digits=12,
+        decimal_places=2,
+    )
+    protein_grams: Decimal | None = Field(
+        default=None,
+        ge=0,
+        le=Decimal("1000000"),
+        max_digits=12,
+        decimal_places=3,
+    )
+    carbohydrate_grams: Decimal | None = Field(
+        default=None,
+        ge=0,
+        le=Decimal("1000000"),
+        max_digits=12,
+        decimal_places=3,
+    )
+    fat_grams: Decimal | None = Field(
+        default=None,
+        ge=0,
+        le=Decimal("1000000"),
+        max_digits=12,
+        decimal_places=3,
+    )
+
+    @model_validator(mode="after")
+    def serving_edits_include_macros(self):
+        serving_changed = any(
+            value is not None
+            for value in (
+                self.quantity_value,
+                self.quantity_unit,
+                self.estimated_grams,
+            )
+        )
+        if serving_changed and (self.calories is None or self.protein_grams is None):
+            raise ValueError("Serving edits require updated calories and protein")
+        return self
+
+
+class NutritionItemResponse(RecordResponse):
+    nutrition_log_id: int
+    original_item_text: str
+    normalized_name: str
+    quantity_value: Decimal | None
+    quantity_unit: str | None
+    portion_description: str | None
+    estimated_grams: Decimal | None
+    calories: Decimal
+    protein_grams: Decimal
+    carbohydrate_grams: Decimal | None
+    fat_grams: Decimal | None
+    estimation_source: str
+    confidence: Decimal | None
+    visible_assumptions: list[str]
+    user_modified: bool
+
+
+class NutritionLogResponse(RecordResponse):
+    meal_name: str | None
+    logged_at_utc: datetime
+    user_local_date: date
+    timezone: str
+    original_text: str
+    status: str
+    total_calories: Decimal
+    total_protein_grams: Decimal
+    total_carbohydrate_grams: Decimal | None
+    total_fat_grams: Decimal | None
+    estimation_source: str
+    overall_confidence: Decimal | None
+    visible_assumptions: list[str]
+    provider_metadata: dict
+    clarification_question: str | None
+    confirmed_by_user: bool
+    user_modified: bool
+    items: list[NutritionItemResponse]
+
+
+class NutritionPreferenceUpdate(VersionedUpdate):
+    timezone: str | None = Field(default=None, min_length=1, max_length=64)
+    calorie_target: Decimal | None = Field(
+        default=None, ge=0, max_digits=12, decimal_places=2
+    )
+    protein_target_grams: Decimal | None = Field(
+        default=None, ge=0, max_digits=12, decimal_places=3
+    )
+    carbohydrate_target_grams: Decimal | None = Field(
+        default=None, ge=0, max_digits=12, decimal_places=3
+    )
+    fat_target_grams: Decimal | None = Field(
+        default=None, ge=0, max_digits=12, decimal_places=3
+    )
+    default_milk_serving_ml: Decimal | None = Field(
+        default=None,
+        gt=0,
+        le=5000,
+        max_digits=10,
+        decimal_places=2,
+    )
+    measurement_system: Literal["metric", "imperial"] | None = None
+    nutrition_confirmation_required: bool | None = None
+
+    _timezone = field_validator("timezone")(
+        lambda value: _validate_timezone(value) if value is not None else value
+    )
+
+
+class NutritionPreferenceResponse(StrictSchema):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+    owner_id: int
+    version: int
+    timezone: str
+    calorie_target: Decimal | None
+    protein_target_grams: Decimal | None
+    carbohydrate_target_grams: Decimal | None
+    fat_target_grams: Decimal | None
+    default_milk_serving_ml: Decimal
+    measurement_system: str
+    nutrition_confirmation_required: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class NutritionPeriodSummary(StrictSchema):
+    start_date: date
+    end_date: date
+    confirmed_meals: int
+    unestimated_meals: int
+    total_calories: Decimal
+    total_protein_grams: Decimal
+    total_carbohydrate_grams: Decimal | None
+    total_fat_grams: Decimal | None
+    average_daily_calories: Decimal
+    average_daily_protein_grams: Decimal
+    calorie_target: Decimal | None
+    protein_target_grams: Decimal | None

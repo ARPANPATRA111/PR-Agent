@@ -24,6 +24,14 @@ from domain.schemas import (
     NoteCreate,
     NoteResponse,
     NoteUpdate,
+    NutritionConfirm,
+    NutritionDraftCreate,
+    NutritionItemUpdate,
+    NutritionLogResponse,
+    NutritionManualSave,
+    NutritionPeriodSummary,
+    NutritionPreferenceResponse,
+    NutritionPreferenceUpdate,
     ReminderCreate,
     ReminderResponse,
     ReminderUpdate,
@@ -33,6 +41,7 @@ from domain.schemas import (
 )
 from domain.services import DomainServices
 from memory import get_memory_manager
+from nutrition.providers import get_nutrition_provider
 
 router = APIRouter(prefix="/api/v2", tags=["Public v2"])
 
@@ -350,4 +359,174 @@ def update_reminder(
 )
 def delete_reminder(record_id: int, context: DomainContext = Context):
     context.service.delete_reminder(context.owner_id, record_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/nutrition/preferences",
+    response_model=NutritionPreferenceResponse,
+)
+def get_nutrition_preferences(context: DomainContext = Context):
+    return context.service.get_nutrition_preferences(context.owner_id)
+
+
+@router.patch(
+    "/nutrition/preferences",
+    response_model=NutritionPreferenceResponse,
+)
+def update_nutrition_preferences(
+    data: NutritionPreferenceUpdate,
+    context: DomainContext = Context,
+):
+    return context.service.update_nutrition_preferences(context.owner_id, data)
+
+
+@router.get(
+    "/nutrition/summary",
+    response_model=NutritionPeriodSummary,
+)
+def summarize_nutrition(
+    start_date: date,
+    end_date: date,
+    context: DomainContext = Context,
+):
+    return context.service.summarize_nutrition(
+        context.owner_id,
+        start_date,
+        end_date,
+    )
+
+
+@router.post(
+    "/nutrition",
+    response_model=NutritionLogResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_nutrition_preview(
+    data: NutritionDraftCreate,
+    context: DomainContext = Context,
+):
+    provider = get_nutrition_provider(settings.nutrition_provider)
+    return context.service.estimate_nutrition_draft(
+        context.owner_id,
+        data,
+        provider,
+    )
+
+
+@router.get("/nutrition", response_model=list[NutritionLogResponse])
+def list_nutrition_logs(
+    start_date: date | None = None,
+    end_date: date | None = None,
+    nutrition_status: Literal["draft", "confirmed", "unestimated"] | None = Query(
+        default=None,
+        alias="status",
+    ),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=100_000),
+    context: DomainContext = Context,
+):
+    if start_date and end_date and end_date < start_date:
+        raise DomainError("end_date cannot be before start_date.")
+    return context.service.list_nutrition_logs(
+        context.owner_id,
+        start_date=start_date,
+        end_date=end_date,
+        status=nutrition_status,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/nutrition/{record_id}",
+    response_model=NutritionLogResponse,
+)
+def get_nutrition_log(record_id: int, context: DomainContext = Context):
+    return context.service.get_nutrition_log(context.owner_id, record_id)
+
+
+@router.post(
+    "/nutrition/{record_id}/confirm",
+    response_model=NutritionLogResponse,
+)
+def confirm_nutrition_log(
+    record_id: int,
+    data: NutritionConfirm,
+    context: DomainContext = Context,
+):
+    return context.service.confirm_nutrition_log(
+        context.owner_id, record_id, data.version
+    )
+
+
+@router.post(
+    "/nutrition/{record_id}/manual",
+    response_model=NutritionLogResponse,
+)
+def save_manual_nutrition(
+    record_id: int,
+    data: NutritionManualSave,
+    context: DomainContext = Context,
+):
+    return context.service.apply_manual_nutrition(context.owner_id, record_id, data)
+
+
+@router.post(
+    "/nutrition/{record_id}/unestimated",
+    response_model=NutritionLogResponse,
+)
+def save_unestimated_nutrition(
+    record_id: int,
+    data: NutritionConfirm,
+    context: DomainContext = Context,
+):
+    return context.service.save_unestimated_nutrition_log(
+        context.owner_id, record_id, data.version
+    )
+
+
+@router.patch(
+    "/nutrition/{record_id}/items/{item_id}",
+    response_model=NutritionLogResponse,
+)
+def update_nutrition_item(
+    record_id: int,
+    item_id: int,
+    data: NutritionItemUpdate,
+    context: DomainContext = Context,
+):
+    return context.service.update_nutrition_item(
+        context.owner_id,
+        record_id,
+        item_id,
+        data,
+    )
+
+
+@router.delete(
+    "/nutrition/{record_id}/items/{item_id}",
+    response_model=NutritionLogResponse,
+)
+def delete_nutrition_item(
+    record_id: int,
+    item_id: int,
+    context: DomainContext = Context,
+):
+    return context.service.delete_nutrition_item(
+        context.owner_id,
+        record_id,
+        item_id,
+    )
+
+
+@router.delete(
+    "/nutrition/{record_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_nutrition_log(
+    record_id: int,
+    context: DomainContext = Context,
+):
+    context.service.delete_nutrition_log(context.owner_id, record_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

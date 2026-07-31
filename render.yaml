@@ -29,6 +29,8 @@ services:
         sync: false
       - key: GROQ_API_KEY
         sync: false
+      - key: NUTRITION_PROVIDER
+        value: reference
       - key: DATABASE_URL
         sync: false
       - key: SESSION_SIGNING_SECRET

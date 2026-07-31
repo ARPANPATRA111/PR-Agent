@@ -105,6 +105,21 @@ class UserPreference(PublicBase, TimestampMixin):
     protein_target_grams = Column(Numeric(12, 3), nullable=True)
     carbohydrate_target_grams = Column(Numeric(12, 3), nullable=True)
     fat_target_grams = Column(Numeric(12, 3), nullable=True)
+    default_milk_serving_ml = Column(
+        Numeric(10, 2),
+        nullable=False,
+        server_default="250",
+    )
+    measurement_system = Column(
+        String(16),
+        nullable=False,
+        server_default="metric",
+    )
+    nutrition_confirmation_required = Column(
+        Boolean,
+        nullable=False,
+        server_default="true",
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -122,6 +137,14 @@ class UserPreference(PublicBase, TimestampMixin):
         CheckConstraint(
             "fat_target_grams IS NULL OR fat_target_grams >= 0",
             name="fat_target_nonnegative",
+        ),
+        CheckConstraint(
+            "default_milk_serving_ml > 0 AND default_milk_serving_ml <= 5000",
+            name="milk_serving_supported",
+        ),
+        CheckConstraint(
+            "measurement_system IN ('metric', 'imperial')",
+            name="measurement_system_supported",
         ),
     )
 
@@ -364,6 +387,20 @@ class NutritionLog(PublicBase, TimestampMixin):
     user_local_date = Column(Date, nullable=False)
     timezone = Column(String(64), nullable=False)
     original_text = Column(Text, nullable=False)
+    status = Column(String(16), nullable=False, server_default="draft")
+    visible_assumptions = Column(
+        JSON,
+        nullable=False,
+        default=list,
+        server_default="[]",
+    )
+    provider_metadata = Column(
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+    clarification_question = Column(Text, nullable=True)
     total_calories = Column(Numeric(12, 2), nullable=False, server_default="0")
     total_protein_grams = Column(
         Numeric(12, 3),
@@ -387,6 +424,10 @@ class NutritionLog(PublicBase, TimestampMixin):
 
     __table_args__ = (
         CheckConstraint("total_calories >= 0", name="calories_nonnegative"),
+        CheckConstraint(
+            "status IN ('draft', 'confirmed', 'unestimated')",
+            name="status_supported",
+        ),
         CheckConstraint(
             "total_protein_grams >= 0",
             name="protein_nonnegative",
@@ -441,6 +482,12 @@ class NutritionItem(PublicBase, TimestampMixin):
     quantity_value = Column(Numeric(12, 3), nullable=True)
     quantity_unit = Column(String(32), nullable=True)
     portion_description = Column(String(255), nullable=True)
+    visible_assumptions = Column(
+        JSON,
+        nullable=False,
+        default=list,
+        server_default="[]",
+    )
     estimated_grams = Column(Numeric(12, 3), nullable=True)
     calories = Column(Numeric(12, 2), nullable=False)
     protein_grams = Column(Numeric(12, 3), nullable=False)

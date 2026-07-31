@@ -1,10 +1,11 @@
 """Deterministic Telegram commands backed by the shared domain services."""
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from html import escape
 import logging
+from zoneinfo import ZoneInfo
 
 from config import settings
 from domain.errors import DomainError
@@ -15,6 +16,9 @@ from domain.schemas import (
     LedgerUpdate,
     NoteCreate,
     NoteUpdate,
+    NutritionDraftCreate,
+    NutritionItemUpdate,
+    NutritionPreferenceUpdate,
     ReminderCreate,
     ReminderUpdate,
     WorkLogCreate,
@@ -22,6 +26,7 @@ from domain.schemas import (
 )
 from domain.services import DomainServices
 from models import TelegramMessage
+from nutrition.providers import get_nutrition_provider
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +59,8 @@ class DeterministicCommandMixin:
             "/completegoal, /pausegoal, /deletegoal\n"
             "<b>Reminders:</b> /remind, /reminders, /editreminder, "
             "/pausereminder, /resumereminder, /deletereminder\n\n"
+            "<b>Food:</b> /food, /nutrition, /confirmfood, /editfood, "
+            "/deletefood, /nutritiontargets\n\n"
             "Examples:\n"
             "<code>/log Finished tenant-isolation tests</code>\n"
             "<code>/note Ask HR about relocation</code>\n"
@@ -610,6 +617,225 @@ class DeterministicCommandMixin:
         def operation(service, owner):
             delete_operation(service, owner, record_id)
             return f"✅ {label.title()} <b>#{record_id}</b> deleted."
+
+        await self._domain_reply(message, operation)
+
+    async def _v2_create_food(self, message: TelegramMessage) -> None:
+        body = self._command_body(message)
+        if not body:
+            await self._usage(
+                message,
+                "/food 50 g paneer, 2 medium rotis",
+            )
+            return
+        data = NutritionDraftCreate(
+            original_text=body,
+            timezone=settings.timezone,
+            logged_at_local=datetime.fromtimestamp(message.date, timezone.utc),
+            idempotency_key=self._telegram_idempotency(message, "food"),
+        )
+
+        def operation(service, owner):
+            log = service.estimate_nutrition_draft(
+                owner,
+                data,
+                get_nutrition_provider(settings.nutrition_provider),
+            )
+            if log.clarification_question:
+                return (
+                    f"❓ <b>Food draft #{log.id}</b>\n"
+                    f"{escape(log.clarification_question)}\n\n"
+                    f"Original entry preserved. Use "
+                    f"<code>/savefoodnote {log.id}</code> to keep it "
+                    "without estimates."
+                )
+            lines = [
+                f"• {escape(item.normalized_name)}: "
+                f"{item.quantity_value} {escape(item.quantity_unit or '')}, "
+                f"approximately {item.calories} kcal and "
+                f"{item.protein_grams} g protein"
+                for item in log.items
+            ]
+            assumptions = "\n".join(
+                f"• {escape(value)}" for value in (log.visible_assumptions or [])
+            )
+            assumption_text = (
+                f"\n\n<b>Visible assumptions</b>\n{assumptions}" if assumptions else ""
+            )
+            status_text = (
+                "Saved automatically using your preference."
+                if log.status == "confirmed"
+                else f"Confirm with <code>/confirmfood {log.id}</code>."
+            )
+            return (
+                f"<b>Food preview #{log.id}</b>\n"
+                + "\n".join(lines)
+                + f"\n\nApproximately {log.total_calories} kcal, "
+                f"{log.total_protein_grams} g protein."
+                + assumption_text
+                + f"\n\n{status_text}"
+            )
+
+        await self._domain_reply(message, operation)
+
+    async def _v2_confirm_food(self, message: TelegramMessage) -> None:
+        record_id = self._single_id(message)
+        if record_id is None:
+            await self._usage(message, "/confirmfood FOOD_ID")
+            return
+
+        def operation(service, owner):
+            current = service.get_nutrition_log(owner, record_id)
+            log = service.confirm_nutrition_log(owner, record_id, current.version)
+            return (
+                f"✅ Food log <b>#{log.id}</b> confirmed at approximately "
+                f"{log.total_calories} kcal and "
+                f"{log.total_protein_grams} g protein."
+            )
+
+        await self._domain_reply(message, operation)
+
+    async def _v2_save_unestimated_food(self, message: TelegramMessage) -> None:
+        record_id = self._single_id(message)
+        if record_id is None:
+            await self._usage(message, "/savefoodnote FOOD_ID")
+            return
+
+        def operation(service, owner):
+            current = service.get_nutrition_log(owner, record_id)
+            log = service.save_unestimated_nutrition_log(
+                owner, record_id, current.version
+            )
+            return (
+                f"✅ Food note <b>#{log.id}</b> saved without nutrition " "estimates."
+            )
+
+        await self._domain_reply(message, operation)
+
+    async def _v2_edit_food_item(self, message: TelegramMessage) -> None:
+        parts = (message.text or "").split()
+        if len(parts) != 7 or not parts[1].isdigit() or not parts[2].isdigit():
+            await self._usage(
+                message,
+                "/editfood FOOD_ID ITEM_ID QUANTITY UNIT CALORIES PROTEIN",
+            )
+            return
+        try:
+            log_id = int(parts[1])
+            item_id = int(parts[2])
+            quantity = Decimal(parts[3])
+            calories = Decimal(parts[5])
+            protein = Decimal(parts[6])
+            unit = parts[4]
+        except InvalidOperation:
+            await self._usage(
+                message,
+                "/editfood FOOD_ID ITEM_ID QUANTITY UNIT CALORIES PROTEIN",
+            )
+            return
+
+        def operation(service, owner):
+            item = service.get_nutrition_item(owner, log_id, item_id)
+            log = service.update_nutrition_item(
+                owner,
+                log_id,
+                item_id,
+                NutritionItemUpdate(
+                    version=item.version,
+                    quantity_value=quantity,
+                    quantity_unit=unit,
+                    calories=calories,
+                    protein_grams=protein,
+                ),
+            )
+            return (
+                f"✅ Food log <b>#{log.id}</b> updated. New approximate "
+                f"total: {log.total_calories} kcal, "
+                f"{log.total_protein_grams} g protein."
+            )
+
+        await self._domain_reply(message, operation)
+
+    async def _v2_delete_food(self, message: TelegramMessage) -> None:
+        await self._v2_delete_by_id(
+            message,
+            "deletefood",
+            "food log",
+            lambda service, owner, record_id: service.delete_nutrition_log(
+                owner, record_id
+            ),
+        )
+
+    async def _v2_nutrition_summary(self, message: TelegramMessage) -> None:
+        body = self._command_body(message)
+        try:
+            local_date = (
+                date.fromisoformat(body)
+                if body
+                else datetime.now(ZoneInfo(settings.timezone)).date()
+            )
+        except ValueError:
+            await self._usage(message, "/nutrition [YYYY-MM-DD]")
+            return
+
+        def operation(service, owner):
+            summary = service.summarize_nutrition(owner, local_date, local_date)
+            target_lines = []
+            if summary["calorie_target"] is not None:
+                target_lines.append(f"Calorie target: {summary['calorie_target']} kcal")
+            if summary["protein_target_grams"] is not None:
+                target_lines.append(
+                    f"Protein target: " f"{summary['protein_target_grams']} g"
+                )
+            targets = "\n" + "\n".join(target_lines) if target_lines else ""
+            return (
+                f"<b>Nutrition for {local_date}</b>\n"
+                f"Approximately {summary['total_calories']} kcal\n"
+                f"Approximately {summary['total_protein_grams']} g protein\n"
+                f"Confirmed meals: {summary['confirmed_meals']}\n"
+                f"Unestimated food notes: {summary['unestimated_meals']}"
+                f"{targets}"
+            )
+
+        await self._domain_reply(message, operation)
+
+    async def _v2_nutrition_targets(self, message: TelegramMessage) -> None:
+        parts = (message.text or "").split()
+        if len(parts) not in {3, 5}:
+            await self._usage(
+                message,
+                "/nutritiontargets CALORIES PROTEIN [CARBS FAT]",
+            )
+            return
+        try:
+            calories = Decimal(parts[1])
+            protein = Decimal(parts[2])
+            carbs = Decimal(parts[3]) if len(parts) == 5 else None
+            fat = Decimal(parts[4]) if len(parts) == 5 else None
+        except InvalidOperation:
+            await self._usage(
+                message,
+                "/nutritiontargets CALORIES PROTEIN [CARBS FAT]",
+            )
+            return
+
+        def operation(service, owner):
+            preferences = service.get_nutrition_preferences(owner)
+            updated = service.update_nutrition_preferences(
+                owner,
+                NutritionPreferenceUpdate(
+                    version=preferences.version,
+                    calorie_target=calories,
+                    protein_target_grams=protein,
+                    carbohydrate_target_grams=carbs,
+                    fat_target_grams=fat,
+                ),
+            )
+            return (
+                "✅ Your own nutrition targets were saved: "
+                f"{updated.calorie_target} kcal and "
+                f"{updated.protein_target_grams} g protein."
+            )
 
         await self._domain_reply(message, operation)
 
