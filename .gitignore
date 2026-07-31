@@ -134,6 +134,7 @@ docs/*
 !docs/MINI_APP.md
 !docs/DURABLE_WORKER.md
 !docs/PRIVACY_LIFECYCLE.md
+!docs/BOUNDED_ASSISTANT.md
 changelog.md
 docker-compose.override.yml
 docker-compose.prod.yml

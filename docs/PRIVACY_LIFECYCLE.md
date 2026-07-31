@@ -30,7 +30,8 @@ URL is created.
 
 The deletion transaction first disables reminders and Sunday schedules, then
 removes the owner row. Database cascades remove all public-v2 records and
-sessions. The service also removes matching legacy raw/structured data,
+sessions, including bounded-agent run/action/pending state. The service also
+removes matching legacy raw/structured data,
 summaries, generated posts, goals, relational search copies, and the legacy
 user profile when those legacy tables exist.
 
@@ -76,7 +77,8 @@ failure is observable but does not affect the user's stored record.
 The worker runs an idempotent retention sweep. It removes expired export
 request metadata, expired or old revoked sessions, old completed cleanup rows,
 old processed-update receipts, and stale rate-limit buckets. It does not delete
-user records.
+user records. Completed bounded-agent audit envelopes and action metadata are
+also removed after the configured retention period.
 
 ```text
 OPERATIONAL_METADATA_RETENTION_DAYS=30

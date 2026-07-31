@@ -881,3 +881,136 @@ class AccountDeletionAudit(PublicBase):
         server_default=utc_timestamp(),
     )
     legacy_rows_removed = Column(Integer, nullable=False, server_default="0")
+
+
+class AgentRun(PublicBase):
+    """Content-free audit envelope for one bounded assistant turn."""
+
+    __tablename__ = "agent_runs"
+
+    id = Column(Integer, primary_key=True)
+    owner_id = Column(
+        Integer,
+        ForeignKey("app_users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    provider = Column(String(32), nullable=False)
+    model = Column(String(128), nullable=False)
+    status = Column(String(24), nullable=False, server_default="processing")
+    input_hash = Column(String(64), nullable=False)
+    original_update_id = Column(BigInteger, nullable=False)
+    safe_error_category = Column(String(64), nullable=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=utc_timestamp(),
+    )
+    completed_at_utc = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('processing', 'completed', 'clarification', "
+            "'confirmation', 'rejected', 'failed')",
+            name="status_supported",
+        ),
+        Index(
+            "ix_agent_runs_owner_id_created_at",
+            "owner_id",
+            "created_at",
+        ),
+    )
+
+
+class AgentAction(PublicBase):
+    """Safe action metadata; raw prompts and model reasoning are not retained."""
+
+    __tablename__ = "agent_actions"
+
+    id = Column(Integer, primary_key=True)
+    run_id = Column(
+        Integer,
+        ForeignKey("agent_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    owner_id = Column(
+        Integer,
+        ForeignKey("app_users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    action_type = Column(String(48), nullable=False)
+    status = Column(String(24), nullable=False)
+    idempotency_key = Column(String(160), nullable=False)
+    record_type = Column(String(32), nullable=True)
+    record_id = Column(Integer, nullable=True)
+    argument_fields = Column(JSON, nullable=False, server_default="[]")
+    safe_error_category = Column(String(64), nullable=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=utc_timestamp(),
+    )
+    completed_at_utc = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('proposed', 'executed', 'clarification', "
+            "'confirmation_required', 'rejected', 'failed', 'cancelled')",
+            name="status_supported",
+        ),
+        UniqueConstraint(
+            "owner_id",
+            "idempotency_key",
+            name="uq_agent_actions_owner_id_idempotency_key",
+        ),
+        Index(
+            "ix_agent_actions_owner_id_created_at",
+            "owner_id",
+            "created_at",
+        ),
+    )
+
+
+class AgentPendingAction(PublicBase, TimestampMixin):
+    """Durable, tenant-owned clarification or confirmation state."""
+
+    __tablename__ = "agent_pending_actions"
+
+    id = Column(Integer, primary_key=True)
+    owner_id = Column(
+        Integer,
+        ForeignKey("app_users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    run_id = Column(
+        Integer,
+        ForeignKey("agent_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    action_type = Column(String(48), nullable=False)
+    state = Column(String(24), nullable=False)
+    proposed_arguments = Column(JSON, nullable=False, server_default="{}")
+    missing_fields = Column(JSON, nullable=False, server_default="[]")
+    prompt = Column(String(1000), nullable=False)
+    original_update_id = Column(BigInteger, nullable=False)
+    idempotency_key = Column(String(160), nullable=False)
+    expires_at_utc = Column(DateTime(timezone=True), nullable=False)
+    resolved_at_utc = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "state IN ('clarification', 'confirmation', 'executed', "
+            "'cancelled', 'expired')",
+            name="state_supported",
+        ),
+        UniqueConstraint(
+            "owner_id",
+            "idempotency_key",
+            name="uq_agent_pending_actions_owner_id_idempotency_key",
+        ),
+        Index(
+            "ix_agent_pending_actions_owner_id_state_expires",
+            "owner_id",
+            "state",
+            "expires_at_utc",
+        ),
+    )

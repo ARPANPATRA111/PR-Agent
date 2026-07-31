@@ -37,6 +37,7 @@ from domain.schemas import (
     ZERO_DECIMAL_CURRENCIES,
 )
 from public_models import (
+    AgentAction,
     LedgerEntry,
     Note,
     NutritionItem,
@@ -267,6 +268,25 @@ class DomainServices:
         if deleted == 0:
             raise RecordNotFound()
 
+    @staticmethod
+    def _clear_agent_reference(
+        session: Session,
+        owner_id: int,
+        record_type: str,
+        record_id: int,
+    ) -> None:
+        session.query(AgentAction).filter(
+            AgentAction.owner_id == owner_id,
+            AgentAction.record_type == record_type,
+            AgentAction.record_id == record_id,
+        ).update(
+            {
+                "record_type": None,
+                "record_id": None,
+            },
+            synchronize_session=False,
+        )
+
     # Work logs
     def create_work_log(self, owner_id: int, data: WorkLogCreate) -> WorkLog:
         existing = self._idempotent_existing(
@@ -393,6 +413,12 @@ class DomainServices:
 
     def delete_work_log(self, owner_id: int, record_id: int) -> None:
         self._delete_owned(self.session, WorkLog, owner_id, record_id)
+        self._clear_agent_reference(
+            self.session,
+            owner_id,
+            "work_log",
+            record_id,
+        )
 
     # Notes
     def create_note(self, owner_id: int, data: NoteCreate) -> Note:
@@ -451,6 +477,7 @@ class DomainServices:
 
     def delete_note(self, owner_id: int, record_id: int) -> None:
         self._delete_owned(self.session, Note, owner_id, record_id)
+        self._clear_agent_reference(self.session, owner_id, "note", record_id)
 
     # Ledger
     def create_ledger_entry(self, owner_id: int, data: LedgerCreate) -> LedgerEntry:
@@ -568,6 +595,12 @@ class DomainServices:
 
     def delete_ledger_entry(self, owner_id: int, record_id: int) -> None:
         self._delete_owned(self.session, LedgerEntry, owner_id, record_id)
+        self._clear_agent_reference(
+            self.session,
+            owner_id,
+            "ledger_entry",
+            record_id,
+        )
 
     # Goals
     def create_goal(self, owner_id: int, data: GoalCreate) -> TrackedGoal:
@@ -628,6 +661,7 @@ class DomainServices:
 
     def delete_goal(self, owner_id: int, record_id: int) -> None:
         self._delete_owned(self.session, TrackedGoal, owner_id, record_id)
+        self._clear_agent_reference(self.session, owner_id, "goal", record_id)
 
     # Reminders
     @staticmethod
@@ -762,6 +796,12 @@ class DomainServices:
 
     def delete_reminder(self, owner_id: int, record_id: int) -> None:
         self._delete_owned(self.session, Reminder, owner_id, record_id)
+        self._clear_agent_reference(
+            self.session,
+            owner_id,
+            "reminder",
+            record_id,
+        )
 
     # Durable per-user schedule preferences
     def get_schedule_preferences(self, owner_id: int) -> dict[str, Any]:
@@ -1249,6 +1289,12 @@ class DomainServices:
 
     def delete_nutrition_log(self, owner_id: int, record_id: int) -> None:
         self._delete_owned(self.session, NutritionLog, owner_id, record_id)
+        self._clear_agent_reference(
+            self.session,
+            owner_id,
+            "nutrition_log",
+            record_id,
+        )
 
     def summarize_nutrition(
         self,

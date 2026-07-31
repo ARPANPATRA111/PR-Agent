@@ -89,9 +89,14 @@ def test_00_postgres_legacy_upgrade_preserves_rows():
             ).scalar_one()
             == 1
         )
-        assert {"users", "raw_entries", "app_users"} <= set(
-            inspect(connection).get_table_names()
-        )
+        assert {
+            "users",
+            "raw_entries",
+            "app_users",
+            "agent_runs",
+            "agent_actions",
+            "agent_pending_actions",
+        } <= set(inspect(connection).get_table_names())
 
 
 def test_postgres_precision_timezone_constraints_and_indexes():

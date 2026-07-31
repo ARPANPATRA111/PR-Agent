@@ -1,7 +1,7 @@
 """Deterministic Telegram commands backed by the shared domain services."""
 
 import asyncio
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from html import escape
 import logging
@@ -61,6 +61,10 @@ class DeterministicCommandMixin:
             "/pausereminder, /resumereminder, /deletereminder\n\n"
             "<b>Food:</b> /food, /nutrition, /confirmfood, /editfood, "
             "/deletefood, /nutritiontargets\n\n"
+            "<b>Assistant follow-up:</b> /answeragent, /confirmagent, "
+            "/cancelagent\n\n"
+            "<b>Summaries and privacy:</b> /today, /week, /spending, "
+            "/settings, /export, /deleteaccount\n\n"
             "Examples:\n"
             "<code>/log Finished tenant-isolation tests</code>\n"
             "<code>/note Ask HR about relocation</code>\n"
@@ -838,6 +842,118 @@ class DeterministicCommandMixin:
             )
 
         await self._domain_reply(message, operation)
+
+    async def _v2_today_summary(self, message: TelegramMessage) -> None:
+        def operation(service, owner):
+            preferences = service.get_schedule_preferences(owner)
+            local_date = datetime.now(ZoneInfo(preferences["timezone"])).date()
+            work = service.list_work_logs(
+                owner,
+                start_date=local_date,
+                end_date=local_date,
+                limit=20,
+            )
+            ledger = service.summarize_ledger(
+                owner,
+                start_date=local_date,
+                end_date=local_date,
+            )
+            nutrition = service.summarize_nutrition(
+                owner,
+                local_date,
+                local_date,
+            )
+            work_text = (
+                "No work logs"
+                if not work
+                else "; ".join(escape(row.original_text[:100]) for row in work)
+            )
+            money_text = (
+                "No ledger entries"
+                if not ledger
+                else "; ".join(
+                    f"{row['currency']}: expense {row['expense_minor']}, "
+                    f"income {row['income_minor']} minor units"
+                    for row in ledger
+                )
+            )
+            return (
+                f"<b>Today — {local_date}</b>\n"
+                f"Work: {work_text}\n"
+                f"Money: {money_text}\n"
+                f"Nutrition: approximately {nutrition['total_calories']} kcal, "
+                f"{nutrition['total_protein_grams']} g protein"
+            )
+
+        await self._domain_reply(message, operation)
+
+    async def _v2_week_summary(self, message: TelegramMessage) -> None:
+        def operation(service, owner):
+            preferences = service.get_schedule_preferences(owner)
+            local_date = datetime.now(ZoneInfo(preferences["timezone"])).date()
+            start = local_date - timedelta(days=local_date.weekday())
+            work = service.list_work_logs(
+                owner,
+                start_date=start,
+                end_date=local_date,
+                limit=50,
+            )
+            if not work:
+                return f"No work logs from {start} through {local_date}."
+            return f"<b>This week — {start} to {local_date}</b>\n" + "\n".join(
+                f"• {escape(row.original_text[:140])}" for row in work
+            )
+
+        await self._domain_reply(message, operation)
+
+    async def _v2_spending_summary(self, message: TelegramMessage) -> None:
+        def operation(service, owner):
+            totals = service.summarize_ledger(owner)
+            if not totals:
+                return "No ledger entries yet."
+            return "<b>Ledger totals</b>\n" + "\n".join(
+                f"{row['currency']}: expense {row['expense_minor']}, "
+                f"income {row['income_minor']} minor units"
+                for row in totals
+            )
+
+        await self._domain_reply(message, operation)
+
+    async def _v2_settings_link(self, message: TelegramMessage) -> None:
+        await self.telegram.send_message(
+            message.chat.get("id"),
+            "Open the authenticated Telegram Mini App to edit settings."
+            + (
+                f"\n{escape(settings.telegram_mini_app_url)}"
+                if settings.telegram_mini_app_url
+                else ""
+            ),
+        )
+
+    async def _v2_export_link(self, message: TelegramMessage) -> None:
+        await self.telegram.send_message(
+            message.chat.get("id"),
+            "Open the Mini App's Export data screen for a private JSON or "
+            "CSV ZIP download."
+            + (
+                f"\n{escape(settings.telegram_mini_app_url)}"
+                if settings.telegram_mini_app_url
+                else ""
+            ),
+        )
+
+    async def _v2_delete_account_link(self, message: TelegramMessage) -> None:
+        await self.telegram.send_message(
+            message.chat.get("id"),
+            "Account deletion requires recent Telegram authentication, the "
+            "exact confirmation phrase, acknowledgement, and final "
+            "confirmation in the Mini App."
+            + (
+                f"\n{escape(settings.telegram_mini_app_url)}"
+                if settings.telegram_mini_app_url
+                else ""
+            ),
+        )
 
     async def _usage(self, message: TelegramMessage, value: str) -> None:
         await self.telegram.send_message(

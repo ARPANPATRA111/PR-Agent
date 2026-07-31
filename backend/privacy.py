@@ -34,6 +34,7 @@ from memory import (
 from public_models import (
     AccountDeletionAudit,
     AccountExportRequest,
+    AgentRun,
     ApplicationSession,
     DigestDelivery,
     LedgerEntry,
@@ -567,6 +568,14 @@ def prune_operational_metadata(
     removed += (
         session.query(RateLimitBucket)
         .filter(RateLimitBucket.window_start <= now - timedelta(days=2))
+        .delete(synchronize_session=False)
+    )
+    removed += (
+        session.query(AgentRun)
+        .filter(
+            AgentRun.completed_at_utc.is_not(None),
+            AgentRun.completed_at_utc <= cutoff,
+        )
         .delete(synchronize_session=False)
     )
     return removed

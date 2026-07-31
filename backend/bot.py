@@ -5,6 +5,8 @@ from typing import Optional, Dict, List
 
 import httpx
 
+from assistant import ActorContext, BoundedAssistant
+from assistant.providers import ProviderUnavailable, get_intent_provider
 from config import settings
 from models import (
     TelegramUpdate,
@@ -17,6 +19,7 @@ from models import (
 )
 from memory import get_memory_manager
 from llm_agent import get_llm_agent
+from nutrition.providers import get_nutrition_provider
 from telegram_commands import DeterministicCommandMixin
 from utils import (
     transcribe_telegram_voice,
@@ -170,7 +173,8 @@ class BotHandler(DeterministicCommandMixin):
     def __init__(self):
         self.telegram = TelegramClient(settings.telegram_bot_token)
         self.memory = get_memory_manager()
-        self.agent = get_llm_agent()
+        self.agent = None if settings.public_v2_enabled else get_llm_agent()
+        self.bounded_assistant: BoundedAssistant | None = None
 
     async def handle_update(self, update: TelegramUpdate) -> None:
         if not update.message:
@@ -192,10 +196,15 @@ class BotHandler(DeterministicCommandMixin):
                 )
 
             if message.voice:
-                await self._handle_voice(message)
+                if settings.public_v2_enabled:
+                    await self._handle_bounded_voice(message, update.update_id)
+                else:
+                    await self._handle_voice(message)
             elif message.text:
                 if message.text.startswith("/"):
                     await self._handle_command(message)
+                elif settings.public_v2_enabled:
+                    await self._handle_bounded_text(message, update.update_id)
                 else:
                     await self._handle_text(message)
             else:
@@ -393,11 +402,6 @@ class BotHandler(DeterministicCommandMixin):
             "/editfood": self._v2_edit_food_item,
             "/deletefood": self._v2_delete_food,
             "/nutritiontargets": self._v2_nutrition_targets,
-            "/status": self._cmd_status,
-            "/summary": self._cmd_summary,
-            "/stats": self._cmd_status,
-            "/delete": self._cmd_delete,
-            "/recent": self._cmd_recent,
             "/goal": self._v2_create_goal,
             "/set_goal": self._v2_create_goal,
             "/goals": self._v2_list_goals,
@@ -406,7 +410,32 @@ class BotHandler(DeterministicCommandMixin):
             "/completegoal": self._v2_complete_goal,
             "/pausegoal": self._v2_pause_goal,
             "/deletegoal": self._v2_delete_goal,
+            "/answeragent": self._v2_answer_agent,
+            "/confirmagent": self._v2_confirm_agent,
+            "/cancelagent": self._v2_cancel_agent,
         }
+        if settings.public_v2_enabled:
+            commands.update(
+                {
+                    "/today": self._v2_today_summary,
+                    "/week": self._v2_week_summary,
+                    "/summary": self._v2_week_summary,
+                    "/spending": self._v2_spending_summary,
+                    "/settings": self._v2_settings_link,
+                    "/export": self._v2_export_link,
+                    "/deleteaccount": self._v2_delete_account_link,
+                }
+            )
+        else:
+            commands.update(
+                {
+                    "/status": self._cmd_status,
+                    "/summary": self._cmd_summary,
+                    "/stats": self._cmd_status,
+                    "/delete": self._cmd_delete,
+                    "/recent": self._cmd_recent,
+                }
+            )
 
         handler = commands.get(command)
 
@@ -415,6 +444,151 @@ class BotHandler(DeterministicCommandMixin):
         else:
             await self.telegram.send_message(
                 chat_id, "❓ Unknown command. Use /help to see available commands."
+            )
+
+    def _get_bounded_assistant(self) -> BoundedAssistant:
+        if self.bounded_assistant is None:
+            self.bounded_assistant = BoundedAssistant(
+                self.memory.SessionLocal,
+                get_intent_provider(),
+                get_nutrition_provider(settings.nutrition_provider),
+                min_confidence=settings.ai_agent_min_confidence,
+                pending_ttl_minutes=settings.agent_pending_ttl_minutes,
+                max_input_length=settings.max_agent_input_length,
+            )
+        return self.bounded_assistant
+
+    @staticmethod
+    def _actor(message: TelegramMessage) -> ActorContext:
+        if message.from_user is None:
+            raise ValueError("Telegram user identity is required")
+        return ActorContext(
+            telegram_id=message.from_user.id,
+            first_name=message.from_user.first_name,
+            last_name=message.from_user.last_name,
+            username=message.from_user.username,
+        )
+
+    async def _handle_bounded_text(
+        self,
+        message: TelegramMessage,
+        update_id: int,
+    ) -> None:
+        if not settings.ai_agent_enabled:
+            await self.telegram.send_message(
+                message.chat.get("id"),
+                "Natural-language assistance is disabled. Use /help for "
+                "deterministic commands.",
+            )
+            return
+        try:
+            reply = await asyncio.to_thread(
+                self._get_bounded_assistant().handle,
+                self._actor(message),
+                message.text or "",
+                update_id=update_id,
+            )
+            await self.telegram.send_message(message.chat.get("id"), reply.text)
+        except ProviderUnavailable:
+            await self.telegram.send_message(
+                message.chat.get("id"),
+                "The assistant is unavailable. Slash commands still work.",
+            )
+
+    async def _handle_bounded_voice(
+        self,
+        message: TelegramMessage,
+        update_id: int,
+    ) -> None:
+        if not settings.ai_agent_enabled:
+            await self.telegram.send_message(
+                message.chat.get("id"),
+                "Voice interpretation is disabled. Use /help for commands.",
+            )
+            return
+        await self.telegram.send_typing_action(message.chat.get("id"))
+        await self.telegram.send_message(
+            message.chat.get("id"),
+            "Voice received. Processing securely...",
+            reply_to_message_id=message.message_id,
+        )
+        try:
+            transcript = await transcribe_telegram_voice(
+                message.voice.file_id,
+                settings.telegram_bot_token,
+            )
+            reply = await asyncio.to_thread(
+                self._get_bounded_assistant().handle,
+                self._actor(message),
+                transcript,
+                update_id=update_id,
+            )
+            await self.telegram.send_message(message.chat.get("id"), reply.text)
+        except ProviderUnavailable:
+            await self.telegram.send_message(
+                message.chat.get("id"),
+                "The assistant is unavailable. Slash commands still work.",
+            )
+        except Exception:
+            logger.exception("Bounded voice handling failed")
+            await self.telegram.send_message(
+                message.chat.get("id"),
+                "I could not process that voice note. No action was taken.",
+            )
+
+    async def _v2_answer_agent(self, message: TelegramMessage) -> None:
+        parts = (message.text or "").split(maxsplit=2)
+        if len(parts) != 3 or not parts[1].isdigit():
+            await self.telegram.send_message(
+                message.chat.get("id"),
+                "Usage: <code>/answeragent ID your answer</code>",
+            )
+            return
+        try:
+            reply = await asyncio.to_thread(
+                self._get_bounded_assistant().answer_clarification,
+                self._actor(message),
+                int(parts[1]),
+                parts[2],
+            )
+            await self.telegram.send_message(message.chat.get("id"), reply.text)
+        except ProviderUnavailable:
+            await self.telegram.send_message(
+                message.chat.get("id"),
+                "The assistant is unavailable. Try again later.",
+            )
+
+    async def _v2_confirm_agent(self, message: TelegramMessage) -> None:
+        await self._bounded_pending_command(message, "confirm")
+
+    async def _v2_cancel_agent(self, message: TelegramMessage) -> None:
+        await self._bounded_pending_command(message, "cancel")
+
+    async def _bounded_pending_command(
+        self,
+        message: TelegramMessage,
+        operation: str,
+    ) -> None:
+        parts = (message.text or "").split()
+        if len(parts) != 2 or not parts[1].isdigit():
+            await self.telegram.send_message(
+                message.chat.get("id"),
+                f"Usage: <code>/{operation}agent ID</code>",
+            )
+            return
+        try:
+            assistant = self._get_bounded_assistant()
+            handler = assistant.confirm if operation == "confirm" else assistant.cancel
+            reply = await asyncio.to_thread(
+                handler,
+                self._actor(message),
+                int(parts[1]),
+            )
+            await self.telegram.send_message(message.chat.get("id"), reply.text)
+        except ProviderUnavailable:
+            await self.telegram.send_message(
+                message.chat.get("id"),
+                "The assistant is unavailable. Try again later.",
             )
 
     async def _legacy_cmd_start(self, message: TelegramMessage) -> None:

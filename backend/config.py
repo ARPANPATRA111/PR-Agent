@@ -69,6 +69,32 @@ class Settings(BaseSettings):
         le=86400,
         description="Minimum interval between idempotent retention sweeps",
     )
+    ai_agent_enabled: bool = Field(
+        default=False,
+        description="Enable the bounded natural-language assistant",
+    )
+    ai_provider: Literal["disabled", "groq"] = Field(
+        default="disabled",
+        description="Provider used only for typed intent extraction",
+    )
+    ai_agent_min_confidence: float = Field(
+        default=0.80,
+        ge=0.5,
+        le=1.0,
+        description="Minimum confidence for non-destructive agent execution",
+    )
+    agent_pending_ttl_minutes: int = Field(
+        default=30,
+        ge=5,
+        le=1440,
+        description="Expiry for clarification and confirmation state",
+    )
+    max_agent_input_length: int = Field(
+        default=4000,
+        ge=64,
+        le=20000,
+        description="Maximum natural-language assistant input length",
+    )
 
     telegram_bot_token: str = Field(
         default="", description="Telegram Bot API token from @BotFather"
@@ -375,6 +401,13 @@ class Settings(BaseSettings):
                 raise ValueError("DISABLE_SSL_VERIFY is forbidden outside development")
             if any("localhost" in origin for origin in self.cors_origins_list):
                 raise ValueError("Production CORS_ORIGINS must not include localhost")
+            if self.ai_agent_enabled and (
+                self.ai_provider == "disabled" or not self.groq_api_key
+            ):
+                raise ValueError(
+                    "AI_PROVIDER and its credential are required when "
+                    "AI_AGENT_ENABLED is true"
+                )
 
         return self
 

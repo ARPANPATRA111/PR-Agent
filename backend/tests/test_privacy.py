@@ -24,6 +24,9 @@ from privacy import PrivacyService, prune_operational_metadata
 from public_models import (
     AccountDeletionAudit,
     AccountExportRequest,
+    AgentAction,
+    AgentPendingAction,
+    AgentRun,
     ApplicationSession,
     PublicBase,
     PublicUser,
@@ -145,6 +148,9 @@ def test_export_contains_all_sections_and_excludes_other_tenant(privacy_db):
             "session_signing_secret",
             "idempotency_key",
             "provider_metadata",
+            "input_hash",
+            "proposed_arguments",
+            "agent_runs",
         ):
             assert forbidden not in serialized
 
@@ -192,6 +198,44 @@ def test_account_deletion_removes_public_legacy_search_and_sessions(privacy_db):
                 expires_at_utc=datetime.now(UTC) + timedelta(minutes=5),
             )
         )
+        run = AgentRun(
+            owner_id=alice_id,
+            provider="fake",
+            model="test",
+            status="confirmation",
+            input_hash="d" * 64,
+            original_update_id=90,
+        )
+        session.add(run)
+        session.flush()
+        session.add(
+            AgentAction(
+                run_id=run.id,
+                owner_id=alice_id,
+                action_type="delete_record",
+                status="confirmation_required",
+                idempotency_key="agent:101:90",
+                argument_fields=["kind", "record_id", "record_type"],
+            )
+        )
+        session.add(
+            AgentPendingAction(
+                owner_id=alice_id,
+                run_id=run.id,
+                action_type="delete_record",
+                state="confirmation",
+                proposed_arguments={
+                    "kind": "delete_record",
+                    "record_type": "note",
+                    "record_id": 1,
+                },
+                missing_fields=[],
+                prompt="Confirm deletion",
+                original_update_id=90,
+                idempotency_key="agent:101:90",
+                expires_at_utc=datetime.now(UTC) + timedelta(minutes=5),
+            )
+        )
         session.commit()
 
     with factory() as session:
@@ -207,6 +251,9 @@ def test_account_deletion_removes_public_legacy_search_and_sessions(privacy_db):
         assert session.get(PublicUser, alice_id) is None
         assert session.query(WorkLog).filter(WorkLog.owner_id == alice_id).count() == 0
         assert session.query(ApplicationSession).count() == 0
+        assert session.query(AgentRun).count() == 0
+        assert session.query(AgentAction).count() == 0
+        assert session.query(AgentPendingAction).count() == 0
         assert session.query(UserDB).filter(UserDB.telegram_id == 101).count() == 0
         assert (
             session.query(SearchableEntryDB)
@@ -322,6 +369,27 @@ def test_retention_prunes_only_expired_operational_metadata(privacy_db):
                 expires_at_utc=now - timedelta(minutes=1),
             )
         )
+        old_run = AgentRun(
+            owner_id=alice_id,
+            provider="fake",
+            model="test",
+            status="completed",
+            input_hash="e" * 64,
+            original_update_id=91,
+            completed_at_utc=now - timedelta(days=31),
+        )
+        session.add(old_run)
+        session.flush()
+        session.add(
+            AgentAction(
+                run_id=old_run.id,
+                owner_id=alice_id,
+                action_type="query",
+                status="executed",
+                idempotency_key="agent:101:91",
+                argument_fields=["kind", "query_type"],
+            )
+        )
         session.commit()
         assert (
             prune_operational_metadata(
@@ -329,7 +397,9 @@ def test_retention_prunes_only_expired_operational_metadata(privacy_db):
                 now=now,
                 retention_days=30,
             )
-            == 2
+            == 3
         )
         session.commit()
         assert session.query(PublicUser).filter(PublicUser.id == alice_id).count() == 1
+        assert session.query(AgentRun).count() == 0
+        assert session.query(AgentAction).count() == 0

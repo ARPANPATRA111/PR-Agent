@@ -20,6 +20,9 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 PUBLIC_TABLES = {
     "account_deletion_audits",
     "account_export_requests",
+    "agent_actions",
+    "agent_pending_actions",
+    "agent_runs",
     "api_rate_limit_buckets",
     "app_users",
     "digest_deliveries",
@@ -253,6 +256,25 @@ def test_test_and_application_databases_must_differ():
             app_env="test",
             database_url="postgresql://example/app",
             test_database_url="postgresql://example/app",
+        )
+
+
+def test_production_agent_fails_closed_without_provider_credentials():
+    with pytest.raises(ValidationError, match="AI_PROVIDER"):
+        Settings(
+            _env_file=None,
+            app_env="production",
+            app_base_url="https://api.example.test",
+            frontend_base_url="https://app.example.test",
+            database_url="postgresql://service:password@db.example.test/app",
+            session_signing_secret="s" * 64,
+            telegram_bot_token="123456:production-test-token",
+            telegram_webhook_secret="w" * 32,
+            telegram_webhook_url="https://api.example.test/webhook",
+            telegram_mini_app_url="https://app.example.test",
+            cors_origins="https://app.example.test",
+            ai_agent_enabled=True,
+            ai_provider="disabled",
         )
 
 

@@ -7,6 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from bot import BotHandler
+from assistant import AssistantReply
 from config import settings
 from models import TelegramMessage
 from public_models import (
@@ -90,6 +91,7 @@ def bot_and_factory():
     bot.telegram = FakeTelegramClient()
     bot.memory = FakeMemory(factory)
     bot.agent = FailingAgent()
+    bot.bounded_assistant = None
     try:
         yield bot, factory
     finally:
@@ -122,7 +124,67 @@ async def test_explicit_crud_commands_work_with_ai_provider_down(bot_and_factory
         assert session.query(Reminder).count() == 1
     finally:
         session.close()
+    assert len(bot.telegram.messages) == len(commands)
     assert all("✅" in message for message in bot.telegram.messages)
+
+
+@pytest.mark.asyncio
+async def test_plain_text_fails_closed_when_bounded_assistant_is_disabled(
+    bot_and_factory,
+    monkeypatch,
+):
+    bot, _ = bot_and_factory
+    monkeypatch.setattr(settings, "ai_agent_enabled", False)
+    await bot._handle_bounded_text(
+        telegram_message("Completed the login screen", 50),
+        500,
+    )
+    assert "disabled" in bot.telegram.messages[-1].lower()
+
+
+@pytest.mark.asyncio
+async def test_plain_text_uses_only_bounded_assistant_context(
+    bot_and_factory,
+    monkeypatch,
+):
+    bot, _ = bot_and_factory
+
+    class FakeBoundedAssistant:
+        def __init__(self):
+            self.calls = []
+
+        def handle(self, actor, text, *, update_id):
+            self.calls.append((actor, text, update_id))
+            return AssistantReply("Safe action completed.", "completed")
+
+    assistant = FakeBoundedAssistant()
+    bot.bounded_assistant = assistant
+    monkeypatch.setattr(settings, "ai_agent_enabled", True)
+    await bot._handle_bounded_text(
+        telegram_message("Completed the login screen", 51),
+        501,
+    )
+    actor, text, update_id = assistant.calls[0]
+    assert actor.telegram_id == 1001
+    assert text == "Completed the login screen"
+    assert update_id == 501
+    assert bot.telegram.messages[-1] == "Safe action completed."
+
+
+@pytest.mark.asyncio
+async def test_public_summary_is_deterministic_and_legacy_delete_is_absent(
+    bot_and_factory,
+    monkeypatch,
+):
+    bot, factory = bot_and_factory
+    monkeypatch.setattr(settings, "public_v2_enabled", True)
+    await bot._handle_command(telegram_message("/log Public-safe work", 60))
+    await bot._handle_command(telegram_message("/summary", 61))
+    assert "This week" in bot.telegram.messages[-1]
+    await bot._handle_command(telegram_message("/delete 1", 62))
+    assert "Unknown command" in bot.telegram.messages[-1]
+    with factory() as session:
+        assert session.query(WorkLog).count() == 1
 
 
 @pytest.mark.asyncio
