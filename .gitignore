@@ -129,6 +129,7 @@ docs/*
 !docs/TENANT_ISOLATION.md
 !docs/DATABASE_MIGRATIONS.md
 !docs/LOCAL_DEVELOPMENT.md
+!docs/CORE_CRUD.md
 changelog.md
 docker-compose.override.yml
 docker-compose.prod.yml

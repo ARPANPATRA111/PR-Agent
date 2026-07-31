@@ -54,6 +54,11 @@ class TimestampMixin:
         server_default=utc_timestamp(),
         onupdate=utc_timestamp(),
     )
+    version = Column(
+        Integer,
+        nullable=False,
+        server_default="1",
+    )
 
 
 class PublicUser(PublicBase):

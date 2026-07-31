@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from datetime import datetime
 from typing import Optional, Dict, List
 
@@ -11,6 +12,7 @@ from models import (
 )
 from memory import get_memory_manager
 from llm_agent import get_llm_agent
+from telegram_commands import DeterministicCommandMixin
 from utils import (
     transcribe_telegram_voice, format_streak, format_duration,
     extract_keywords, get_day_boundaries
@@ -120,7 +122,7 @@ class TelegramClient:
         return await self._request_with_retry("GET", "getWebhookInfo")
 
 
-class BotHandler:
+class BotHandler(DeterministicCommandMixin):
     def __init__(self):
         self.telegram = TelegramClient(settings.telegram_bot_token)
         self.memory = get_memory_manager()
@@ -135,17 +137,14 @@ class BotHandler:
         chat_id = message.chat.get("id")
         user_id = message.from_user.id if message.from_user else None
         
-        if settings.telegram_admin_id and user_id != settings.telegram_admin_id:
-            logger.warning(f"Unauthorized access attempt from user {user_id}")
-            return
-        
         try:
             if message.from_user:
-                self.memory.get_or_create_user(
+                await asyncio.to_thread(
+                    self.memory.get_or_create_user,
                     telegram_id=message.from_user.id,
                     first_name=message.from_user.first_name,
                     last_name=message.from_user.last_name,
-                    username=message.from_user.username
+                    username=message.from_user.username,
                 )
             
             if message.voice:
@@ -314,15 +313,39 @@ class BotHandler:
         commands = {
             "/start": self._cmd_start,
             "/help": self._cmd_help,
+            "/log": self._v2_create_work_log,
+            "/logs": self._v2_list_work_logs,
+            "/editlog": self._v2_edit_work_log,
+            "/deletelog": self._v2_delete_work_log,
+            "/note": self._v2_create_note,
+            "/notes": self._v2_list_notes,
+            "/editnote": self._v2_edit_note,
+            "/deletenote": self._v2_delete_note,
+            "/pin": self._v2_toggle_note_pin,
+            "/expense": self._v2_create_expense,
+            "/income": self._v2_create_income,
+            "/ledger": self._v2_list_ledger,
+            "/editledger": self._v2_edit_ledger,
+            "/deleteledger": self._v2_delete_ledger,
+            "/remind": self._v2_create_reminder,
+            "/reminders": self._v2_list_reminders,
+            "/editreminder": self._v2_edit_reminder,
+            "/pausereminder": self._v2_pause_reminder,
+            "/resumereminder": self._v2_resume_reminder,
+            "/deletereminder": self._v2_delete_reminder,
             "/status": self._cmd_status,
             "/summary": self._cmd_summary,
-            "/generate": self._cmd_generate,
             "/stats": self._cmd_status,
             "/delete": self._cmd_delete,
             "/recent": self._cmd_recent,
-            "/goal": self._cmd_goal,
-            "/set_goal": self._cmd_goal,
-            "/goals": self._cmd_goals,
+            "/goal": self._v2_create_goal,
+            "/set_goal": self._v2_create_goal,
+            "/goals": self._v2_list_goals,
+            "/editgoal": self._v2_edit_goal,
+            "/goalprogress": self._v2_progress_goal,
+            "/completegoal": self._v2_complete_goal,
+            "/pausegoal": self._v2_pause_goal,
+            "/deletegoal": self._v2_delete_goal,
         }
         
         handler = commands.get(command)
@@ -335,7 +358,7 @@ class BotHandler:
                 "❓ Unknown command. Use /help to see available commands."
             )
     
-    async def _cmd_start(self, message: TelegramMessage) -> None:
+    async def _legacy_cmd_start(self, message: TelegramMessage) -> None:
         chat_id = message.chat.get("id")
         user_name = message.from_user.first_name if message.from_user else "there"
         
@@ -364,7 +387,7 @@ Ready to start? Send me your first voice note! 🚀"""
         
         await self.telegram.send_message(chat_id, welcome)
     
-    async def _cmd_help(self, message: TelegramMessage) -> None:
+    async def _legacy_cmd_help(self, message: TelegramMessage) -> None:
         chat_id = message.chat.get("id")
         
         help_text = """📚 <b>Weekly Progress Agent - Help</b>

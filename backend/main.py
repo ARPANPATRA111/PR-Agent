@@ -29,6 +29,9 @@ from memory import get_memory_manager
 from bot import get_bot_handler, TelegramClient
 from scheduler import get_scheduler
 from utils import setup_logging, get_week_boundaries
+from api.public_v2 import router as public_v2_router
+from domain.errors import DomainError
+from domain.services import DomainServices
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -77,6 +80,8 @@ app = FastAPI(
 from rate_limiter import setup_rate_limiting, limiter, RATE_LIMITS
 
 setup_rate_limiting(app)
+
+app.include_router(public_v2_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -330,7 +335,7 @@ async def telegram_webhook(request: Request, response: Response, background_task
     response_model=AuthResponse,
     tags=["Authentication"],
 )
-async def authenticate_telegram_mini_app(
+def authenticate_telegram_mini_app(
     payload: TelegramMiniAppAuthRequest,
     request: Request,
     response: Response,
@@ -355,6 +360,13 @@ async def authenticate_telegram_mini_app(
         last_name=telegram_user["last_name"],
         username=telegram_user["username"],
     )
+    with memory.get_session() as session:
+        DomainServices(session).ensure_owner(
+            telegram_id=telegram_user["telegram_id"],
+            first_name=telegram_user["first_name"],
+            last_name=telegram_user["last_name"],
+            username=telegram_user["username"],
+        )
     if user.id is None:
         raise HTTPException(status_code=500, detail="User session unavailable")
 
@@ -1271,6 +1283,17 @@ async def get_current_user_info(request: Request):
         "streak": db_user.streak,
         "total_entries": db_user.total_entries,
     }
+
+
+@app.exception_handler(DomainError)
+async def domain_error_handler(request: Request, exc: DomainError):
+    del request
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.public_message},
+    )
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {exc}", exc_info=True)

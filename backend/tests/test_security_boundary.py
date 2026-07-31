@@ -15,6 +15,7 @@ from auth import create_session, validate_telegram_init_data
 from config import settings
 from memory import MemoryManager
 from models import LinkedInPost, PostTone
+from public_models import PublicBase
 
 
 TEST_BOT_TOKEN = "123456:test-telegram-token"
@@ -66,6 +67,7 @@ def secure_app(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "telegram_auth_max_age_seconds", 300)
 
     memory = MemoryManager()
+    PublicBase.metadata.create_all(memory.engine)
     import main
 
     bot_handler = Mock()
