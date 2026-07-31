@@ -35,9 +35,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
 FROM python:3.12-slim AS runtime
 
 # Labels
-LABEL maintainer="Weekly Progress Agent Team"
-LABEL version="1.1.0"
-LABEL description="AI-powered productivity tracking with voice notes"
+LABEL version="2.0.0"
+LABEL description="Invite-only Telegram tracking assistant"
 
 # Install runtime dependencies only
 RUN apt-get update && apt-get install -y --no-install-recommends \

@@ -174,7 +174,7 @@ class Settings(BaseSettings):
     groq_api_key: str = Field(default="", description="Groq API key")
     groq_model: str = Field(
         default="llama-3.3-70b-versatile",
-        description="Groq model to use (llama-3.3-70b-versatile, llama-3.1-8b-instant, mixtral-8x7b-32768)",
+        description="Groq model used for bounded provider calls",
     )
     llm_temperature: float = Field(
         default=0.7, ge=0.0, le=1.0, description="Temperature for LLM generation"
@@ -182,7 +182,7 @@ class Settings(BaseSettings):
 
     database_url: str = Field(
         default="sqlite:///./data/weekly_agent.db",
-        description="Database URL (sqlite:///path or postgresql://user:pass@host:port/db)",
+        description="Application database URL",
     )
     test_database_url: str = Field(
         default="",
@@ -355,16 +355,16 @@ class Settings(BaseSettings):
     )
 
     current_week_number: int = Field(
-        default=57,
+        default=1,
         ge=1,
-        description="Current week number for LinkedIn posts (started at Week 1, now Week 57+)",
+        description="Legacy-only post counter; unused by public-v2",
     )
     github_username: str = Field(
-        default="ARPANPATRA111", description="GitHub username for project links"
+        default="", description="Legacy-only profile; unused by public-v2"
     )
     linkedin_post_start_year: int = Field(
-        default=2025,
-        description="Year when weekly posts started (for hashtag calculation)",
+        default=2026,
+        description="Legacy-only start year; unused by public-v2",
     )
 
     @property

@@ -220,7 +220,7 @@ def test_account_deletion_revokes_persisted_session(
         },
     )
     assert deleted.status_code == 204
-    assert client.get("/api/settings").status_code == 401
+    assert client.get("/api/v2/schedule-preferences").status_code == 401
 
 
 def test_logout_revokes_persisted_session(secure_app, monkeypatch):
@@ -247,7 +247,7 @@ def test_logout_revokes_persisted_session(secure_app, monkeypatch):
     assert (
         TestClient(app)
         .get(
-            "/api/settings",
+            "/api/v2/schedule-preferences",
             headers={"Authorization": f"Bearer {session_token}"},
         )
         .status_code
@@ -404,5 +404,25 @@ def test_public_control_routes_are_absent(secure_app):
         ("post", "/api/admin/nudge"),
         ("post", "/api/auth/request-code"),
         ("post", "/api/auth/verify"),
+    ]:
+        assert client.request(method, path, headers=headers).status_code == 404
+
+
+def test_public_v2_retires_legacy_reports_and_unbounded_agent(
+    secure_app,
+    monkeypatch,
+):
+    app, memory, _ = secure_app
+    monkeypatch.setattr(settings, "public_v2_enabled", True)
+    headers = bearer_headers(memory, 101, "Alice")
+    client = TestClient(app)
+    for method, path in [
+        ("get", "/api/posts"),
+        ("get", "/api/posted-reports"),
+        ("post", "/api/generate"),
+        ("get", "/api/summaries"),
+        ("get", "/api/agent/analyze"),
+        ("get", "/api/agent/insight"),
+        ("get", "/api/search"),
     ]:
         assert client.request(method, path, headers=headers).status_code == 404

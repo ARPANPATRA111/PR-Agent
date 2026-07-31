@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import secrets
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from domain.errors import DomainError
@@ -87,18 +88,15 @@ class InviteService:
         return record
 
     def has_access(self, owner_id: int, *, now: datetime | None = None) -> bool:
-        current = now or datetime.now(UTC)
-        rows = (
-            self.session.query(InviteCode)
+        del now
+        return (
+            self.session.query(InviteCode.id)
             .filter(
                 InviteCode.claimed_by_owner_id == owner_id,
                 InviteCode.enabled.is_(True),
             )
-            .all()
-        )
-        return any(
-            row.expires_at_utc is None or self._aware(row.expires_at_utc) > current
-            for row in rows
+            .first()
+            is not None
         )
 
     @staticmethod
@@ -151,9 +149,22 @@ class QuotaService:
                 request_count=units,
                 updated_at=current,
             )
-            self.session.add(record)
-            self.session.flush()
-            return limit - units
+            try:
+                with self.session.begin_nested():
+                    self.session.add(record)
+                    self.session.flush()
+                return limit - units
+            except IntegrityError:
+                record = (
+                    self.session.query(RateLimitBucket)
+                    .filter(
+                        RateLimitBucket.subject_key == subject_key,
+                        RateLimitBucket.scope == scope,
+                        RateLimitBucket.window_start == window_start,
+                    )
+                    .with_for_update()
+                    .one()
+                )
         if record.request_count + units > limit:
             raise QuotaExceeded()
         record.request_count += units

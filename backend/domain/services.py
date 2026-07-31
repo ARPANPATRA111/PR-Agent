@@ -100,6 +100,14 @@ class DomainServices:
     def __init__(self, session: Session):
         self.session = session
 
+    @staticmethod
+    def _require_text_size(*values: str | None) -> None:
+        if any(
+            value is not None and len(value) > settings.max_text_entry_length
+            for value in values
+        ):
+            raise DomainError("That text entry is longer than the configured limit.")
+
     def ensure_owner(
         self,
         *,
@@ -299,6 +307,7 @@ class DomainServices:
         )
         if existing is not None:
             return existing
+        self._require_text_size(data.original_text, data.cleaned_text)
         QuotaService(self.session).require(
             owner_id,
             "text_entries",
@@ -434,6 +443,7 @@ class DomainServices:
         )
         if existing is not None:
             return existing
+        self._require_text_size(data.title, data.body)
         QuotaService(self.session).require(
             owner_id,
             "text_entries",
@@ -498,6 +508,7 @@ class DomainServices:
         )
         if existing is not None:
             return existing
+        self._require_text_size(data.description)
         QuotaService(self.session).require(
             owner_id,
             "text_entries",
@@ -626,6 +637,7 @@ class DomainServices:
         )
         if existing is not None:
             return existing
+        self._require_text_size(data.title, data.description)
         QuotaService(self.session).require(
             owner_id,
             "text_entries",
@@ -731,6 +743,7 @@ class DomainServices:
         )
         if existing is not None:
             return existing
+        self._require_text_size(data.title, data.description)
         reminder_count = (
             self.session.query(func.count(Reminder.id))
             .filter(
@@ -975,6 +988,7 @@ class DomainServices:
         )
         if existing is not None:
             return existing
+        self._require_text_size(data.original_text, data.meal_name)
         logged_at = (
             local_datetime_to_utc(data.logged_at_local, data.timezone)
             if data.logged_at_local

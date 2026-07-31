@@ -188,10 +188,10 @@ def test_ledger_precision_validation_filters_and_currency_separation(services):
     )
     assert updated.amount_minor == 13000
     service.delete_ledger_entry(owner_a, income.id)
+    service.session.flush()
     assert service.summarize_ledger(owner_a) == [
         {"currency": "INR", "expense_minor": 13000, "income_minor": 0}
     ]
-
     for amount in ("0", "-1", "999999999999999999999999"):
         with pytest.raises(ValidationError):
             LedgerCreate(
@@ -214,6 +214,25 @@ def test_ledger_precision_validation_filters_and_currency_separation(services):
             currency="JPY",
             description="invalid precision",
         )
+
+
+def test_ten_small_inr_entries_equal_one_rupee(services):
+    service, owner_a, _ = services
+    for index in range(10):
+        service.create_ledger_entry(
+            owner_a,
+            LedgerCreate(
+                direction="expense",
+                amount=Decimal("0.10"),
+                currency="INR",
+                description=f"Small expense {index}",
+                idempotency_key=f"small-expense-{index}",
+            ),
+        )
+    assert (
+        sum(row.amount_minor for row in service.list_ledger_entries(owner_a, limit=20))
+        == 100
+    )
 
 
 def test_goal_crud_progress_status_and_dates(services):

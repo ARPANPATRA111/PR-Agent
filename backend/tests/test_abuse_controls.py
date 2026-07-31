@@ -14,6 +14,8 @@ from abuse_controls import (
     QuotaService,
 )
 from config import settings
+from domain.errors import DomainError
+from domain.schemas import NoteCreate
 from domain.services import DomainServices
 from public_models import PublicBase, RateLimitBucket
 from utils import transcribe_telegram_voice, validate_voice_metadata
@@ -74,6 +76,23 @@ def test_quota_is_per_owner_and_idempotently_rejects_overage(session_factory):
             quota.require(alice.id, "test", limit=2)
         assert quota.require(bob.id, "test", limit=2) == 1
         assert session.query(RateLimitBucket).count() == 2
+
+
+def test_configured_text_limit_is_enforced(
+    session_factory,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "max_text_entry_length", 64)
+    with session_factory.begin() as session:
+        owner = DomainServices(session).ensure_owner(
+            telegram_id=301,
+            first_name="Alice",
+        )
+        with pytest.raises(DomainError):
+            DomainServices(session).create_note(
+                owner.id,
+                NoteCreate(body="x" * 65),
+            )
 
 
 def test_voice_metadata_limits(monkeypatch):

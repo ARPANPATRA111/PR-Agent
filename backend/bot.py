@@ -84,12 +84,18 @@ class TelegramClient:
                 if attempt < self._max_retries:
                     delay = self._base_delay * (2**attempt) + random.random()
                     logger.warning(
-                        f"Telegram API request failed (attempt {attempt + 1}): {e}. "
-                        f"Retrying in {delay:.1f}s..."
+                        "Telegram API request failed; retrying",
+                        extra={
+                            "error_category": type(e).__name__,
+                            "attempt": attempt + 1,
+                        },
                     )
                     await asyncio.sleep(delay)
                 else:
-                    logger.error(f"All retries failed for Telegram API: {e}")
+                    logger.error(
+                        "Telegram API retries exhausted",
+                        extra={"error_category": type(e).__name__},
+                    )
                     raise
 
         raise last_error
@@ -236,8 +242,8 @@ class BotHandler(DeterministicCommandMixin):
                     "📢 I work best with voice notes! Send me a voice message about your progress.",
                 )
 
-        except Exception as e:
-            logger.error(f"Error handling update: {e}", exc_info=True)
+        except Exception:
+            logger.exception("Telegram update handler failed")
             await self.telegram.send_message(
                 chat_id, "❌ Sorry, something went wrong. Please try again."
             )

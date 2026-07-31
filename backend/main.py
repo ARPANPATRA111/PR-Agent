@@ -96,8 +96,8 @@ async def lifespan(app: FastAPI):
         logger.info(f"Whisper model: {settings.whisper_model}")
         logger.info(f"Timezone: {settings.timezone}")
 
-    except Exception as e:
-        logger.error(f"Startup error: {e}", exc_info=True)
+    except Exception:
+        logger.exception("Application startup failed")
         raise
 
     logger.info("Weekly Progress Agent started successfully!")
@@ -113,8 +113,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Weekly Progress Agent",
-    description="Private Telegram personal tracking assistant",
+    title="PR-Agent Public Edition",
+    description="Invite-only multi-user Telegram tracking assistant",
     version="2.0.0-security-preview",
     lifespan=lifespan,
     docs_url=None if settings.app_env == "production" else "/docs",
@@ -189,6 +189,18 @@ async def add_security_headers(request: Request, call_next):
 async def enforce_private_api_identity(request: Request, call_next):
     path = request.url.path.rstrip("/") or "/"
     if (
+        settings.public_v2_enabled
+        and path.startswith("/api/")
+        and not path.startswith("/api/v2/")
+        and path
+        not in {
+            "/api/health",
+            "/api/auth/telegram",
+            "/api/auth/logout",
+        }
+    ):
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
+    if (
         request.method == "OPTIONS"
         or not path.startswith("/api/")
         or path in PUBLIC_API_PATHS
@@ -245,8 +257,8 @@ async def enforce_private_api_identity(request: Request, call_next):
 async def root(request: Request, response: Response):
     return {
         "status": "healthy",
-        "service": "Weekly Progress Agent",
-        "version": "1.1.0",
+        "service": "PR-Agent Public Edition",
+        "version": "2.0.0",
         "timestamp": datetime.utcnow().isoformat(),
     }
 
@@ -1458,7 +1470,10 @@ async def domain_error_handler(request: Request, exc: DomainError):
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    logger.error(
+        "Unhandled application exception",
+        extra={"error_category": type(exc).__name__},
+    )
 
     from error_recovery import error_stats
 
