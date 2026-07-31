@@ -1,16 +1,16 @@
 services:
   - type: web
-    name: weekly-progress-agent
+    name: pr-agent-api
     runtime: python
     pythonVersion: "3.12.0"
     region: oregon
-    plan: free
-    buildCommand: |
-      cd backend && pip install -r requirements.txt
-    startCommand: |
-      cd backend && python -m alembic upgrade head && exec uvicorn main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /health
-    envVars:
+    plan: starter
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: >-
+      cd backend && python -m alembic upgrade head &&
+      exec uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /ready
+    envVars: &shared
       - key: APP_ENV
         value: production
       - key: APP_BASE_URL
@@ -18,6 +18,16 @@ services:
       - key: FRONTEND_BASE_URL
         sync: false
       - key: PUBLIC_V2_ENABLED
+        value: "false"
+      - key: INVITE_ONLY
+        value: "true"
+      - key: AI_AGENT_ENABLED
+        value: "false"
+      - key: AI_PROVIDER
+        value: disabled
+      - key: REMINDER_WORKER_ENABLED
+        value: "false"
+      - key: MESSAGE_CLEANUP_ENABLED
         value: "false"
       - key: TELEGRAM_BOT_TOKEN
         sync: false
@@ -29,21 +39,55 @@ services:
         sync: false
       - key: GROQ_API_KEY
         sync: false
-      - key: NUTRITION_PROVIDER
-        value: reference
       - key: DATABASE_URL
         sync: false
       - key: SESSION_SIGNING_SECRET
         sync: false
+      - key: INTERNAL_MONITORING_TOKEN
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
       - key: CORS_ORIGINS
         sync: false
-      - key: WHISPER_MODEL
-        value: whisper-large-v3-turbo
-      - key: WHISPER_LANGUAGE
-        value: auto
+      - key: NUTRITION_PROVIDER
+        value: reference
       - key: DEBUG
         value: "false"
       - key: DISABLE_SSL_VERIFY
         value: "false"
+      - key: JSON_LOGS
+        value: "true"
       - key: TIMEZONE
         value: Asia/Kolkata
+
+  - type: worker
+    name: pr-agent-worker
+    runtime: python
+    pythonVersion: "3.12.0"
+    region: oregon
+    plan: starter
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: cd backend && exec python worker.py
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: PUBLIC_V2_ENABLED
+        sync: false
+      - key: REMINDER_WORKER_ENABLED
+        sync: false
+      - key: MESSAGE_CLEANUP_ENABLED
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: DEBUG
+        value: "false"
+      - key: DISABLE_SSL_VERIFY
+        value: "false"
+      - key: JSON_LOGS
+        value: "true"

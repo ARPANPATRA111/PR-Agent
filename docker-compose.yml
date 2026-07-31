@@ -48,6 +48,9 @@ services:
       GROQ_API_KEY: ""
       CORS_ORIGINS: http://localhost:3000
       DEBUG: "false"
+      PUBLIC_V2_ENABLED: "false"
+      INVITE_ONLY: "true"
+      JSON_LOGS: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -60,7 +63,7 @@ services:
       - ./prompts:/app/prompts:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/ready"]
       interval: 30s
       timeout: 10s
       retries: 3

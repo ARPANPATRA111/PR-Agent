@@ -15,6 +15,8 @@ from sqlalchemy import func, or_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from abuse_controls import QuotaService
+from config import settings
 from domain.errors import ConcurrentUpdate, DomainError, RecordNotFound
 from domain.schemas import (
     GoalCreate,
@@ -297,6 +299,11 @@ class DomainServices:
         )
         if existing is not None:
             return existing
+        QuotaService(self.session).require(
+            owner_id,
+            "text_entries",
+            limit=settings.per_user_daily_text_limit,
+        )
         logged_at = (
             local_datetime_to_utc(data.logged_at_local, data.timezone)
             if data.logged_at_local
@@ -427,6 +434,11 @@ class DomainServices:
         )
         if existing is not None:
             return existing
+        QuotaService(self.session).require(
+            owner_id,
+            "text_entries",
+            limit=settings.per_user_daily_text_limit,
+        )
         title = data.title or data.body.splitlines()[0][:80]
         record = Note(
             owner_id=owner_id,
@@ -486,6 +498,11 @@ class DomainServices:
         )
         if existing is not None:
             return existing
+        QuotaService(self.session).require(
+            owner_id,
+            "text_entries",
+            limit=settings.per_user_daily_text_limit,
+        )
         transacted_at = (
             local_datetime_to_utc(data.transaction_at_local, data.timezone)
             if data.transaction_at_local
@@ -609,6 +626,11 @@ class DomainServices:
         )
         if existing is not None:
             return existing
+        QuotaService(self.session).require(
+            owner_id,
+            "text_entries",
+            limit=settings.per_user_daily_text_limit,
+        )
         record = TrackedGoal(
             owner_id=owner_id,
             title=data.title,
@@ -709,6 +731,24 @@ class DomainServices:
         )
         if existing is not None:
             return existing
+        reminder_count = (
+            self.session.query(func.count(Reminder.id))
+            .filter(
+                Reminder.owner_id == owner_id,
+                Reminder.enabled.is_(True),
+            )
+            .scalar()
+            or 0
+        )
+        if reminder_count >= settings.max_reminders_per_user:
+            from abuse_controls import QuotaExceeded
+
+            raise QuotaExceeded("The active reminder limit has been reached.")
+        QuotaService(self.session).require(
+            owner_id,
+            "text_entries",
+            limit=settings.per_user_daily_text_limit,
+        )
         next_run = self._next_reminder_run(data)
         recurrence = (
             None
@@ -976,6 +1016,11 @@ class DomainServices:
         draft = self.create_nutrition_draft(owner_id, data)
         if draft.estimation_source != "pending":
             return draft
+        QuotaService(self.session).require(
+            owner_id,
+            "nutrition_estimations",
+            limit=settings.per_user_daily_nutrition_limit,
+        )
         preferences = self.get_nutrition_preferences(owner_id)
         try:
             estimate = provider.estimate(

@@ -7,6 +7,7 @@ from html import escape
 import logging
 from zoneinfo import ZoneInfo
 
+from abuse_controls import QuotaService
 from config import settings
 from domain.errors import DomainError
 from domain.schemas import (
@@ -90,6 +91,14 @@ class DeterministicCommandMixin:
                 username=message.from_user.username,
             )
             return operation(service, owner.id)
+
+    @staticmethod
+    def _consume_summary_quota(service: DomainServices, owner_id: int) -> None:
+        QuotaService(service.session).require(
+            owner_id,
+            "summaries",
+            limit=settings.per_user_daily_summary_limit,
+        )
 
     async def _domain_reply(self, message: TelegramMessage, operation) -> None:
         chat_id = message.chat.get("id")
@@ -783,6 +792,7 @@ class DeterministicCommandMixin:
             return
 
         def operation(service, owner):
+            self._consume_summary_quota(service, owner)
             summary = service.summarize_nutrition(owner, local_date, local_date)
             target_lines = []
             if summary["calorie_target"] is not None:
@@ -845,6 +855,7 @@ class DeterministicCommandMixin:
 
     async def _v2_today_summary(self, message: TelegramMessage) -> None:
         def operation(service, owner):
+            self._consume_summary_quota(service, owner)
             preferences = service.get_schedule_preferences(owner)
             local_date = datetime.now(ZoneInfo(preferences["timezone"])).date()
             work = service.list_work_logs(
@@ -889,6 +900,7 @@ class DeterministicCommandMixin:
 
     async def _v2_week_summary(self, message: TelegramMessage) -> None:
         def operation(service, owner):
+            self._consume_summary_quota(service, owner)
             preferences = service.get_schedule_preferences(owner)
             local_date = datetime.now(ZoneInfo(preferences["timezone"])).date()
             start = local_date - timedelta(days=local_date.weekday())
@@ -908,6 +920,7 @@ class DeterministicCommandMixin:
 
     async def _v2_spending_summary(self, message: TelegramMessage) -> None:
         def operation(service, owner):
+            self._consume_summary_quota(service, owner)
             totals = service.summarize_ledger(owner)
             if not totals:
                 return "No ledger entries yet."

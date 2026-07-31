@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
+from abuse_controls import QuotaExceeded, QuotaService
 from assistant.providers import IntentProvider
 from assistant.schemas import (
     AgentProposal,
@@ -77,6 +78,8 @@ class BoundedAssistant:
         min_confidence: float = 0.8,
         pending_ttl_minutes: int = 30,
         max_input_length: int = 4000,
+        daily_ai_limit: int = 50,
+        daily_summary_limit: int = 30,
         clock: Callable[[], datetime] | None = None,
     ):
         self.session_factory = session_factory
@@ -85,6 +88,8 @@ class BoundedAssistant:
         self.min_confidence = min_confidence
         self.pending_ttl_minutes = pending_ttl_minutes
         self.max_input_length = max_input_length
+        self.daily_ai_limit = daily_ai_limit
+        self.daily_summary_limit = daily_summary_limit
         self.clock = clock or (lambda: datetime.now(UTC))
 
     def handle(
@@ -104,7 +109,14 @@ class BoundedAssistant:
         existing = self._existing_reply(actor.telegram_id, idempotency_key)
         if existing is not None:
             return existing
-        owner_id, run_id, default_timezone = self._start_run(actor, text, update_id)
+        try:
+            owner_id, run_id, default_timezone = self._start_run(actor, text, update_id)
+        except QuotaExceeded:
+            return AssistantReply(
+                "Your daily assistant limit has been reached. "
+                "Deterministic slash commands still work.",
+                "rejected",
+            )
         context = {
             "current_utc": self.clock().isoformat(),
             "default_timezone": default_timezone,
@@ -154,6 +166,14 @@ class BoundedAssistant:
             "known_arguments": pending.proposed_arguments,
             "missing_fields": pending.missing_fields,
         }
+        try:
+            self._consume_ai_quota(pending.owner_id)
+        except QuotaExceeded:
+            return AssistantReply(
+                "Your daily assistant limit has been reached.",
+                "rejected",
+                pending_id=pending_id,
+            )
         try:
             proposal = AgentProposal.model_validate(
                 self.provider.classify(answer.strip(), context=context)
@@ -341,6 +361,11 @@ class BoundedAssistant:
                 last_name=actor.last_name,
                 username=actor.username,
             )
+            QuotaService(session).require(
+                owner.id,
+                "ai_classifications",
+                limit=self.daily_ai_limit,
+            )
             default_timezone = service.get_schedule_preferences(owner.id)["timezone"]
             run = AgentRun(
                 owner_id=owner.id,
@@ -352,6 +377,15 @@ class BoundedAssistant:
             session.add(run)
             session.commit()
             return owner.id, run.id, default_timezone
+
+    def _consume_ai_quota(self, owner_id: int) -> None:
+        with self.session_factory() as session:
+            QuotaService(session).require(
+                owner_id,
+                "ai_classifications",
+                limit=self.daily_ai_limit,
+            )
+            session.commit()
 
     def _apply_proposal(
         self,
@@ -615,6 +649,11 @@ class BoundedAssistant:
         owner_id: int,
         action: QueryAction,
     ) -> str:
+        QuotaService(service.session).require(
+            owner_id,
+            "summaries",
+            limit=self.daily_summary_limit,
+        )
         today = self.clock().astimezone(ZoneInfo(action.timezone)).date()
         if action.query_type == "today":
             rows = service.list_work_logs(

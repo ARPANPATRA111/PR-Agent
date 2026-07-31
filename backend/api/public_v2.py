@@ -10,6 +10,7 @@ from typing import Generator, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
+from abuse_controls import QuotaService
 from auth import TokenData, get_current_user
 from config import settings
 from domain.errors import DomainError, RecordNotFound
@@ -390,6 +391,11 @@ def export_account_data(
     export_format: Literal["json", "csv"] = Query(default="json", alias="format"),
     context: DomainContext = Context,
 ):
+    QuotaService(context.service.session).require(
+        context.owner_id,
+        "account_exports",
+        limit=settings.per_user_daily_export_limit,
+    )
     privacy = PrivacyService(context.service.session)
     payload = privacy.export_owner_data(context.owner_id)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d")

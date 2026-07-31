@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Secure mobile-first Telegram Mini App for PR-Agent",
   "private": true,
+  "packageManager": "pnpm@10.11.0",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

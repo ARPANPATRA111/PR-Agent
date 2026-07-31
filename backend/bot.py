@@ -1,5 +1,6 @@
 import logging
 import asyncio
+from math import ceil
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, List
 
@@ -7,7 +8,14 @@ import httpx
 
 from assistant import ActorContext, BoundedAssistant
 from assistant.providers import ProviderUnavailable, get_intent_provider
+from abuse_controls import (
+    BetaAccessRequired,
+    InviteService,
+    QuotaExceeded,
+    QuotaService,
+)
 from config import settings
+from domain.errors import DomainError
 from models import (
     TelegramUpdate,
     TelegramMessage,
@@ -23,6 +31,7 @@ from nutrition.providers import get_nutrition_provider
 from telegram_commands import DeterministicCommandMixin
 from utils import (
     transcribe_telegram_voice,
+    validate_voice_metadata,
     format_streak,
     format_duration,
     extract_keywords,
@@ -186,6 +195,20 @@ class BotHandler(DeterministicCommandMixin):
         user_id = message.from_user.id if message.from_user else None
 
         try:
+            if settings.public_v2_enabled and settings.invite_only:
+                try:
+                    await asyncio.to_thread(
+                        self._require_beta_access,
+                        message,
+                    )
+                except BetaAccessRequired:
+                    await self.telegram.send_message(
+                        chat_id,
+                        "Beta access is required. If you have an invite, send "
+                        "<code>/start YOUR_INVITE_CODE</code>.",
+                    )
+                    return
+
             if message.from_user:
                 await asyncio.to_thread(
                     self.memory.get_or_create_user,
@@ -218,6 +241,31 @@ class BotHandler(DeterministicCommandMixin):
             await self.telegram.send_message(
                 chat_id, "❌ Sorry, something went wrong. Please try again."
             )
+
+    def _require_beta_access(self, message: TelegramMessage) -> None:
+        if message.from_user is None:
+            raise BetaAccessRequired()
+        invite_code = None
+        parts = (message.text or "").split(maxsplit=1)
+        if parts and parts[0].lower() == "/start" and len(parts) == 2:
+            invite_code = parts[1].strip()
+        with self.memory.get_session() as session:
+            owner = DomainServices(session).ensure_owner(
+                telegram_id=message.from_user.id,
+                first_name=message.from_user.first_name,
+                last_name=message.from_user.last_name,
+                username=message.from_user.username,
+            )
+            invites = InviteService(session)
+            invite_claimed = False
+            if invite_code:
+                try:
+                    invites.claim(owner.id, invite_code)
+                    invite_claimed = True
+                except DomainError as exc:
+                    raise BetaAccessRequired() from exc
+            if not invite_claimed and not invites.has_access(owner.id):
+                raise BetaAccessRequired()
 
     async def _handle_voice(self, message: TelegramMessage) -> None:
         chat_id = message.chat.get("id")
@@ -455,6 +503,8 @@ class BotHandler(DeterministicCommandMixin):
                 min_confidence=settings.ai_agent_min_confidence,
                 pending_ttl_minutes=settings.agent_pending_ttl_minutes,
                 max_input_length=settings.max_agent_input_length,
+                daily_ai_limit=settings.per_user_daily_ai_limit,
+                daily_summary_limit=settings.per_user_daily_summary_limit,
             )
         return self.bounded_assistant
 
@@ -474,6 +524,12 @@ class BotHandler(DeterministicCommandMixin):
         message: TelegramMessage,
         update_id: int,
     ) -> None:
+        if len(message.text or "") > settings.max_agent_input_length:
+            await self.telegram.send_message(
+                message.chat.get("id"),
+                "That message is too long. Please split it into smaller entries.",
+            )
+            return
         if not settings.ai_agent_enabled:
             await self.telegram.send_message(
                 message.chat.get("id"),
@@ -500,6 +556,22 @@ class BotHandler(DeterministicCommandMixin):
         message: TelegramMessage,
         update_id: int,
     ) -> None:
+        try:
+            validate_voice_metadata(
+                duration_seconds=message.voice.duration,
+                file_size=message.voice.file_size,
+                mime_type=message.voice.mime_type,
+            )
+            await asyncio.to_thread(
+                self._consume_voice_quota,
+                message,
+            )
+        except (ValueError, QuotaExceeded) as exc:
+            await self.telegram.send_message(
+                message.chat.get("id"),
+                str(exc),
+            )
+            return
         if not settings.ai_agent_enabled:
             await self.telegram.send_message(
                 message.chat.get("id"),
@@ -534,6 +606,23 @@ class BotHandler(DeterministicCommandMixin):
             await self.telegram.send_message(
                 message.chat.get("id"),
                 "I could not process that voice note. No action was taken.",
+            )
+
+    def _consume_voice_quota(self, message: TelegramMessage) -> None:
+        if message.from_user is None or message.voice is None:
+            raise ValueError("Voice identity is missing.")
+        with self.memory.get_session() as session:
+            owner = DomainServices(session).ensure_owner(
+                telegram_id=message.from_user.id,
+                first_name=message.from_user.first_name,
+                last_name=message.from_user.last_name,
+                username=message.from_user.username,
+            )
+            QuotaService(session).require(
+                owner.id,
+                "voice_minutes",
+                limit=settings.per_user_daily_voice_minutes,
+                units=max(1, ceil(message.voice.duration / 60)),
             )
 
     async def _v2_answer_agent(self, message: TelegramMessage) -> None:

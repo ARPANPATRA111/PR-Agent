@@ -12,6 +12,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from auth import create_session, validate_telegram_init_data
+from abuse_controls import InviteService
 from config import settings
 from memory import MemoryManager
 from models import LinkedInPost, PostTone
@@ -64,6 +65,7 @@ def secure_app(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "telegram_webhook_secret", TEST_WEBHOOK_SECRET)
     monkeypatch.setattr(settings, "session_signing_secret", TEST_SESSION_SECRET)
     monkeypatch.setattr(settings, "telegram_auth_max_age_seconds", 300)
+    monkeypatch.setattr(settings, "invite_only", False)
 
     memory = MemoryManager()
     PublicBase.metadata.create_all(memory.engine)
@@ -137,6 +139,58 @@ def test_mini_app_auth_issues_http_only_session(secure_app):
         ).status_code
         == 401
     )
+
+
+def test_invite_only_auth_claims_once_and_denies_reuse(
+    secure_app,
+    monkeypatch,
+):
+    app, memory, _ = secure_app
+    monkeypatch.setattr(settings, "public_v2_enabled", True)
+    monkeypatch.setattr(settings, "invite_only", True)
+    client = TestClient(app)
+    denied = client.post(
+        "/api/auth/telegram",
+        json={"init_data": signed_init_data(151)},
+    )
+    assert denied.status_code == 403
+
+    with memory.get_session() as session:
+        _, code = InviteService(session).create()
+    accepted = client.post(
+        "/api/auth/telegram",
+        json={
+            "init_data": signed_init_data(151),
+            "invite_code": code,
+        },
+    )
+    assert accepted.status_code == 200, accepted.text
+    reused = TestClient(app).post(
+        "/api/auth/telegram",
+        json={
+            "init_data": signed_init_data(152),
+            "invite_code": code,
+        },
+    )
+    assert reused.status_code == 403
+
+
+def test_internal_metrics_are_token_protected(secure_app, monkeypatch):
+    app, _, _ = secure_app
+    monkeypatch.setattr(
+        settings,
+        "internal_monitoring_token",
+        "monitoring-token-with-at-least-24-chars",
+    )
+    client = TestClient(app)
+    assert client.get("/internal/metrics").status_code == 401
+    response = client.get(
+        "/internal/metrics",
+        headers={"Authorization": ("Bearer monitoring-token-with-at-least-24-chars")},
+    )
+    assert response.status_code == 200
+    assert "deliveries" in response.json()
+    assert "runtime_counters" in response.json()
 
 
 def test_account_deletion_revokes_persisted_session(

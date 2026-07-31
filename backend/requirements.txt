@@ -48,6 +48,5 @@ flake8>=7.0.0
 # Type checking
 mypy>=1.8.0
 
-# Monitoring (optional)
-# prometheus-client>=0.19.0
-# sentry-sdk[fastapi]>=1.39.0
+# Monitoring (activated only when SENTRY_DSN is supplied)
+sentry-sdk[fastapi]>=2.20.0

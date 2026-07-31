@@ -3,6 +3,9 @@ import hmac
 import json
 import logging
 import asyncio
+import re
+import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
@@ -46,12 +49,24 @@ from bot import get_bot_handler, TelegramClient
 from scheduler import get_scheduler
 from utils import setup_logging, get_week_boundaries
 from api.public_v2 import router as public_v2_router
+from abuse_controls import BetaAccessRequired, InviteService
 from domain.errors import DomainError
 from domain.services import DomainServices
 from telegram_cleanup import queue_telegram_message
+from observability import operational_snapshot, runtime_metrics
 
 setup_logging()
 logger = logging.getLogger(__name__)
+
+if settings.sentry_dsn:
+    import sentry_sdk
+
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.app_env,
+        send_default_pii=False,
+        traces_sample_rate=0.05,
+    )
 
 
 @asynccontextmanager
@@ -126,6 +141,33 @@ PUBLIC_API_PATHS = {
     "/api/auth/telegram",
 }
 
+REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{8,128}$")
+
+
+@app.middleware("http")
+async def request_context(request: Request, call_next):
+    supplied = request.headers.get("X-Request-ID", "")
+    request_id = (
+        supplied if REQUEST_ID_PATTERN.fullmatch(supplied) else uuid.uuid4().hex
+    )
+    request.state.request_id = request_id
+    started = time.perf_counter()
+    response = await call_next(request)
+    latency_ms = round((time.perf_counter() - started) * 1000, 2)
+    response.headers["X-Request-ID"] = request_id
+    logger.info(
+        "http_request",
+        extra={
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": response.status_code,
+            "latency_ms": latency_ms,
+        },
+    )
+    runtime_metrics.increment(f"http_status_{response.status_code}")
+    return response
+
 
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
@@ -161,7 +203,7 @@ async def enforce_private_api_identity(request: Request, call_next):
         allowed = memory.consume_rate_limit(
             subject_key=f"user:{current_user.user_id}",
             scope="private_api",
-            limit=120,
+            limit=settings.per_user_requests_per_minute,
             window_seconds=60,
         )
         if not allowed:
@@ -223,51 +265,49 @@ async def keep_alive_check(request: Request, response: Response):
 @app.get("/api/health", tags=["Health"])
 @limiter.limit(RATE_LIMITS["health"])
 async def health_check(request: Request, response: Response):
-    memory = get_memory_manager()
-    scheduler = get_scheduler()
-
-    from error_recovery import circuit_breakers
-
-    # Check database connection
-    db_connected = False
-    try:
-        from sqlalchemy import text
-
-        session = memory.SessionLocal()
-        session.execute(text("SELECT 1"))
-        session.close()
-        db_connected = True
-    except:
-        pass
-
-    # Check Telegram connection
-    telegram_connected = False
-    try:
-        telegram = TelegramClient(settings.telegram_bot_token)
-        webhook_info = await telegram.get_webhook_info()
-        telegram_connected = webhook_info.get("ok", False)
-    except:
-        pass
-
-    scheduler_running = scheduler.scheduler.running if scheduler else False
-
     return {
         "status": "healthy",
-        "version": "1.1.0",
-        "database_connected": db_connected,
-        "vector_store_connected": db_connected,
-        "telegram_connected": telegram_connected,
-        "scheduler_running": scheduler_running,
-        "components": {
-            "database": "connected" if db_connected else "disconnected",
-            "vector_store": "connected" if db_connected else "disconnected",
-            "scheduler": "running" if scheduler_running else "stopped",
-        },
-        "circuit_breakers": {
-            name: cb.get_status() for name, cb in circuit_breakers.items()
-        },
-        "timestamp": datetime.utcnow().isoformat(),
+        "service": "pr-agent-api",
+        "version": "2.0.0",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@app.get("/ready", tags=["Health"])
+async def readiness_check():
+    from sqlalchemy import text
+
+    memory = get_memory_manager()
+    session = memory.SessionLocal()
+    try:
+        session.execute(text("SELECT 1"))
+    except Exception:
+        runtime_metrics.increment("readiness_failures")
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_ready", "database": "unavailable"},
+        )
+    finally:
+        session.close()
+    return {"status": "ready", "database": "connected"}
+
+
+@app.get("/internal/metrics", tags=["Operations"])
+def internal_metrics(request: Request):
+    configured = settings.internal_monitoring_token
+    if not configured:
+        raise HTTPException(status_code=404, detail="Not found")
+    supplied = request.headers.get("Authorization", "")
+    expected = f"Bearer {configured}"
+    if not hmac.compare_digest(supplied, expected):
+        runtime_metrics.increment("monitoring_auth_rejections")
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    memory = get_memory_manager()
+    with memory.get_session() as session:
+        return operational_snapshot(
+            session,
+            stale_after_seconds=settings.worker_heartbeat_stale_seconds,
+        )
 
 
 @app.post("/webhook", tags=["Telegram"])
@@ -290,6 +330,7 @@ async def telegram_webhook(
         provided_secret,
         configured_secret,
     ):
+        runtime_metrics.increment("telegram_auth_rejections")
         raise HTTPException(
             status_code=401,
             detail="Invalid Telegram webhook secret",
@@ -321,14 +362,16 @@ async def telegram_webhook(
 
         memory = get_memory_manager()
         if not memory.register_telegram_update(update.update_id):
+            runtime_metrics.increment("telegram_duplicate_updates")
             return JSONResponse(content={"ok": True, "duplicate": True})
 
         if not memory.consume_rate_limit(
             subject_key=subject,
             scope="telegram_webhook",
-            limit=60,
+            limit=settings.per_user_requests_per_minute,
             window_seconds=60,
         ):
+            runtime_metrics.increment("telegram_rate_limit_rejections")
             memory.mark_telegram_update(
                 update.update_id,
                 "failed",
@@ -424,6 +467,27 @@ def authenticate_telegram_mini_app(
         raise HTTPException(status_code=429, detail="Rate limit exceeded")
 
     telegram_user = validate_telegram_init_data(payload.init_data)
+    with memory.get_session() as session:
+        owner = DomainServices(session).ensure_owner(
+            telegram_id=telegram_user["telegram_id"],
+            first_name=telegram_user["first_name"],
+            last_name=telegram_user["last_name"],
+            username=telegram_user["username"],
+        )
+        invites = InviteService(session)
+        invite_claimed = False
+        if payload.invite_code:
+            invites.claim(owner.id, payload.invite_code)
+            invite_claimed = True
+        if (
+            settings.public_v2_enabled
+            and settings.invite_only
+            and not invite_claimed
+            and not invites.has_access(owner.id)
+        ):
+            raise BetaAccessRequired()
+        owner_id = owner.id
+
     user = memory.get_or_create_user(
         telegram_id=telegram_user["telegram_id"],
         first_name=telegram_user["first_name"],
@@ -439,16 +503,10 @@ def authenticate_telegram_mini_app(
         username=user.username,
     )
     with memory.get_session() as session:
-        owner = DomainServices(session).ensure_owner(
-            telegram_id=telegram_user["telegram_id"],
-            first_name=telegram_user["first_name"],
-            last_name=telegram_user["last_name"],
-            username=telegram_user["username"],
-        )
         persist_application_session(
             session,
             session_token,
-            owner_id=owner.id,
+            owner_id=owner_id,
         )
     same_site = "none" if settings.session_cookie_secure else "lax"
     response.set_cookie(

@@ -11,7 +11,7 @@ import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from passlib.context import CryptContext
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from config import settings
 
@@ -53,7 +53,9 @@ class AuthResponse(BaseModel):
 
 
 class TelegramMiniAppAuthRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     init_data: str = Field(min_length=1, max_length=8192)
+    invite_code: Optional[str] = Field(default=None, min_length=16, max_length=128)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:

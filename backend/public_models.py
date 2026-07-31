@@ -867,6 +867,46 @@ class RateLimitBucket(PublicBase):
     )
 
 
+class WorkerHeartbeat(PublicBase):
+    """Content-free worker liveness and throughput state."""
+
+    __tablename__ = "worker_heartbeats"
+
+    id = Column(Integer, primary_key=True)
+    worker_name = Column(String(64), nullable=False)
+    instance_id = Column(String(128), nullable=False)
+    status = Column(String(24), nullable=False, server_default="running")
+    started_at_utc = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=utc_timestamp(),
+    )
+    last_seen_at_utc = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=utc_timestamp(),
+    )
+    processed_total = Column(Integer, nullable=False, server_default="0")
+    last_error_category = Column(String(64), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "worker_name",
+            "instance_id",
+            name="uq_worker_heartbeats_worker_instance",
+        ),
+        CheckConstraint(
+            "status IN ('starting', 'running', 'stopping', 'failed')",
+            name="status_supported",
+        ),
+        Index(
+            "ix_worker_heartbeats_worker_name_last_seen_at_utc",
+            "worker_name",
+            "last_seen_at_utc",
+        ),
+    )
+
+
 class AccountDeletionAudit(PublicBase):
     """Pseudonymous operational proof without retaining Telegram identity."""
 

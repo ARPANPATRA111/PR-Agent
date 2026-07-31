@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     public_v2_enabled: bool = Field(
         default=False, description="Enable public-v2 application behavior"
     )
+    invite_only: bool = Field(
+        default=True,
+        description="Require a claimed beta invite for public-v2 access",
+    )
     reminder_worker_enabled: bool = Field(
         default=False,
         description="Permit the standalone durable delivery worker to run",
@@ -95,6 +99,43 @@ class Settings(BaseSettings):
         le=20000,
         description="Maximum natural-language assistant input length",
     )
+    max_text_entry_length: int = Field(
+        default=10000,
+        ge=64,
+        le=50000,
+        description="Maximum user-supplied text entry length",
+    )
+    per_user_requests_per_minute: int = Field(
+        default=120,
+        ge=10,
+        le=5000,
+    )
+    per_user_daily_text_limit: int = Field(default=250, ge=1, le=10000)
+    per_user_daily_ai_limit: int = Field(default=50, ge=1, le=5000)
+    per_user_daily_nutrition_limit: int = Field(default=50, ge=1, le=1000)
+    per_user_daily_summary_limit: int = Field(default=30, ge=1, le=1000)
+    per_user_daily_export_limit: int = Field(default=5, ge=1, le=100)
+    per_user_daily_voice_minutes: int = Field(default=30, ge=1, le=1440)
+    max_reminders_per_user: int = Field(default=100, ge=1, le=5000)
+    max_voice_file_size: int = Field(
+        default=20 * 1024 * 1024,
+        ge=1024,
+        le=100 * 1024 * 1024,
+    )
+    max_voice_duration_seconds: int = Field(default=600, ge=1, le=3600)
+    voice_download_timeout_seconds: float = Field(default=30, ge=1, le=120)
+    transcription_timeout_seconds: float = Field(default=90, ge=5, le=300)
+    voice_provider_max_attempts: int = Field(default=2, ge=1, le=5)
+    internal_monitoring_token: str = Field(
+        default="",
+        description="Optional bearer token for internal operational metrics",
+    )
+    sentry_dsn: str = Field(
+        default="",
+        description="Optional Sentry DSN for privacy-safe exception monitoring",
+    )
+    worker_heartbeat_interval_seconds: int = Field(default=30, ge=5, le=300)
+    worker_heartbeat_stale_seconds: int = Field(default=120, ge=30, le=1800)
 
     telegram_bot_token: str = Field(
         default="", description="Telegram Bot API token from @BotFather"
@@ -407,6 +448,13 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "AI_PROVIDER and its credential are required when "
                     "AI_AGENT_ENABLED is true"
+                )
+            if (
+                self.internal_monitoring_token
+                and len(self.internal_monitoring_token) < 24
+            ):
+                raise ValueError(
+                    "INTERNAL_MONITORING_TOKEN must contain at least 24 characters"
                 )
 
         return self
