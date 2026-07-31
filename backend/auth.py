@@ -40,6 +40,8 @@ class TokenData(BaseModel):
     exp: datetime
     token_type: str = SESSION_TOKEN_TYPE
     auth_source: str = "bearer"
+    jti: Optional[str] = None
+    issued_at: Optional[datetime] = None
 
 
 class AuthResponse(BaseModel):
@@ -81,12 +83,14 @@ def create_access_token(
     )
     to_encode = data.copy()
     to_encode.setdefault("csrf", secrets.token_urlsafe(32))
-    to_encode.update({
-        "exp": expire,
-        "iat": now,
-        "type": SESSION_TOKEN_TYPE,
-        "jti": secrets.token_urlsafe(18),
-    })
+    to_encode.update(
+        {
+            "exp": expire,
+            "iat": now,
+            "type": SESSION_TOKEN_TYPE,
+            "jti": secrets.token_urlsafe(18),
+        }
+    )
     return jwt.encode(to_encode, _signing_secret(), algorithm=ALGORITHM)
 
 
@@ -96,12 +100,14 @@ def create_tokens(
     username: Optional[str] = None,
 ) -> Token:
     csrf_token = secrets.token_urlsafe(32)
-    access_token = create_access_token({
-        "sub": str(user_id),
-        "telegram_id": telegram_id,
-        "username": username,
-        "csrf": csrf_token,
-    })
+    access_token = create_access_token(
+        {
+            "sub": str(user_id),
+            "telegram_id": telegram_id,
+            "username": username,
+            "csrf": csrf_token,
+        }
+    )
     return Token(
         access_token=access_token,
         token_type="bearer",
@@ -115,13 +121,82 @@ def create_session(
     username: Optional[str] = None,
 ) -> tuple[str, str]:
     csrf_token = secrets.token_urlsafe(32)
-    token = create_access_token({
-        "sub": str(user_id),
-        "telegram_id": telegram_id,
-        "username": username,
-        "csrf": csrf_token,
-    })
+    token = create_access_token(
+        {
+            "sub": str(user_id),
+            "telegram_id": telegram_id,
+            "username": username,
+            "csrf": csrf_token,
+        }
+    )
     return token, csrf_token
+
+
+def persist_application_session(
+    session,
+    token: str,
+    *,
+    owner_id: int,
+) -> None:
+    from public_models import ApplicationSession
+
+    payload = jwt.decode(
+        token,
+        _signing_secret(),
+        algorithms=[ALGORITHM],
+    )
+    session.add(
+        ApplicationSession(
+            id=str(payload["jti"]),
+            owner_id=owner_id,
+            token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest(),
+            expires_at_utc=datetime.fromtimestamp(
+                float(payload["exp"]),
+                tz=timezone.utc,
+            ),
+        )
+    )
+    session.flush()
+
+
+def revoke_application_session(session, token: str) -> None:
+    from public_models import ApplicationSession
+
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    application_session = (
+        session.query(ApplicationSession)
+        .filter(ApplicationSession.token_hash == token_hash)
+        .one_or_none()
+    )
+    if application_session is not None:
+        application_session.revoked_at_utc = datetime.now(timezone.utc)
+
+
+def _application_session_is_active(token: str, user: TokenData) -> bool:
+    if not user.jti:
+        return False
+    from memory import get_memory_manager
+    from public_models import ApplicationSession, PublicUser
+
+    memory = get_memory_manager()
+    session = memory.SessionLocal()
+    try:
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        return (
+            session.query(ApplicationSession.id)
+            .join(PublicUser, PublicUser.id == ApplicationSession.owner_id)
+            .filter(
+                ApplicationSession.id == user.jti,
+                ApplicationSession.token_hash == token_hash,
+                ApplicationSession.revoked_at_utc.is_(None),
+                ApplicationSession.expires_at_utc > datetime.now(timezone.utc),
+                PublicUser.telegram_id == user.telegram_id,
+            )
+            .first()
+            is not None
+        )
+    finally:
+        session.close()
 
 
 def verify_token(token: str, expected_type: str = SESSION_TOKEN_TYPE) -> TokenData:
@@ -151,6 +226,12 @@ def verify_token(token: str, expected_type: str = SESSION_TOKEN_TYPE) -> TokenDa
             csrf_token=str(csrf_token),
             exp=datetime.fromtimestamp(float(expires_at), tz=timezone.utc),
             token_type=token_type,
+            jti=str(payload["jti"]) if payload.get("jti") else None,
+            issued_at=(
+                datetime.fromtimestamp(float(payload["iat"]), tz=timezone.utc)
+                if payload.get("iat")
+                else None
+            ),
         )
     except jwt.ExpiredSignatureError as exc:
         raise HTTPException(
@@ -198,9 +279,7 @@ def validate_telegram_init_data(
             detail="Invalid Telegram authentication data",
         )
 
-    data_check_string = "\n".join(
-        f"{key}={values[key]}" for key in sorted(values)
-    )
+    data_check_string = "\n".join(f"{key}={values[key]}" for key in sorted(values))
     secret_key = hmac.new(
         b"WebAppData",
         settings.telegram_bot_token.encode("utf-8"),
@@ -244,14 +323,10 @@ def validate_telegram_init_data(
         "telegram_id": telegram_id,
         "first_name": str(user.get("first_name") or "User")[:255],
         "last_name": (
-            str(user["last_name"])[:255]
-            if user.get("last_name") is not None
-            else None
+            str(user["last_name"])[:255] if user.get("last_name") is not None else None
         ),
         "username": (
-            str(user["username"])[:255]
-            if user.get("username") is not None
-            else None
+            str(user["username"])[:255] if user.get("username") is not None else None
         ),
         "language_code": (
             str(user["language_code"])[:32]
@@ -278,6 +353,14 @@ def authenticate_request(request: Request) -> TokenData:
 
     user = verify_token(token)
     user.auth_source = "cookie" if cookie_token else "bearer"
+    if settings.public_v2_enabled and not _application_session_is_active(
+        token,
+        user,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired or revoked",
+        )
 
     if request.method.upper() not in SAFE_HTTP_METHODS and cookie_token:
         csrf_header = request.headers.get("X-CSRF-Token", "")

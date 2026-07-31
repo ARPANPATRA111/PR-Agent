@@ -188,6 +188,9 @@ def test_ledger_precision_validation_filters_and_currency_separation(services):
     )
     assert updated.amount_minor == 13000
     service.delete_ledger_entry(owner_a, income.id)
+    assert service.summarize_ledger(owner_a) == [
+        {"currency": "INR", "expense_minor": 13000, "income_minor": 0}
+    ]
 
     for amount in ("0", "-1", "999999999999999999999999"):
         with pytest.raises(ValidationError):

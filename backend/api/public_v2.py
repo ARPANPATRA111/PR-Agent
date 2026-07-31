@@ -5,10 +5,10 @@ FastAPI's worker thread pool rather than blocking the event loop.
 """
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import Generator, Literal
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from auth import TokenData, get_current_user
 from config import settings
@@ -40,10 +40,12 @@ from domain.schemas import (
     WorkLogCreate,
     WorkLogResponse,
     WorkLogUpdate,
+    AccountDeletionConfirm,
 )
 from domain.services import DomainServices
 from memory import get_memory_manager
 from nutrition.providers import get_nutrition_provider
+from privacy import PrivacyService
 
 router = APIRouter(prefix="/api/v2", tags=["Public v2"])
 
@@ -381,6 +383,57 @@ def update_schedule_preferences(
     context: DomainContext = Context,
 ):
     return context.service.update_schedule_preferences(context.owner_id, data)
+
+
+@router.get("/account/export")
+def export_account_data(
+    export_format: Literal["json", "csv"] = Query(default="json", alias="format"),
+    context: DomainContext = Context,
+):
+    privacy = PrivacyService(context.service.session)
+    payload = privacy.export_owner_data(context.owner_id)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    if export_format == "csv":
+        content = privacy.csv_zip_bytes(payload)
+        filename = f"pr-agent-export-{stamp}.zip"
+        media_type = "application/zip"
+    else:
+        content = privacy.json_bytes(payload)
+        filename = f"pr-agent-export-{stamp}.json"
+        media_type = "application/json"
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.delete("/account", status_code=status.HTTP_204_NO_CONTENT)
+def delete_account(
+    data: AccountDeletionConfirm,
+    current_user: TokenData = Depends(get_current_user),
+    context: DomainContext = Context,
+):
+    issued_at = current_user.issued_at
+    if issued_at is None or datetime.now(timezone.utc) - issued_at > timedelta(
+        seconds=settings.account_deletion_recent_auth_seconds
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Recent Telegram authentication is required before " "account deletion."
+            ),
+        )
+    PrivacyService(context.service.session).delete_account(
+        context.owner_id,
+        current_user.telegram_id,
+        audit_secret=settings.effective_session_signing_secret,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(

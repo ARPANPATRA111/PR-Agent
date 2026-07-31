@@ -2,12 +2,21 @@ import hashlib
 import hmac
 import json
 import logging
+import asyncio
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from urllib.parse import parse_qsl, urlencode
 
-from fastapi import FastAPI, HTTPException, Request, Response, Query, BackgroundTasks, Depends
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Request,
+    Response,
+    Query,
+    BackgroundTasks,
+    Depends,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
@@ -18,12 +27,19 @@ from auth import (
     TokenData,
     authenticate_request,
     create_session,
+    persist_application_session,
+    revoke_application_session,
     validate_telegram_init_data,
 )
 from config import settings
 from models import (
-    TelegramUpdate, LinkedInPost, PostUpdateRequest,
-    DashboardEntry, CalendarDay, WeeklyDashboard, PostStatus
+    TelegramUpdate,
+    LinkedInPost,
+    PostUpdateRequest,
+    DashboardEntry,
+    CalendarDay,
+    WeeklyDashboard,
+    PostStatus,
 )
 from memory import get_memory_manager
 from bot import get_bot_handler, TelegramClient
@@ -32,9 +48,11 @@ from utils import setup_logging, get_week_boundaries
 from api.public_v2 import router as public_v2_router
 from domain.errors import DomainError
 from domain.services import DomainServices
+from telegram_cleanup import queue_telegram_message
 
 setup_logging()
 logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -53,26 +71,31 @@ async def lifespan(app: FastAPI):
             legacy_scheduler = get_scheduler()
             legacy_scheduler.start()
             logger.info("Legacy scheduler started")
-        
-        logger.info(f"Bot token configured: {'Yes' if settings.telegram_bot_token else 'No'}")
-        logger.info(f"Groq API key configured: {'Yes' if settings.groq_api_key else 'No'}")
+
+        logger.info(
+            f"Bot token configured: {'Yes' if settings.telegram_bot_token else 'No'}"
+        )
+        logger.info(
+            f"Groq API key configured: {'Yes' if settings.groq_api_key else 'No'}"
+        )
         logger.info(f"Whisper model: {settings.whisper_model}")
         logger.info(f"Timezone: {settings.timezone}")
-        
+
     except Exception as e:
         logger.error(f"Startup error: {e}", exc_info=True)
         raise
-    
+
     logger.info("Weekly Progress Agent started successfully!")
-    
+
     yield
-    
+
     logger.info("Shutting down Weekly Progress Agent...")
-    
+
     if legacy_scheduler is not None:
         legacy_scheduler.shutdown()
-    
+
     logger.info("Shutdown complete")
+
 
 app = FastAPI(
     title="Weekly Progress Agent",
@@ -110,9 +133,7 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
-    response.headers["Permissions-Policy"] = (
-        "camera=(), geolocation=(), microphone=()"
-    )
+    response.headers["Permissions-Policy"] = "camera=(), geolocation=(), microphone=()"
     if request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
     if settings.session_cookie_secure:
@@ -176,6 +197,7 @@ async def enforce_private_api_identity(request: Request, call_next):
 
     return await call_next(request)
 
+
 @app.get("/", tags=["Health"])
 @limiter.limit(RATE_LIMITS["health"])
 async def root(request: Request, response: Response):
@@ -183,7 +205,7 @@ async def root(request: Request, response: Response):
         "status": "healthy",
         "service": "Weekly Progress Agent",
         "version": "1.1.0",
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.utcnow().isoformat(),
     }
 
 
@@ -203,20 +225,21 @@ async def keep_alive_check(request: Request, response: Response):
 async def health_check(request: Request, response: Response):
     memory = get_memory_manager()
     scheduler = get_scheduler()
-    
+
     from error_recovery import circuit_breakers
-    
+
     # Check database connection
     db_connected = False
     try:
         from sqlalchemy import text
+
         session = memory.SessionLocal()
         session.execute(text("SELECT 1"))
         session.close()
         db_connected = True
     except:
         pass
-    
+
     # Check Telegram connection
     telegram_connected = False
     try:
@@ -225,30 +248,33 @@ async def health_check(request: Request, response: Response):
         telegram_connected = webhook_info.get("ok", False)
     except:
         pass
-    
+
     scheduler_running = scheduler.scheduler.running if scheduler else False
-    
+
     return {
         "status": "healthy",
         "version": "1.1.0",
         "database_connected": db_connected,
-        "vector_store_connected": db_connected, 
+        "vector_store_connected": db_connected,
         "telegram_connected": telegram_connected,
         "scheduler_running": scheduler_running,
         "components": {
             "database": "connected" if db_connected else "disconnected",
             "vector_store": "connected" if db_connected else "disconnected",
-            "scheduler": "running" if scheduler_running else "stopped"
+            "scheduler": "running" if scheduler_running else "stopped",
         },
         "circuit_breakers": {
             name: cb.get_status() for name, cb in circuit_breakers.items()
         },
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.utcnow().isoformat(),
     }
+
 
 @app.post("/webhook", tags=["Telegram"])
 @limiter.limit(RATE_LIMITS["webhook"])
-async def telegram_webhook(request: Request, response: Response, background_tasks: BackgroundTasks):
+async def telegram_webhook(
+    request: Request, response: Response, background_tasks: BackgroundTasks
+):
     configured_secret = settings.telegram_webhook_secret
     if not configured_secret:
         raise HTTPException(
@@ -312,7 +338,47 @@ async def telegram_webhook(request: Request, response: Response, background_task
 
         async def process_update() -> None:
             try:
+                if (
+                    settings.message_cleanup_enabled
+                    and update.message
+                    and update.message.from_user
+                ):
+
+                    def ensure_cleanup_owner() -> None:
+                        with memory.get_session() as session:
+                            DomainServices(session).ensure_owner(
+                                telegram_id=update.message.from_user.id,
+                                first_name=update.message.from_user.first_name,
+                                last_name=update.message.from_user.last_name,
+                                username=update.message.from_user.username,
+                            )
+
+                    await asyncio.to_thread(ensure_cleanup_owner)
                 await get_bot_handler().handle_update(update)
+                if (
+                    settings.message_cleanup_enabled
+                    and update.message
+                    and update.message.from_user
+                ):
+
+                    def queue_inbound_cleanup() -> None:
+                        now = datetime.now(timezone.utc)
+                        with memory.get_session() as session:
+                            queue_telegram_message(
+                                session,
+                                telegram_id=update.message.from_user.id,
+                                chat_id=update.message.chat.get("id"),
+                                message_id=update.message.message_id,
+                                direction="inbound",
+                                purpose="processed_input",
+                                processed_at=now,
+                                delete_after=now
+                                + timedelta(
+                                    seconds=(settings.message_cleanup_delay_seconds)
+                                ),
+                            )
+
+                    await asyncio.to_thread(queue_inbound_cleanup)
                 memory.mark_telegram_update(update.update_id, "completed")
             except Exception as exc:
                 memory.mark_telegram_update(
@@ -348,9 +414,7 @@ def authenticate_telegram_mini_app(
 ):
     memory = get_memory_manager()
     remote_address = request.client.host if request.client else "unknown"
-    subject_hash = hashlib.sha256(
-        remote_address.encode("utf-8")
-    ).hexdigest()[:32]
+    subject_hash = hashlib.sha256(remote_address.encode("utf-8")).hexdigest()[:32]
     if not memory.consume_rate_limit(
         subject_key=f"auth_ip:{subject_hash}",
         scope="mini_app_auth",
@@ -366,13 +430,6 @@ def authenticate_telegram_mini_app(
         last_name=telegram_user["last_name"],
         username=telegram_user["username"],
     )
-    with memory.get_session() as session:
-        DomainServices(session).ensure_owner(
-            telegram_id=telegram_user["telegram_id"],
-            first_name=telegram_user["first_name"],
-            last_name=telegram_user["last_name"],
-            username=telegram_user["username"],
-        )
     if user.id is None:
         raise HTTPException(status_code=500, detail="User session unavailable")
 
@@ -381,6 +438,18 @@ def authenticate_telegram_mini_app(
         telegram_id=user.telegram_id,
         username=user.username,
     )
+    with memory.get_session() as session:
+        owner = DomainServices(session).ensure_owner(
+            telegram_id=telegram_user["telegram_id"],
+            first_name=telegram_user["first_name"],
+            last_name=telegram_user["last_name"],
+            username=telegram_user["username"],
+        )
+        persist_application_session(
+            session,
+            session_token,
+            owner_id=owner.id,
+        )
     same_site = "none" if settings.session_cookie_secure else "lax"
     response.set_cookie(
         key=settings.session_cookie_name,
@@ -416,7 +485,18 @@ def authenticate_telegram_mini_app(
 
 
 @app.post("/api/auth/logout", tags=["Authentication"])
-async def logout(response: Response):
+async def logout(request: Request, response: Response):
+    authorization = request.headers.get("Authorization", "")
+    bearer_token = (
+        authorization[7:].strip()
+        if authorization.lower().startswith("bearer ")
+        else None
+    )
+    token = request.cookies.get(settings.session_cookie_name) or bearer_token
+    if token:
+        memory = get_memory_manager()
+        with memory.get_session() as session:
+            revoke_application_session(session, token)
     response.delete_cookie(
         settings.session_cookie_name,
         path="/",
@@ -428,6 +508,7 @@ async def logout(response: Response):
         secure=settings.session_cookie_secure,
     )
     return {"success": True}
+
 
 class UserSettingsUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -450,7 +531,9 @@ async def get_settings(request: Request):
 
     if user:
         prefs = user.preferences or {}
-        display_name = (prefs.get("display_name") or "").strip() or (user.first_name or "")
+        display_name = (prefs.get("display_name") or "").strip() or (
+            user.first_name or ""
+        )
         return {
             "timezone": prefs.get("timezone", settings.timezone),
             "display_name": display_name,
@@ -461,7 +544,7 @@ async def get_settings(request: Request):
             "weekly_summary_day": str(prefs.get("weekly_summary_day", "0")),
             "weekly_summary_time": prefs.get("weekly_summary_time", "20:00"),
         }
-    
+
     return {
         "timezone": settings.timezone,
         "display_name": "",
@@ -480,30 +563,29 @@ async def update_settings(update: UserSettingsUpdate, request: Request):
     telegram_id = current_user.telegram_id
     memory = get_memory_manager()
     user = memory.get_user(telegram_id)
-    
+
     if not user:
         fallback_name = (update.display_name or "").strip() or "User"
-        memory.get_or_create_user(
-            telegram_id=telegram_id,
-            first_name=fallback_name
-        )
+        memory.get_or_create_user(telegram_id=telegram_id, first_name=fallback_name)
         user = memory.get_user(telegram_id)
-    
+
     memory.update_user_timezone(telegram_id, update.timezone)
-    
+
     # Save nudge and notification settings to preferences
     prefs = (user.preferences or {}) if user else {}
     cleaned_display_name = (update.display_name or "").strip()
-    prefs.update({
-        "display_name": cleaned_display_name,
-        "default_tone": update.default_tone,
-        "nudge_enabled": update.nudge_enabled,
-        "nudge_time": update.nudge_time,
-        "daily_reflection_time": update.daily_reflection_time,
-        "weekly_summary_day": update.weekly_summary_day,
-        "weekly_summary_time": update.weekly_summary_time,
-        "timezone": update.timezone,
-    })
+    prefs.update(
+        {
+            "display_name": cleaned_display_name,
+            "default_tone": update.default_tone,
+            "nudge_enabled": update.nudge_enabled,
+            "nudge_time": update.nudge_time,
+            "daily_reflection_time": update.daily_reflection_time,
+            "weekly_summary_day": update.weekly_summary_day,
+            "weekly_summary_time": update.weekly_summary_time,
+            "timezone": update.timezone,
+        }
+    )
     memory.update_user_preferences(telegram_id, prefs)
 
     return {
@@ -518,20 +600,21 @@ async def update_settings(update: UserSettingsUpdate, request: Request):
 @app.get("/api/week-number")
 async def get_week_number(telegram_id: int):
     memory = get_memory_manager()
-    
+
     published_posts = memory.get_published_posts(telegram_id, limit=1)
     latest_posted = published_posts[0].week_number if published_posts else 0
-    
+
     latest_any = memory.get_latest_week_number(telegram_id)
-    
+
     next_week = memory.get_next_week_number(telegram_id)
-    
+
     return {
         "next_week": next_week,
         "latest_posted": latest_posted or 0,
         "latest_any": latest_any or 0,
-        "config_week": settings.current_week_number
+        "config_week": settings.current_week_number,
     }
+
 
 @app.get("/api/entries")
 async def get_entries(
@@ -540,25 +623,25 @@ async def get_entries(
     end_date: Optional[str] = None,
     category: Optional[str] = None,
     page: int = Query(default=1, ge=1),
-    limit: int = Query(default=10, le=100)
+    limit: int = Query(default=10, le=100),
 ):
     memory = get_memory_manager()
-    
+
     if start_date:
         start = datetime.fromisoformat(start_date)
     else:
         start = datetime.utcnow() - timedelta(days=30)
-    
+
     if end_date:
         end = datetime.fromisoformat(end_date)
     else:
         end = datetime.utcnow()
-    
+
     raw_entries = memory.get_raw_entries_by_date(telegram_id, start, end)
     structured_entries = memory.get_structured_entries_by_date(telegram_id, start, end)
-    
+
     structured_map = {s.raw_entry_id: s for s in structured_entries}
-    
+
     result = []
     for raw in raw_entries:
         structured = structured_map.get(raw.id)
@@ -566,38 +649,40 @@ async def get_entries(
             continue
         if category and not structured:
             continue
-        
-        result.append({
-            "id": raw.id,
-            "date": raw.timestamp.isoformat(),
-            "created_at": raw.timestamp.isoformat(),
-            "category": structured.category.value if structured else "other",
-            "raw_text": raw.transcript,
-            "structured_data": {
-                "summary": structured.summary if structured else "",
-                "activities": structured.activities if structured else [],
-                "blockers": structured.blockers if structured else [],
-                "accomplishments": structured.accomplishments if structured else [],
-                "learnings": structured.learnings if structured else [],
-                "keywords": structured.keywords if structured else [],
-                "sentiment": structured.sentiment if structured else "neutral"
+
+        result.append(
+            {
+                "id": raw.id,
+                "date": raw.timestamp.isoformat(),
+                "created_at": raw.timestamp.isoformat(),
+                "category": structured.category.value if structured else "other",
+                "raw_text": raw.transcript,
+                "structured_data": {
+                    "summary": structured.summary if structured else "",
+                    "activities": structured.activities if structured else [],
+                    "blockers": structured.blockers if structured else [],
+                    "accomplishments": structured.accomplishments if structured else [],
+                    "learnings": structured.learnings if structured else [],
+                    "keywords": structured.keywords if structured else [],
+                    "sentiment": structured.sentiment if structured else "neutral",
+                },
             }
-        })
-    
+        )
+
     result.sort(key=lambda x: x["date"], reverse=True)
-    
+
     total = len(result)
     total_pages = (total + limit - 1) // limit
     start_idx = (page - 1) * limit
     end_idx = start_idx + limit
     paginated = result[start_idx:end_idx]
-    
+
     return {
         "entries": paginated,
         "total": total,
         "page": page,
         "limit": limit,
-        "total_pages": total_pages
+        "total_pages": total_pages,
     }
 
 
@@ -605,12 +690,12 @@ async def get_entries(
 async def get_calendar(
     telegram_id: int,
     month: int = Query(ge=1, le=12),
-    year: int = Query(ge=2020, le=2100)
+    year: int = Query(ge=2020, le=2100),
 ):
     memory = get_memory_manager()
-    
+
     calendar_data = memory.get_calendar_data(telegram_id, month, year)
-    
+
     return {"calendar": calendar_data}
 
 
@@ -618,17 +703,17 @@ async def get_calendar(
 async def get_summaries(
     telegram_id: int,
     page: int = Query(default=1, ge=1),
-    limit: int = Query(default=10, le=50)
+    limit: int = Query(default=10, le=50),
 ):
     memory = get_memory_manager()
-    
+
     all_summaries = memory.get_daily_summaries(telegram_id, days=limit * page + limit)
-    
+
     total = len(all_summaries)
     start_idx = (page - 1) * limit
     end_idx = start_idx + limit
     paginated = all_summaries[start_idx:end_idx]
-    
+
     return {
         "summaries": [
             {
@@ -640,26 +725,23 @@ async def get_summaries(
                 "themes": s.themes or [],
                 "highlights": s.achievements or [],
                 "areas_for_improvement": s.learnings or [],
-                "created_at": s.date.isoformat()
+                "created_at": s.date.isoformat(),
             }
             for s in paginated
         ],
         "total": total,
         "page": page,
         "limit": limit,
-        "total_pages": max(1, (total + limit - 1) // limit)
+        "total_pages": max(1, (total + limit - 1) // limit),
     }
 
 
 @app.get("/api/summaries/daily")
-async def get_daily_summaries(
-    telegram_id: int,
-    days: int = Query(default=7, le=30)
-):
+async def get_daily_summaries(telegram_id: int, days: int = Query(default=7, le=30)):
     memory = get_memory_manager()
-    
+
     summaries = memory.get_daily_summaries(telegram_id, days)
-    
+
     return {
         "summaries": [
             {
@@ -671,7 +753,7 @@ async def get_daily_summaries(
                 "learnings": s.learnings,
                 "reflection": s.reflection,
                 "themes": s.themes,
-                "productivity_score": s.productivity_score
+                "productivity_score": s.productivity_score,
             }
             for s in summaries
         ]
@@ -681,12 +763,12 @@ async def get_daily_summaries(
 @app.get("/api/summaries/weekly")
 async def get_weekly_summary(telegram_id: int):
     memory = get_memory_manager()
-    
+
     summary = memory.get_latest_weekly_summary(telegram_id)
-    
+
     if not summary:
         raise HTTPException(status_code=404, detail="No weekly summary found")
-    
+
     return {
         "id": summary.id,
         "week_start": summary.week_start.isoformat(),
@@ -696,19 +778,16 @@ async def get_weekly_summary(telegram_id: int):
         "accomplishments": summary.accomplishments,
         "learnings": summary.learnings,
         "trends": summary.trends,
-        "comparison": summary.comparison_with_previous
+        "comparison": summary.comparison_with_previous,
     }
 
 
 @app.get("/api/posts")
-async def get_posts(
-    telegram_id: int,
-    limit: int = Query(default=10, le=50)
-):
+async def get_posts(telegram_id: int, limit: int = Query(default=10, le=50)):
     memory = get_memory_manager()
-    
+
     posts = memory.get_recent_posts(telegram_id, limit)
-    
+
     return {
         "posts": [
             {
@@ -717,7 +796,7 @@ async def get_posts(
                 "content": p.edited_content or p.content,
                 "original_content": p.content,
                 "status": p.status.value,
-                "created_at": p.created_at.isoformat()
+                "created_at": p.created_at.isoformat(),
             }
             for p in posts
         ]
@@ -739,7 +818,7 @@ async def get_post(post_id: int, request: Request):
         "content": post.edited_content or post.content,
         "original_content": post.content,
         "status": post.status.value,
-        "created_at": post.created_at.isoformat()
+        "created_at": post.created_at.isoformat(),
     }
 
 
@@ -751,24 +830,24 @@ async def update_post(post_id: int, update: PostUpdateRequest, request: Request)
         post_id=post_id,
         telegram_id=current_user.telegram_id,
         content=update.content,
-        status=update.status
+        status=update.status,
     )
-    
+
     if not success:
         raise HTTPException(status_code=404, detail="Post not found")
-    
+
     return {"success": True, "post_id": post_id}
 
 
 @app.delete("/api/posts/{post_id}")
 async def delete_post(post_id: int, telegram_id: int):
     memory = get_memory_manager()
-    
+
     success = memory.delete_linkedin_post(post_id, telegram_id)
-    
+
     if not success:
         raise HTTPException(status_code=404, detail="Post not found")
-    
+
     return {"success": True, "message": "Post deleted"}
 
 
@@ -777,7 +856,7 @@ async def mark_post_published(
     post_id: int,
     request: Request,
     linkedin_url: Optional[str] = None,
-    week_number: Optional[int] = None
+    week_number: Optional[int] = None,
 ):
     memory = get_memory_manager()
     current_user: TokenData = request.state.current_user
@@ -785,29 +864,22 @@ async def mark_post_published(
         post_id=post_id,
         telegram_id=current_user.telegram_id,
         linkedin_url=linkedin_url,
-        week_number=week_number
+        week_number=week_number,
     )
-    
+
     if not success:
         raise HTTPException(status_code=404, detail="Post not found")
-    
-    return {
-        "success": True,
-        "post_id": post_id,
-        "message": "Post marked as published"
-    }
+
+    return {"success": True, "post_id": post_id, "message": "Post marked as published"}
 
 
 @app.get("/api/posts/published")
 async def get_published_posts(telegram_id: int, limit: int = Query(default=50, le=100)):
     memory = get_memory_manager()
-    
+
     posts = memory.get_published_posts(telegram_id, limit)
-    
-    return {
-        "posts": [p.model_dump() for p in posts],
-        "total": len(posts)
-    }
+
+    return {"posts": [p.model_dump() for p in posts], "total": len(posts)}
 
 
 class ImportPostRequest(BaseModel):
@@ -819,26 +891,23 @@ class ImportPostRequest(BaseModel):
 
 
 @app.post("/api/posts/import")
-async def import_posted_report(
-    request: ImportPostRequest,
-    telegram_id: int
-):
+async def import_posted_report(request: ImportPostRequest, telegram_id: int):
     try:
         memory = get_memory_manager()
-        
+
         report_id = memory.save_posted_report(
             telegram_id=telegram_id,
             week_number=request.week_number,
             content=request.content,
             published_at=request.published_at,
             linkedin_url=request.linkedin_url,
-            content_cutoff_date=request.content_cutoff_date
+            content_cutoff_date=request.content_cutoff_date,
         )
-        
+
         return {
             "success": True,
             "report_id": report_id,
-            "week_number": request.week_number
+            "week_number": request.week_number,
         }
     except Exception as e:
         logger.error(f"Failed to import posted report: {e}")
@@ -857,10 +926,10 @@ async def get_posted_reports(telegram_id: int, limit: int = 20, offset: int = 0)
 async def delete_posted_report(report_id: int, telegram_id: int):
     memory = get_memory_manager()
     success = memory.delete_posted_report(report_id, telegram_id)
-    
+
     if not success:
         raise HTTPException(status_code=404, detail="Report not found")
-    
+
     return {"success": True, "message": "Report deleted"}
 
 
@@ -868,10 +937,10 @@ async def delete_posted_report(report_id: int, telegram_id: int):
 async def delete_entry(entry_id: int, telegram_id: int):
     memory = get_memory_manager()
     success = memory.delete_entry(entry_id, telegram_id)
-    
+
     if not success:
         raise HTTPException(status_code=404, detail="Entry not found")
-    
+
     return {"success": True, "message": "Entry deleted"}
 
 
@@ -886,49 +955,69 @@ async def get_recent_entries_for_delete(telegram_id: int, limit: int = 10):
 async def autonomous_analyze(telegram_id: int):
     from datetime import timedelta
     from llm_agent import get_llm_agent
-    
+
     memory = get_memory_manager()
     agent = get_llm_agent()
-    
+
     try:
         day_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         day_end = day_start + timedelta(days=1)
         week_start = day_start - timedelta(days=day_start.weekday())
         week_end = week_start + timedelta(days=7)
-        
+
         with memory.get_session() as session:
             from memory import UserDB, RawEntryDB, StructuredEntryDB
-            
-            user = session.query(UserDB).filter(UserDB.telegram_id == telegram_id).first()
+
+            user = (
+                session.query(UserDB).filter(UserDB.telegram_id == telegram_id).first()
+            )
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
-            
-            last_entry = session.query(RawEntryDB).filter(
-                RawEntryDB.telegram_id == telegram_id
-            ).order_by(RawEntryDB.timestamp.desc()).first()
-            
+
+            last_entry = (
+                session.query(RawEntryDB)
+                .filter(RawEntryDB.telegram_id == telegram_id)
+                .order_by(RawEntryDB.timestamp.desc())
+                .first()
+            )
+
             hours_since = 48
             if last_entry:
-                hours_since = (datetime.utcnow() - last_entry.timestamp).total_seconds() / 3600
-            
-            today_count = session.query(RawEntryDB).filter(
-                RawEntryDB.telegram_id == telegram_id,
-                RawEntryDB.timestamp >= day_start,
-                RawEntryDB.timestamp <= day_end
-            ).count()
-            
-            week_count = session.query(RawEntryDB).filter(
-                RawEntryDB.telegram_id == telegram_id,
-                RawEntryDB.timestamp >= week_start,
-                RawEntryDB.timestamp <= week_end
-            ).count()
-            
-            recent_entries = session.query(StructuredEntryDB).join(RawEntryDB).filter(
-                RawEntryDB.telegram_id == telegram_id
-            ).order_by(RawEntryDB.timestamp.desc()).limit(10).all()
-            
+                hours_since = (
+                    datetime.utcnow() - last_entry.timestamp
+                ).total_seconds() / 3600
+
+            today_count = (
+                session.query(RawEntryDB)
+                .filter(
+                    RawEntryDB.telegram_id == telegram_id,
+                    RawEntryDB.timestamp >= day_start,
+                    RawEntryDB.timestamp <= day_end,
+                )
+                .count()
+            )
+
+            week_count = (
+                session.query(RawEntryDB)
+                .filter(
+                    RawEntryDB.telegram_id == telegram_id,
+                    RawEntryDB.timestamp >= week_start,
+                    RawEntryDB.timestamp <= week_end,
+                )
+                .count()
+            )
+
+            recent_entries = (
+                session.query(StructuredEntryDB)
+                .join(RawEntryDB)
+                .filter(RawEntryDB.telegram_id == telegram_id)
+                .order_by(RawEntryDB.timestamp.desc())
+                .limit(10)
+                .all()
+            )
+
             themes = list(set([e.category.value for e in recent_entries if e.category]))
-            
+
             user_context = {
                 "user_name": user.first_name or "User",
                 "streak": user.streak or 0,
@@ -938,11 +1027,11 @@ async def autonomous_analyze(telegram_id: int):
                 "has_weekly_summary": False,
                 "recent_themes": themes[:5],
                 "current_hour": datetime.utcnow().hour,
-                "day_of_week": datetime.utcnow().strftime("%A")
+                "day_of_week": datetime.utcnow().strftime("%A"),
             }
-        
+
         analysis = agent.autonomous_analyze(user_context)
-        
+
         return {
             "user_context": user_context,
             "analysis": {
@@ -952,7 +1041,7 @@ async def autonomous_analyze(telegram_id: int):
                 "confidence": analysis.get("confidence", 0.0),
             },
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -963,35 +1052,42 @@ async def autonomous_analyze(telegram_id: int):
 @app.get("/api/agent/insight")
 async def get_agent_insight(telegram_id: int):
     from llm_agent import get_llm_agent
-    
+
     memory = get_memory_manager()
     agent = get_llm_agent()
-    
+
     try:
         with memory.get_session() as session:
             from memory import UserDB, StructuredEntryDB, RawEntryDB
-            
-            user = session.query(UserDB).filter(UserDB.telegram_id == telegram_id).first()
+
+            user = (
+                session.query(UserDB).filter(UserDB.telegram_id == telegram_id).first()
+            )
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
-            
-            recent = session.query(StructuredEntryDB).join(RawEntryDB).filter(
-                RawEntryDB.telegram_id == telegram_id
-            ).order_by(RawEntryDB.timestamp.desc()).limit(7).all()
-            
+
+            recent = (
+                session.query(StructuredEntryDB)
+                .join(RawEntryDB)
+                .filter(RawEntryDB.telegram_id == telegram_id)
+                .order_by(RawEntryDB.timestamp.desc())
+                .limit(7)
+                .all()
+            )
+
             themes = list(set([e.category.value for e in recent if e.category]))[:5]
-            
+
             user_data = {
                 "streak": user.streak or 0,
                 "entries_this_week": len(recent),
                 "themes": themes,
-                "trend": "stable"
+                "trend": "stable",
             }
-        
+
         insight = agent.generate_personalized_insight(user_data)
-        
+
         return {"insight": insight, "user_stats": user_data}
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1000,14 +1096,11 @@ async def get_agent_insight(telegram_id: int):
 
 
 @app.get("/api/posts/week/{week_number}")
-async def get_posts_for_week(
-    week_number: int,
-    telegram_id: int
-):
+async def get_posts_for_week(week_number: int, telegram_id: int):
     memory = get_memory_manager()
-    
+
     posts = memory.get_drafts_for_week(telegram_id, week_number)
-    
+
     return {
         "posts": [
             {
@@ -1018,13 +1111,13 @@ async def get_posts_for_week(
                 "created_at": p.created_at.isoformat(),
                 "published_at": p.published_at.isoformat() if p.published_at else None,
                 "week_number": p.week_number,
-                "is_posted": p.status == PostStatus.POSTED
+                "is_posted": p.status == PostStatus.POSTED,
             }
             for p in posts
         ],
         "week_number": week_number,
         "total_versions": len(posts),
-        "has_posted": any(p.status == PostStatus.POSTED for p in posts)
+        "has_posted": any(p.status == PostStatus.POSTED for p in posts),
     }
 
 
@@ -1033,31 +1126,30 @@ async def regenerate_post_for_week(
     week_number: int,
     telegram_id: int,
     custom_instructions: Optional[str] = None,
-    background_tasks: BackgroundTasks = None
+    background_tasks: BackgroundTasks = None,
 ):
     from llm_agent import get_llm_agent
-    
+
     memory = get_memory_manager()
     agent = get_llm_agent()
-    
+
     entries = memory.get_entries(telegram_id, days=7)
-    
+
     if not entries:
         raise HTTPException(
-            status_code=400,
-            detail="No entries found for the past week"
+            status_code=400, detail="No entries found for the past week"
         )
-    
+
     recent_published = memory.get_published_posts(telegram_id, limit=5)
-    
+
     from datetime import timedelta
     from models import WeeklySummary
-    
+
     all_activities = []
     all_blockers = []
     all_accomplishments = []
     all_learnings = []
-    
+
     for entry in entries:
         if entry.activities:
             all_activities.extend(entry.activities)
@@ -1067,57 +1159,61 @@ async def regenerate_post_for_week(
             all_accomplishments.extend(entry.accomplishments)
         if entry.learnings:
             all_learnings.extend(entry.learnings)
-    
+
     weekly_summary = WeeklySummary(
         telegram_id=telegram_id,
         week_start=datetime.utcnow() - timedelta(days=7),
         week_end=datetime.utcnow(),
         total_entries=len(entries),
-        main_themes=list(set(all_activities[:5])) if all_activities else ["General progress"],
-        accomplishments=list(set(all_accomplishments[:5])) if all_accomplishments else [],
+        main_themes=(
+            list(set(all_activities[:5])) if all_activities else ["General progress"]
+        ),
+        accomplishments=(
+            list(set(all_accomplishments[:5])) if all_accomplishments else []
+        ),
         learnings=list(set(all_learnings[:5])) if all_learnings else [],
-        trends={"activities": all_activities[:10], "blockers": all_blockers[:5]}
+        trends={"activities": all_activities[:10], "blockers": all_blockers[:5]},
     )
-    
+
     posts = agent.generate_linkedin_posts(
         weekly_summary,
         custom_instructions=custom_instructions,
         recent_posts=recent_published,
-        week_number=week_number
+        week_number=week_number,
     )
-    
+
     for post in posts:
         post.telegram_id = telegram_id
         memory.save_linkedin_post(post)
-    
+
     all_versions = memory.get_drafts_for_week(telegram_id, week_number)
-    
+
     return {
         "success": True,
         "message": f"Generated new version for Week {week_number}",
         "new_version": len(all_versions),
-        "total_versions": len(all_versions)
+        "total_versions": len(all_versions),
     }
 
 
 @app.get("/api/stats")
 async def get_stats(telegram_id: int):
     memory = get_memory_manager()
-    
+
     stats = memory.get_user_stats(telegram_id)
-    
+
     if not stats:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     return stats
 
 
 @app.get("/api/themes")
 async def get_themes(telegram_id: int, n_clusters: int = Query(default=5, le=10)):
     memory = get_memory_manager()
-    
+
     themes = memory.detect_themes(telegram_id, n_clusters)
-    
+
     return {"themes": themes}
 
 
@@ -1125,27 +1221,27 @@ async def get_themes(telegram_id: int, n_clusters: int = Query(default=5, le=10)
 async def generate_posts(
     telegram_id: int,
     background_tasks: BackgroundTasks,
-    custom_instructions: Optional[str] = None
+    custom_instructions: Optional[str] = None,
 ):
     from llm_agent import get_llm_agent
     from models import WeeklySummary
-    
+
     memory = get_memory_manager()
     agent = get_llm_agent()
-    
+
     daily_summaries = memory.get_daily_summaries(telegram_id, days=7)
-    
+
     if not daily_summaries:
         start = datetime.utcnow() - timedelta(days=7)
         end = datetime.utcnow()
         entries = memory.get_structured_entries_by_date(telegram_id, start, end)
-        
+
         if not entries or len(entries) < 1:
             raise HTTPException(
-                status_code=400, 
-                detail="Not enough data. Please send some voice notes first!"
+                status_code=400,
+                detail="Not enough data. Please send some voice notes first!",
             )
-        
+
         async def generate_from_entries():
             try:
                 all_activities = []
@@ -1153,7 +1249,7 @@ async def generate_posts(
                 all_accomplishments = []
                 all_blockers = []
                 all_themes = []
-                
+
                 for entry in entries:
                     if entry.activities:
                         all_activities.extend(entry.activities)
@@ -1164,9 +1260,9 @@ async def generate_posts(
                     if entry.blockers:
                         all_blockers.extend(entry.blockers)
                     all_themes.append(entry.category.value)
-                
+
                 unique_themes = list(set(all_themes))[:5]
-                
+
                 weekly_summary = WeeklySummary(
                     telegram_id=telegram_id,
                     week_start=start,
@@ -1174,113 +1270,115 @@ async def generate_posts(
                     daily_summaries=[],
                     total_entries=len(entries),
                     main_themes=unique_themes if unique_themes else ["development"],
-                    accomplishments=all_accomplishments[:5] if all_accomplishments else ["Made progress on projects"],
+                    accomplishments=(
+                        all_accomplishments[:5]
+                        if all_accomplishments
+                        else ["Made progress on projects"]
+                    ),
                     learnings=all_learnings[:5] if all_learnings else [],
                     trends={
                         "activities": all_activities[:10],
                         "blockers": all_blockers[:5],
-                        "productivity_trend": "stable"
+                        "productivity_trend": "stable",
                     },
-                    comparison_with_previous=None
+                    comparison_with_previous=None,
                 )
-                
+
                 weekly_id = memory.save_weekly_summary(weekly_summary)
                 weekly_summary.id = weekly_id
-                
+
                 recent_published = memory.get_published_posts(telegram_id, limit=5)
-                
+
                 next_week = memory.get_next_week_number(telegram_id)
-                
+
                 posts = agent.generate_linkedin_posts(
                     weekly_summary,
                     custom_instructions=custom_instructions,
                     recent_posts=recent_published,
-                    week_number=next_week
+                    week_number=next_week,
                 )
-                
+
                 for post in posts:
                     post.telegram_id = telegram_id
                     post.weekly_summary_id = weekly_id
                     memory.save_linkedin_post(post)
-                    
+
             except Exception as e:
                 logger.error(f"Generation task failed: {e}", exc_info=True)
-        
+
         background_tasks.add_task(generate_from_entries)
-        
+
         return {
             "success": True,
-            "message": "Post generation started. Check /api/posts in a few moments."
+            "message": "Post generation started. Check /api/posts in a few moments.",
         }
-    
+
     async def generate_task():
         try:
             themes = memory.detect_themes(telegram_id)
             previous_weekly = memory.get_latest_weekly_summary(telegram_id)
             recent_posts = memory.get_recent_post_embeddings(telegram_id, n_results=3)
-            
+
             weekly_summary = agent.generate_weekly_summary(
                 daily_summaries=daily_summaries,
                 themes=themes,
                 previous_week=previous_weekly,
-                recent_posts=recent_posts
+                recent_posts=recent_posts,
             )
             weekly_summary.telegram_id = telegram_id
-            
+
             weekly_id = memory.save_weekly_summary(weekly_summary)
             weekly_summary.id = weekly_id
-            
+
             recent_published = memory.get_published_posts(telegram_id, limit=5)
-            
+
             next_week = memory.get_next_week_number(telegram_id)
-            
+
             posts = agent.generate_linkedin_posts(
                 weekly_summary,
                 custom_instructions=custom_instructions,
                 recent_posts=recent_published,
-                week_number=next_week
+                week_number=next_week,
             )
-            
+
             for post in posts:
                 post.telegram_id = telegram_id
                 post.weekly_summary_id = weekly_id
                 memory.save_linkedin_post(post)
-                
+
         except Exception as e:
             logger.error(f"Generation task failed: {e}", exc_info=True)
-    
+
     background_tasks.add_task(generate_task)
-    
+
     return {
         "success": True,
-        "message": "Post generation started. Check /api/posts in a few moments."
+        "message": "Post generation started. Check /api/posts in a few moments.",
     }
+
 
 @app.get("/api/search")
 async def search_entries(
-    telegram_id: int,
-    query: str,
-    limit: int = Query(default=10, le=50)
+    telegram_id: int, query: str, limit: int = Query(default=10, le=50)
 ):
     memory = get_memory_manager()
-    
+
     results = memory.search_similar_entries(
-        query=query,
-        n_results=limit,
-        telegram_id=telegram_id
+        query=query, n_results=limit, telegram_id=telegram_id
     )
-    
+
     return {"results": results}
+
 
 @app.get("/api/auth/me", tags=["Authentication"])
 async def get_current_user_info(request: Request):
     user: TokenData = request.state.current_user
     memory = get_memory_manager()
     db_user = memory.get_user(user.telegram_id)
-    
+
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     return {
         "id": db_user.id,
         "telegram_id": db_user.telegram_id,
@@ -1303,24 +1401,21 @@ async def domain_error_handler(request: Request, exc: DomainError):
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    
+
     from error_recovery import error_stats
+
     error_stats.record_error("global", exc)
-    
+
     return JSONResponse(
         status_code=500,
         content={
             "error": "Internal server error",
-            "detail": str(exc) if settings.debug else "An unexpected error occurred"
-        }
+            "detail": str(exc) if settings.debug else "An unexpected error occurred",
+        },
     )
+
 
 if __name__ == "__main__":
     import uvicorn
-    
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=settings.debug
-    )
+
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=settings.debug)

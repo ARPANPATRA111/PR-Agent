@@ -605,6 +605,19 @@ class TelegramMessage(PublicBase, TimestampMixin):
     processed_at_utc = Column(DateTime(timezone=True), nullable=True)
     delete_after_utc = Column(DateTime(timezone=True), nullable=True)
     deleted_at_utc = Column(DateTime(timezone=True), nullable=True)
+    cleanup_status = Column(
+        String(24),
+        nullable=False,
+        server_default="pending",
+    )
+    cleanup_attempt_count = Column(Integer, nullable=False, server_default="0")
+    next_cleanup_attempt_at_utc = Column(DateTime(timezone=True), nullable=True)
+    cleanup_claimed_at_utc = Column(DateTime(timezone=True), nullable=True)
+    cleanup_lease_expires_at_utc = Column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    cleanup_error_category = Column(String(64), nullable=True)
 
     __table_args__ = (
         UniqueConstraint(
@@ -616,10 +629,24 @@ class TelegramMessage(PublicBase, TimestampMixin):
             "direction IN ('inbound', 'outbound')",
             name="direction_supported",
         ),
+        CheckConstraint(
+            "cleanup_status IN "
+            "('pending', 'claimed', 'deleted', 'failed', 'dead_letter', 'cancelled')",
+            name="cleanup_status_supported",
+        ),
+        CheckConstraint(
+            "cleanup_attempt_count >= 0",
+            name="cleanup_attempt_count_nonnegative",
+        ),
         Index(
             "ix_telegram_messages_owner_id_delete_after_utc",
             "owner_id",
             "delete_after_utc",
+        ),
+        Index(
+            "ix_telegram_messages_cleanup_status_next_attempt",
+            "cleanup_status",
+            "next_cleanup_attempt_at_utc",
         ),
     )
 
@@ -838,3 +865,19 @@ class RateLimitBucket(PublicBase):
             "window_start",
         ),
     )
+
+
+class AccountDeletionAudit(PublicBase):
+    """Pseudonymous operational proof without retaining Telegram identity."""
+
+    __tablename__ = "account_deletion_audits"
+
+    id = Column(Integer, primary_key=True)
+    deletion_id = Column(String(64), nullable=False, unique=True)
+    identity_hash = Column(String(64), nullable=False, unique=True)
+    deleted_at_utc = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=utc_timestamp(),
+    )
+    legacy_rows_removed = Column(Integer, nullable=False, server_default="0")

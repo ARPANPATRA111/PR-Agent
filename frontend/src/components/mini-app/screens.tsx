@@ -23,7 +23,7 @@ import {
   useState,
 } from 'react';
 
-import { fetchAPI, formatDateTime } from '@/lib/utils';
+import { API_URL, fetchAPI, formatDateTime } from '@/lib/utils';
 import { useApiResource } from '@/lib/use-api-resource';
 import type {
   Goal,
@@ -1659,18 +1659,37 @@ export function ExportScreen() {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function requestExport() {
+  async function downloadExport(format: 'json' | 'csv') {
     setStatus(null);
     setError(null);
     try {
-      const result = await fetchAPI<{ message?: string }>(
-        '/api/v2/account/export',
-        { method: 'POST' },
+      const response = await fetch(
+        `${API_URL}/api/v2/account/export?format=${format}`,
+        { credentials: 'include' },
       );
-      setStatus(
-        result.message ||
-          'Your export was requested. The bot will notify you securely.',
-      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(
+          typeof payload.detail === 'string'
+            ? payload.detail
+            : 'Unable to download export.',
+        );
+      }
+      const blob = await response.blob();
+      const contentDisposition =
+        response.headers.get('Content-Disposition') || '';
+      const filename =
+        contentDisposition.match(/filename="([^"]+)"/)?.[1] ||
+        `pr-agent-export.${format === 'csv' ? 'zip' : 'json'}`;
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+      setStatus('Your private export download is ready.');
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -1691,14 +1710,24 @@ export function ExportScreen() {
           Exports are generated server-side and must not be shared through a
           public URL.
         </p>
-        <button
-          type="button"
-          className={`${buttonClassName} mt-4`}
-          onClick={() => void requestExport()}
-        >
-          <Download className="mr-2 h-4 w-4" aria-hidden />
-          Request export
-        </button>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            className={buttonClassName}
+            onClick={() => void downloadExport('json')}
+          >
+            <Download className="mr-2 h-4 w-4" aria-hidden />
+            Download JSON
+          </button>
+          <button
+            type="button"
+            className={secondaryButtonClassName}
+            onClick={() => void downloadExport('csv')}
+          >
+            <Download className="mr-2 h-4 w-4" aria-hidden />
+            Download CSV ZIP
+          </button>
+        </div>
         {status ? (
           <p className="mt-3 text-sm text-primary" role="status">
             {status}
@@ -1729,7 +1758,10 @@ export function AccountDeletionScreen() {
     try {
       await fetchAPI('/api/v2/account', {
         method: 'DELETE',
-        body: JSON.stringify({ confirmation }),
+        body: JSON.stringify({
+          confirmation,
+          acknowledge: acknowledged,
+        }),
       });
       window.dispatchEvent(new Event('pr-agent:session-expired'));
     } catch (requestError) {
@@ -1753,7 +1785,8 @@ export function AccountDeletionScreen() {
       >
         <p className="text-sm">
           Type <strong>DELETE MY ACCOUNT</strong>, check the acknowledgement,
-          and approve the final browser confirmation.
+          and approve the final browser confirmation. Download an export first
+          from the Export data screen if you want a private copy.
         </p>
         <FormField label="Confirmation phrase" htmlFor="delete-confirmation">
           <input

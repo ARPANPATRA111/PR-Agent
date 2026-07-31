@@ -106,6 +106,19 @@ class SchedulePreferenceResponse(StrictSchema):
     next_digest_at_utc: datetime | None
 
 
+class AccountDeletionConfirm(StrictSchema):
+    confirmation: str = Field(min_length=17, max_length=64)
+    acknowledge: bool
+
+    @model_validator(mode="after")
+    def confirmation_is_deliberate(self):
+        if self.confirmation != "DELETE MY ACCOUNT" or not self.acknowledge:
+            raise ValueError(
+                "Type DELETE MY ACCOUNT and acknowledge permanent deletion."
+            )
+        return self
+
+
 class WorkLogCreate(IdempotentCreate):
     original_text: str = Field(min_length=1, max_length=MAX_TEXT)
     cleaned_text: str | None = Field(default=None, max_length=MAX_TEXT)

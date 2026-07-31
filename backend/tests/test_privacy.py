@@ -1,0 +1,335 @@
+import io
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock
+import zipfile
+
+import pytest
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker
+
+from domain.schemas import LedgerCreate, NoteCreate, WorkLogCreate
+from domain.services import DomainServices
+from durable_worker import DeliveryFailure
+from bot import TelegramClient
+import bot as bot_module
+from memory import (
+    Base as LegacyBase,
+    RawEntryDB,
+    SearchableEntryDB,
+    StructuredEntryDB,
+    UserDB,
+)
+from privacy import PrivacyService, prune_operational_metadata
+from public_models import (
+    AccountDeletionAudit,
+    AccountExportRequest,
+    ApplicationSession,
+    PublicBase,
+    PublicUser,
+    TelegramMessage,
+    WorkLog,
+)
+from telegram_cleanup import (
+    TelegramCleanupStore,
+    TelegramCleanupWorker,
+    queue_telegram_message,
+)
+
+UTC = timezone.utc
+
+
+class CleanupGateway:
+    def __init__(self, failures=None):
+        self.failures = list(failures or [])
+        self.deleted = []
+
+    async def delete(self, chat_id, message_id):
+        self.deleted.append((chat_id, message_id))
+        if self.failures:
+            raise self.failures.pop(0)
+
+
+@pytest.fixture()
+def privacy_db(tmp_path):
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'privacy.db'}",
+        connect_args={"check_same_thread": False},
+    )
+
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(connection, _record):
+        connection.execute("PRAGMA foreign_keys=ON")
+
+    LegacyBase.metadata.create_all(engine)
+    PublicBase.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with factory() as session:
+        alice = DomainServices(session).ensure_owner(
+            telegram_id=101,
+            first_name="Alice",
+        )
+        bob = DomainServices(session).ensure_owner(
+            telegram_id=202,
+            first_name="Bob",
+        )
+        session.add_all(
+            [
+                UserDB(telegram_id=101, first_name="Alice"),
+                UserDB(telegram_id=202, first_name="Bob"),
+            ]
+        )
+        session.commit()
+        owner_ids = (alice.id, bob.id)
+    yield factory, owner_ids
+    engine.dispose()
+
+
+def seed_owned_records(factory, owner_id, label):
+    with factory() as session:
+        service = DomainServices(session)
+        service.create_work_log(
+            owner_id,
+            WorkLogCreate(
+                original_text=f"{label} work",
+                idempotency_key=f"work-{label.lower()}",
+            ),
+        )
+        service.create_note(
+            owner_id,
+            NoteCreate(
+                body=f"{label} note",
+                idempotency_key=f"note-{label.lower()}",
+            ),
+        )
+        service.create_ledger_entry(
+            owner_id,
+            LedgerCreate(
+                direction="expense",
+                amount="12.50",
+                currency="INR",
+                description=f"{label} expense",
+                idempotency_key=f"ledger-{label.lower()}",
+            ),
+        )
+        session.commit()
+
+
+def test_export_contains_all_sections_and_excludes_other_tenant(privacy_db):
+    factory, (alice_id, bob_id) = privacy_db
+    seed_owned_records(factory, alice_id, "Alice")
+    seed_owned_records(factory, bob_id, "Bob")
+    with factory() as session:
+        privacy = PrivacyService(session)
+        payload = privacy.export_owner_data(alice_id)
+        session.commit()
+        assert payload["profile"]["telegram_id"] == 101
+        assert payload["work_logs"][0]["original_text"] == "Alice work"
+        assert payload["notes"][0]["body"] == "Alice note"
+        assert payload["ledger_entries"][0]["description"] == "Alice expense"
+        assert "Bob" not in privacy.json_bytes(payload).decode("utf-8")
+        assert {
+            "work_logs",
+            "notes",
+            "reminders",
+            "ledger_entries",
+            "nutrition_logs",
+            "nutrition_items",
+            "goals",
+            "preferences",
+            "summary_metadata",
+        } <= payload.keys()
+        serialized = privacy.json_bytes(payload).decode("utf-8")
+        for forbidden in (
+            "token_hash",
+            "session_signing_secret",
+            "idempotency_key",
+            "provider_metadata",
+        ):
+            assert forbidden not in serialized
+
+        archive = zipfile.ZipFile(io.BytesIO(privacy.csv_zip_bytes(payload)))
+        assert {
+            "work_logs.csv",
+            "notes.csv",
+            "ledger_entries.csv",
+            "profile.csv",
+        } <= set(archive.namelist())
+
+
+def test_account_deletion_removes_public_legacy_search_and_sessions(privacy_db):
+    factory, (alice_id, _) = privacy_db
+    seed_owned_records(factory, alice_id, "Alice")
+    with factory() as session:
+        raw = RawEntryDB(
+            telegram_id=101,
+            telegram_message_id=10,
+            audio_file_id="legacy-file",
+            audio_duration=3,
+            transcript="legacy transcript",
+        )
+        session.add(raw)
+        session.flush()
+        session.add(
+            StructuredEntryDB(
+                raw_entry_id=raw.id,
+                category="coding",
+                summary="legacy summary",
+            )
+        )
+        session.add(
+            SearchableEntryDB(
+                entry_id=raw.id,
+                telegram_id=101,
+                content="search copy",
+            )
+        )
+        session.add(
+            ApplicationSession(
+                id="session-a",
+                owner_id=alice_id,
+                token_hash="a" * 64,
+                expires_at_utc=datetime.now(UTC) + timedelta(minutes=5),
+            )
+        )
+        session.commit()
+
+    with factory() as session:
+        service = PrivacyService(session)
+        assert service.delete_account(
+            alice_id,
+            101,
+            audit_secret="test-audit-secret-at-least-32-characters",
+        )
+        session.commit()
+
+    with factory() as session:
+        assert session.get(PublicUser, alice_id) is None
+        assert session.query(WorkLog).filter(WorkLog.owner_id == alice_id).count() == 0
+        assert session.query(ApplicationSession).count() == 0
+        assert session.query(UserDB).filter(UserDB.telegram_id == 101).count() == 0
+        assert (
+            session.query(SearchableEntryDB)
+            .filter(SearchableEntryDB.telegram_id == 101)
+            .count()
+            == 0
+        )
+        assert session.query(AccountDeletionAudit).count() == 1
+        assert (
+            PrivacyService(session).delete_account(
+                alice_id,
+                101,
+                audit_secret="test-audit-secret-at-least-32-characters",
+            )
+            is False
+        )
+
+
+@pytest.mark.asyncio
+async def test_cleanup_failure_never_rolls_back_stored_record(privacy_db):
+    factory, (alice_id, _) = privacy_db
+    seed_owned_records(factory, alice_id, "Alice")
+    now = datetime(2026, 8, 1, 10, tzinfo=UTC)
+    with factory() as session:
+        queue_telegram_message(
+            session,
+            telegram_id=101,
+            chat_id=101,
+            message_id=99,
+            direction="inbound",
+            purpose="processed_input",
+            processed_at=now,
+            delete_after=now,
+        )
+        session.commit()
+
+    gateway = CleanupGateway([DeliveryFailure("telegram_cleanup_timeout")])
+    store = TelegramCleanupStore(
+        factory,
+        base_backoff_seconds=1,
+    )
+    worker = TelegramCleanupWorker(store, gateway, clock=lambda: now)
+    assert await worker.run_once() == 1
+    with factory() as session:
+        message = session.query(TelegramMessage).one()
+        assert message.cleanup_status == "failed"
+        assert session.query(WorkLog).filter(WorkLog.owner_id == alice_id).count() == 1
+        message.next_cleanup_attempt_at_utc = now
+        session.commit()
+
+    assert await worker.run_once() == 1
+    with factory() as session:
+        message = session.query(TelegramMessage).one()
+        assert message.cleanup_status == "deleted"
+        assert message.deleted_at_utc is not None
+
+
+@pytest.mark.asyncio
+async def test_successful_outbound_message_queues_identifier_only_cleanup(
+    privacy_db,
+    monkeypatch,
+):
+    factory, _ = privacy_db
+
+    class Memory:
+        @contextmanager
+        def get_session(self):
+            session = factory()
+            try:
+                yield session
+                session.commit()
+            except Exception:
+                session.rollback()
+                raise
+            finally:
+                session.close()
+
+    monkeypatch.setattr(bot_module, "get_memory_manager", lambda: Memory())
+    monkeypatch.setattr(bot_module.settings, "message_cleanup_enabled", True)
+    monkeypatch.setattr(bot_module.settings, "message_cleanup_delay_seconds", 0)
+    client = TelegramClient("test-token")
+    client._request_with_retry = AsyncMock(
+        return_value={"ok": True, "result": {"message_id": 501}}
+    )
+
+    response = await client.send_message(101, "private confirmation")
+    assert response["ok"] is True
+    with factory() as session:
+        cleanup = session.query(TelegramMessage).one()
+        assert cleanup.telegram_message_id == 501
+        assert cleanup.direction == "outbound"
+        assert not hasattr(cleanup, "content")
+        assert not hasattr(cleanup, "text")
+
+
+def test_retention_prunes_only_expired_operational_metadata(privacy_db):
+    factory, (alice_id, _) = privacy_db
+    now = datetime(2026, 8, 1, 10, tzinfo=UTC)
+    with factory() as session:
+        session.add(
+            ApplicationSession(
+                id="expired-session",
+                owner_id=alice_id,
+                token_hash="b" * 64,
+                expires_at_utc=now - timedelta(minutes=1),
+            )
+        )
+        session.add(
+            AccountExportRequest(
+                owner_id=alice_id,
+                status="completed",
+                requested_at_utc=now - timedelta(hours=1),
+                expires_at_utc=now - timedelta(minutes=1),
+            )
+        )
+        session.commit()
+        assert (
+            prune_operational_metadata(
+                session,
+                now=now,
+                retention_days=30,
+            )
+            == 2
+        )
+        session.commit()
+        assert session.query(PublicUser).filter(PublicUser.id == alice_id).count() == 1

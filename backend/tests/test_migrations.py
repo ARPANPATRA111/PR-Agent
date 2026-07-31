@@ -16,9 +16,9 @@ from sqlalchemy.orm import Session
 from config import Settings
 from public_models import LedgerEntry, NutritionItem, NutritionLog, PublicUser
 
-
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 PUBLIC_TABLES = {
+    "account_deletion_audits",
     "account_export_requests",
     "api_rate_limit_buckets",
     "app_users",
@@ -71,18 +71,14 @@ def test_empty_database_upgrade_is_idempotent(tmp_path):
 
     tables = set(inspect(create_engine(database_url)).get_table_names())
     assert PUBLIC_TABLES <= tables
-    assert "No new upgrade operations detected" in (
-        check.stdout + check.stderr
-    )
+    assert "No new upgrade operations detected" in (check.stdout + check.stderr)
 
 
 def test_representative_legacy_upgrade_preserves_rows_and_downgrade(tmp_path):
     database_url = sqlite_url(tmp_path / "legacy.db")
     engine = create_engine(database_url)
     with engine.begin() as connection:
-        connection.execute(
-            text(
-                """
+        connection.execute(text("""
                 CREATE TABLE users (
                     id INTEGER PRIMARY KEY,
                     telegram_id INTEGER NOT NULL UNIQUE,
@@ -95,12 +91,8 @@ def test_representative_legacy_upgrade_preserves_rows_and_downgrade(tmp_path):
                     total_entries INTEGER,
                     preferences JSON
                 )
-                """
-            )
-        )
-        connection.execute(
-            text(
-                """
+                """))
+        connection.execute(text("""
                 CREATE TABLE raw_entries (
                     id INTEGER PRIMARY KEY,
                     telegram_id INTEGER NOT NULL,
@@ -110,19 +102,13 @@ def test_representative_legacy_upgrade_preserves_rows_and_downgrade(tmp_path):
                     audio_duration INTEGER,
                     transcript TEXT
                 )
-                """
-            )
-        )
-        connection.execute(
-            text(
-                """
+                """))
+        connection.execute(text("""
                 INSERT INTO users (
                     id, telegram_id, first_name, streak, total_entries,
                     preferences
                 ) VALUES (1, 101, 'Legacy', 3, 7, '{}')
-                """
-            )
-        )
+                """))
 
     run_alembic(database_url, "upgrade", "head")
     with engine.connect() as connection:
@@ -255,8 +241,7 @@ def test_unique_foreign_keys_precision_timezone_and_indexes(migrated_engine):
     ):
         indexes = inspector.get_indexes(table_name)
         assert any(
-            index["column_names"]
-            and index["column_names"][0] == "owner_id"
+            index["column_names"] and index["column_names"][0] == "owner_id"
             for index in indexes
         ), table_name
 
@@ -275,9 +260,7 @@ def test_backfill_is_dry_run_first_and_idempotent(tmp_path):
     database_url = sqlite_url(tmp_path / "backfill.db")
     engine = create_engine(database_url)
     with engine.begin() as connection:
-        connection.execute(
-            text(
-                """
+        connection.execute(text("""
                 CREATE TABLE users (
                     id INTEGER PRIMARY KEY,
                     telegram_id INTEGER NOT NULL UNIQUE,
@@ -290,12 +273,8 @@ def test_backfill_is_dry_run_first_and_idempotent(tmp_path):
                     total_entries INTEGER,
                     preferences JSON
                 )
-                """
-            )
-        )
-        connection.execute(
-            text(
-                """
+                """))
+        connection.execute(text("""
                 CREATE TABLE raw_entries (
                     id INTEGER PRIMARY KEY,
                     telegram_id INTEGER NOT NULL,
@@ -305,23 +284,15 @@ def test_backfill_is_dry_run_first_and_idempotent(tmp_path):
                     audio_duration INTEGER,
                     transcript TEXT
                 )
-                """
-            )
-        )
-        connection.execute(
-            text(
-                """
+                """))
+        connection.execute(text("""
                 INSERT INTO users (
                     id, telegram_id, first_name, preferences
                 ) VALUES (
                     1, 101, 'Legacy', '{"timezone": "Asia/Kolkata"}'
                 )
-                """
-            )
-        )
-        connection.execute(
-            text(
-                """
+                """))
+        connection.execute(text("""
                 INSERT INTO raw_entries (
                     id, telegram_id, telegram_message_id, timestamp,
                     audio_file_id, audio_duration, transcript
@@ -329,9 +300,7 @@ def test_backfill_is_dry_run_first_and_idempotent(tmp_path):
                     7, 101, 99, '2026-07-31 05:30:00',
                     'legacy-file', 12, 'Completed migration tests'
                 )
-                """
-            )
-        )
+                """))
 
     run_alembic(database_url, "upgrade", "head")
     environment = os.environ.copy()
@@ -344,11 +313,7 @@ def test_backfill_is_dry_run_first_and_idempotent(tmp_path):
     )
     command = [
         sys.executable,
-        str(
-            BACKEND_DIR.parent
-            / "scripts"
-            / "backfill_legacy_to_public_v2.py"
-        ),
+        str(BACKEND_DIR.parent / "scripts" / "backfill_legacy_to_public_v2.py"),
     ]
     dry_run = subprocess.run(
         command,
@@ -360,8 +325,12 @@ def test_backfill_is_dry_run_first_and_idempotent(tmp_path):
     )
     assert "DRY RUN (rolled back)" in dry_run.stdout
     with engine.connect() as connection:
-        assert connection.execute(text("SELECT COUNT(*) FROM app_users")).scalar_one() == 0
-        assert connection.execute(text("SELECT COUNT(*) FROM work_logs")).scalar_one() == 0
+        assert (
+            connection.execute(text("SELECT COUNT(*) FROM app_users")).scalar_one() == 0
+        )
+        assert (
+            connection.execute(text("SELECT COUNT(*) FROM work_logs")).scalar_one() == 0
+        )
 
     first_apply = subprocess.run(
         [*command, "--apply"],
@@ -384,5 +353,9 @@ def test_backfill_is_dry_run_first_and_idempotent(tmp_path):
     assert "work_logs_created: 0" in second_apply.stdout
     assert "work_logs_existing: 1" in second_apply.stdout
     with engine.connect() as connection:
-        assert connection.execute(text("SELECT COUNT(*) FROM app_users")).scalar_one() == 1
-        assert connection.execute(text("SELECT COUNT(*) FROM work_logs")).scalar_one() == 1
+        assert (
+            connection.execute(text("SELECT COUNT(*) FROM app_users")).scalar_one() == 1
+        )
+        assert (
+            connection.execute(text("SELECT COUNT(*) FROM work_logs")).scalar_one() == 1
+        )

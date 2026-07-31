@@ -46,6 +46,8 @@ ID, then formats a concise private summary of:
 An optional narrator may rewrite the deterministic snapshot. Provider failure,
 an empty response, or an oversized response always falls back to the local
 template. The feature never creates a LinkedIn post or publishes content.
+Message text and aggregate snapshots are cleared after successful delivery or
+terminal failure; delivery metadata remains available for idempotency.
 
 ## Running locally
 

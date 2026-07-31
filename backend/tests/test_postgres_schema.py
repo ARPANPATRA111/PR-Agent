@@ -13,10 +13,18 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
-from domain.schemas import ReminderCreate
+from domain.schemas import ReminderCreate, WorkLogCreate
 from domain.services import DomainServices
 from durable_worker import DurableDeliveryStore
-from public_models import Reminder, ReminderDelivery
+from privacy import PrivacyService
+from public_models import (
+    AccountDeletionAudit,
+    ApplicationSession,
+    PublicUser,
+    Reminder,
+    ReminderDelivery,
+    WorkLog,
+)
 
 POSTGRES_TEST_URL = os.getenv("POSTGRES_TEST_URL")
 pytestmark = pytest.mark.skipif(
@@ -254,4 +262,66 @@ def test_two_postgres_workers_claim_one_occurrence():
         owner = DomainServices(session).get_owner_by_telegram_id(telegram_id)
         session.delete(owner)
         session.commit()
+    engine.dispose()
+
+
+def test_postgres_account_deletion_cascades_and_is_idempotent():
+    engine = create_engine(POSTGRES_TEST_URL, pool_pre_ping=True)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    telegram_id = 9_876_543_212
+    audit_secret = "postgres-test-audit-secret-at-least-32-characters"
+    with factory() as session:
+        session.execute(
+            text("DELETE FROM app_users WHERE telegram_id = :telegram_id"),
+            {"telegram_id": telegram_id},
+        )
+        owner = DomainServices(session).ensure_owner(
+            telegram_id=telegram_id,
+            first_name="Privacy Test",
+        )
+        DomainServices(session).create_work_log(
+            owner.id,
+            WorkLogCreate(
+                original_text="private work",
+                idempotency_key="postgres-privacy-work",
+            ),
+        )
+        session.add(
+            ApplicationSession(
+                id="postgres-privacy-session",
+                owner_id=owner.id,
+                token_hash="c" * 64,
+                expires_at_utc=datetime(2026, 8, 1, 11, tzinfo=timezone.utc),
+            )
+        )
+        session.commit()
+        owner_id = owner.id
+
+    with factory() as session:
+        privacy = PrivacyService(session)
+        assert privacy.delete_account(
+            owner_id,
+            telegram_id,
+            audit_secret=audit_secret,
+        )
+        session.commit()
+
+    with factory() as session:
+        assert session.get(PublicUser, owner_id) is None
+        assert session.query(WorkLog).filter(WorkLog.owner_id == owner_id).count() == 0
+        assert (
+            session.query(ApplicationSession)
+            .filter(ApplicationSession.owner_id == owner_id)
+            .count()
+            == 0
+        )
+        assert session.query(AccountDeletionAudit).count() >= 1
+        assert (
+            PrivacyService(session).delete_account(
+                owner_id,
+                telegram_id,
+                audit_secret=audit_secret,
+            )
+            is False
+        )
     engine.dispose()

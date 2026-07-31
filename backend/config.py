@@ -41,6 +41,34 @@ class Settings(BaseSettings):
         default=False,
         description="Permit the standalone durable delivery worker to run",
     )
+    message_cleanup_enabled: bool = Field(
+        default=False,
+        description="Queue processed Telegram messages for best-effort deletion",
+    )
+    message_cleanup_delay_seconds: int = Field(
+        default=3600,
+        ge=0,
+        le=604800,
+        description="Retention delay before Telegram message deletion",
+    )
+    account_deletion_recent_auth_seconds: int = Field(
+        default=300,
+        ge=60,
+        le=3600,
+        description="Maximum session age allowed for account deletion",
+    )
+    operational_metadata_retention_days: int = Field(
+        default=30,
+        ge=1,
+        le=365,
+        description="Retention for completed cleanup and session metadata",
+    )
+    operational_prune_interval_seconds: int = Field(
+        default=3600,
+        ge=60,
+        le=86400,
+        description="Minimum interval between idempotent retention sweeps",
+    )
 
     telegram_bot_token: str = Field(
         default="", description="Telegram Bot API token from @BotFather"

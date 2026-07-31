@@ -75,6 +75,7 @@ services:
       APP_ENV: development
       PUBLIC_V2_ENABLED: "true"
       REMINDER_WORKER_ENABLED: "true"
+      MESSAGE_CLEANUP_ENABLED: "false"
       DATABASE_URL: postgresql://pr_agent:pr_agent_local@postgres:5432/pr_agent_dev
       # Supply a development-only token through an untracked Compose override.
       # The worker fails closed when this value is empty.

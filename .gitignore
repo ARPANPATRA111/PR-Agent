@@ -133,6 +133,7 @@ docs/*
 !docs/NUTRITION.md
 !docs/MINI_APP.md
 !docs/DURABLE_WORKER.md
+!docs/PRIVACY_LIFECYCLE.md
 changelog.md
 docker-compose.override.yml
 docker-compose.prod.yml

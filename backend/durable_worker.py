@@ -688,6 +688,8 @@ class DurableDeliveryStore:
                 delivery.telegram_message_id = _message_id(telegram_message_id)
                 delivery.lease_expires_at_utc = None
                 delivery.last_error_category = None
+                delivery.message_text = None
+                delivery.payload_snapshot = None
         finally:
             session.close()
 
@@ -712,6 +714,9 @@ class DurableDeliveryStore:
                 delivery.next_attempt_at_utc = (
                     None if terminal else self._retry_at(now, delivery.attempt_count)
                 )
+                if terminal:
+                    delivery.message_text = None
+                    delivery.payload_snapshot = None
         finally:
             session.close()
 

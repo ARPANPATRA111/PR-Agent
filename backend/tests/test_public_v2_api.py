@@ -46,7 +46,10 @@ def api_client(monkeypatch):
             content={"detail": exc.public_message},
         )
 
-    identity = {"telegram_id": 1001}
+    identity = {
+        "telegram_id": 1001,
+        "issued_at": datetime.now(timezone.utc),
+    }
 
     async def authenticated_user():
         return TokenData(
@@ -55,6 +58,8 @@ def api_client(monkeypatch):
             username=f"user_{identity['telegram_id']}",
             csrf_token="csrf",
             exp=datetime.now(timezone.utc) + timedelta(minutes=5),
+            issued_at=identity["issued_at"],
+            jti="test-session",
         )
 
     app.dependency_overrides[get_current_user] = authenticated_user
@@ -204,6 +209,67 @@ def test_schedule_preferences_are_versioned_and_sunday_only(api_client):
         },
     )
     assert stale.status_code == 409
+
+
+def test_account_export_is_downloadable_and_tenant_scoped(api_client):
+    client, identity = api_client
+    assert (
+        client.post(
+            "/api/v2/notes",
+            json={
+                "body": "Alice export only",
+                "idempotency_key": "export-alice-note",
+            },
+        ).status_code
+        == 201
+    )
+    response = client.get("/api/v2/account/export?format=json")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert "attachment" in response.headers["content-disposition"]
+    assert response.json()["notes"][0]["body"] == "Alice export only"
+
+    identity["telegram_id"] = 2002
+    bob = client.get("/api/v2/account/export?format=json")
+    assert bob.status_code == 200
+    assert bob.json()["notes"] == []
+    assert "Alice export only" not in bob.text
+
+    csv_response = client.get("/api/v2/account/export?format=csv")
+    assert csv_response.status_code == 200
+    assert csv_response.headers["content-type"] == "application/zip"
+
+
+def test_account_delete_requires_recent_explicit_confirmation(api_client):
+    client, identity = api_client
+    invalid = client.request(
+        "DELETE",
+        "/api/v2/account",
+        json={"confirmation": "delete it", "acknowledge": True},
+    )
+    assert invalid.status_code == 422
+
+    identity["issued_at"] = datetime.now(timezone.utc) - timedelta(hours=1)
+    stale = client.request(
+        "DELETE",
+        "/api/v2/account",
+        json={
+            "confirmation": "DELETE MY ACCOUNT",
+            "acknowledge": True,
+        },
+    )
+    assert stale.status_code == 403
+
+    identity["issued_at"] = datetime.now(timezone.utc)
+    deleted = client.request(
+        "DELETE",
+        "/api/v2/account",
+        json={
+            "confirmation": "DELETE MY ACCOUNT",
+            "acknowledge": True,
+        },
+    )
+    assert deleted.status_code == 204
 
 
 def test_api_invalid_inputs_are_clear_422_responses(api_client):
