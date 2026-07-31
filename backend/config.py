@@ -440,6 +440,8 @@ class Settings(BaseSettings):
                 raise ValueError("Production TELEGRAM_MINI_APP_URL must use HTTPS")
             if self.disable_ssl_verify:
                 raise ValueError("DISABLE_SSL_VERIFY is forbidden outside development")
+            if self.debug:
+                raise ValueError("DEBUG must be false outside development")
             if any("localhost" in origin for origin in self.cors_origins_list):
                 raise ValueError("Production CORS_ORIGINS must not include localhost")
             if self.ai_agent_enabled and (

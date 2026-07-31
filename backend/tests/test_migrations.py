@@ -278,6 +278,24 @@ def test_production_agent_fails_closed_without_provider_credentials():
         )
 
 
+def test_production_rejects_debug_mode():
+    with pytest.raises(ValidationError, match="DEBUG must be false"):
+        Settings(
+            _env_file=None,
+            app_env="production",
+            app_base_url="https://api.example.test",
+            frontend_base_url="https://app.example.test",
+            database_url="postgresql://service:password@db.example.test/app",
+            session_signing_secret="s" * 64,
+            telegram_bot_token="123456:production-test-token",
+            telegram_webhook_secret="w" * 32,
+            telegram_webhook_url="https://api.example.test/webhook",
+            telegram_mini_app_url="https://app.example.test",
+            cors_origins="https://app.example.test",
+            debug=True,
+        )
+
+
 def test_backfill_is_dry_run_first_and_idempotent(tmp_path):
     database_url = sqlite_url(tmp_path / "backfill.db")
     engine = create_engine(database_url)
