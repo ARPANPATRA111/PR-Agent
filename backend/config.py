@@ -1,8 +1,8 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Literal, Optional
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, model_validator
 
 
 def find_env_file() -> Optional[str]:
@@ -25,6 +25,23 @@ def find_env_file() -> Optional[str]:
 
 
 class Settings(BaseSettings):
+    app_env: Literal["development", "test", "staging", "production"] = Field(
+        default="development",
+        description="Application environment"
+    )
+    app_base_url: str = Field(
+        default="http://localhost:8000",
+        description="Public backend base URL"
+    )
+    frontend_base_url: str = Field(
+        default="http://localhost:3000",
+        description="Telegram Mini App frontend URL"
+    )
+    public_v2_enabled: bool = Field(
+        default=False,
+        description="Enable public-v2 application behavior"
+    )
+
     telegram_bot_token: str = Field(
         default="",
         description="Telegram Bot API token from @BotFather"
@@ -36,6 +53,32 @@ class Settings(BaseSettings):
     webhook_url: str = Field(
         default="http://localhost:8000",
         description="Public URL for Telegram webhook"
+    )
+    telegram_webhook_secret: str = Field(
+        default="",
+        min_length=0,
+        max_length=256,
+        description="Secret validated on every Telegram webhook request"
+    )
+    telegram_webhook_url: str = Field(
+        default="",
+        description="Full production Telegram webhook URL"
+    )
+    telegram_mini_app_url: str = Field(
+        default="",
+        description="Telegram Mini App URL configured in BotFather"
+    )
+    telegram_auth_max_age_seconds: int = Field(
+        default=300,
+        ge=30,
+        le=3600,
+        description="Maximum accepted Telegram Mini App initData age"
+    )
+    max_webhook_body_bytes: int = Field(
+        default=1_048_576,
+        ge=1024,
+        le=10_485_760,
+        description="Maximum Telegram webhook request body size"
     )
     
     groq_api_key: str = Field(
@@ -159,16 +202,46 @@ class Settings(BaseSettings):
     
     secret_key: str = Field(
         default="change-me-in-production-use-openssl-rand-hex-32",
-        description="Secret key for JWT tokens"
+        description="Deprecated legacy JWT secret"
+    )
+    session_signing_secret: str = Field(
+        default="",
+        description="Signing secret for short-lived Mini App sessions"
+    )
+    session_max_age_seconds: int = Field(
+        default=900,
+        ge=60,
+        le=86_400,
+        description="Mini App session lifetime"
+    )
+    session_cookie_name: str = Field(
+        default="pr_agent_session",
+        description="HTTP-only application session cookie name"
+    )
+    csrf_cookie_name: str = Field(
+        default="pr_agent_csrf",
+        description="CSRF cookie name"
     )
     cors_origins: str = Field(
-        default="http://localhost:3000,https://pragent-eta.vercel.app",
+        default="http://localhost:3000",
         description="Comma-separated list of allowed CORS origins"
     )
     
     @property
     def cors_origins_list(self) -> List[str]:
-        return [origin.strip() for origin in self.cors_origins.split(",")]
+        return [
+            origin.strip()
+            for origin in self.cors_origins.split(",")
+            if origin.strip()
+        ]
+
+    @property
+    def effective_session_signing_secret(self) -> str:
+        return self.session_signing_secret or self.secret_key
+
+    @property
+    def session_cookie_secure(self) -> bool:
+        return self.app_env in {"staging", "production"}
     
     log_level: str = Field(
         default="INFO",
@@ -226,6 +299,60 @@ class Settings(BaseSettings):
         default=False,
         description="Disable SSL verification (development only)"
     )
+
+    @model_validator(mode="after")
+    def validate_security_configuration(self) -> "Settings":
+        if "*" in self.cors_origins_list:
+            raise ValueError("CORS_ORIGINS must not contain a wildcard")
+
+        if self.app_env in {"staging", "production"}:
+            required = {
+                "DATABASE_URL": self.database_url,
+                "SESSION_SIGNING_SECRET": self.session_signing_secret,
+                "TELEGRAM_BOT_TOKEN": self.telegram_bot_token,
+                "TELEGRAM_WEBHOOK_SECRET": self.telegram_webhook_secret,
+                "TELEGRAM_WEBHOOK_URL": self.telegram_webhook_url,
+                "TELEGRAM_MINI_APP_URL": self.telegram_mini_app_url,
+            }
+            missing = [
+                name for name, value in required.items()
+                if (
+                    not value
+                    or any(
+                        marker in value.lower()
+                        for marker in (
+                            "your_",
+                            "change-me",
+                            "replace_",
+                            "example.com",
+                        )
+                    )
+                )
+            ]
+            if missing:
+                raise ValueError(
+                    "Missing secure configuration for: " + ", ".join(missing)
+                )
+            if not self.database_url.startswith(("postgresql://", "postgresql+")):
+                raise ValueError("Production DATABASE_URL must use PostgreSQL")
+            if len(self.session_signing_secret) < 32:
+                raise ValueError("SESSION_SIGNING_SECRET must contain at least 32 characters")
+            if len(self.telegram_webhook_secret) < 16:
+                raise ValueError("TELEGRAM_WEBHOOK_SECRET must contain at least 16 characters")
+            if not self.app_base_url.startswith("https://"):
+                raise ValueError("Production APP_BASE_URL must use HTTPS")
+            if not self.frontend_base_url.startswith("https://"):
+                raise ValueError("Production FRONTEND_BASE_URL must use HTTPS")
+            if not self.telegram_webhook_url.startswith("https://"):
+                raise ValueError("Production TELEGRAM_WEBHOOK_URL must use HTTPS")
+            if not self.telegram_mini_app_url.startswith("https://"):
+                raise ValueError("Production TELEGRAM_MINI_APP_URL must use HTTPS")
+            if self.disable_ssl_verify:
+                raise ValueError("DISABLE_SSL_VERIFY is forbidden outside development")
+            if any("localhost" in origin for origin in self.cors_origins_list):
+                raise ValueError("Production CORS_ORIGINS must not include localhost")
+
+        return self
     
     class Config:
         env_file = find_env_file()

@@ -7,60 +7,52 @@ export function cn(...inputs: ClassValue[]) {
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-const TELEGRAM_ID_KEY = 'weekly_agent_telegram_id';
+let csrfToken: string | null = null;
 
-export function getTelegramId(): string | null {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem(TELEGRAM_ID_KEY);
+export function setCsrfToken(token: string | null): void {
+  csrfToken = token;
 }
 
-export function setTelegramId(id: string): void {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(TELEGRAM_ID_KEY, id);
+function isMutation(method?: string): boolean {
+  return !['GET', 'HEAD', 'OPTIONS'].includes((method || 'GET').toUpperCase());
 }
 
-export function clearTelegramId(): void {
-  if (typeof window === 'undefined') return;
-  localStorage.removeItem(TELEGRAM_ID_KEY);
-}
-
-export async function fetchAPI<T = any>(
+export async function fetchAPI<T = unknown>(
   endpoint: string,
-  options?: RequestInit
+  options?: RequestInit,
 ): Promise<T> {
-  const url = `${API_URL}${endpoint}`;
-  
-  const response = await fetch(url, {
+  const headers = new Headers(options?.headers);
+  if (options?.body && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  if (isMutation(options?.method) && csrfToken) {
+    headers.set('X-CSRF-Token', csrfToken);
+  }
+
+  const response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
+    credentials: 'include',
+    headers,
   });
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || `API error: ${response.status}`);
+    const detail =
+      typeof error.detail === 'string'
+        ? error.detail
+        : `API error: ${response.status}`;
+    throw new Error(detail);
   }
 
-  return response.json();
-}
-
-export async function fetchAPIWithUser<T = any>(
-  endpoint: string,
-  options?: RequestInit
-): Promise<T> {
-  const telegramId = getTelegramId();
-  if (!telegramId) {
-    throw new Error('Please set your Telegram ID in Settings first');
+  if (response.status === 204) {
+    return undefined as T;
   }
-  
-  const separator = endpoint.includes('?') ? '&' : '?';
-  const urlWithId = `${endpoint}${separator}telegram_id=${telegramId}`;
-  
-  return fetchAPI<T>(urlWithId, options);
+  return response.json() as Promise<T>;
 }
 
+// Kept as a compatibility alias while screens are migrated to the public-v2 API.
+// Identity always comes from the verified session, never from URL parameters.
+export const fetchAPIWithUser = fetchAPI;
 export const apiFetch = fetchAPI;
 
 export function formatDate(dateString: string | null | undefined): string {
@@ -101,7 +93,7 @@ export function formatRelativeTime(dateString: string | null | undefined): strin
   if (diffMins < 60) return `${diffMins}m ago`;
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays < 7) return `${diffDays}d ago`;
-  
+
   return formatDate(dateString);
 }
 

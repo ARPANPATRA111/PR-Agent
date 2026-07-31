@@ -1,13 +1,25 @@
+import hashlib
+import hmac
+import json
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Optional, List
+from urllib.parse import parse_qsl, urlencode
 
 from fastapi import FastAPI, HTTPException, Request, Response, Query, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
+from auth import (
+    AuthResponse,
+    TelegramMiniAppAuthRequest,
+    TokenData,
+    authenticate_request,
+    create_session,
+    validate_telegram_init_data,
+)
 from config import settings
 from models import (
     TelegramUpdate, LinkedInPost, PostUpdateRequest,
@@ -55,38 +67,103 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Weekly Progress Agent",
-    description="AI-powered productivity tracking and LinkedIn post generation",
-    version="1.1.0",
-    lifespan=lifespan
+    description="Private Telegram personal tracking assistant",
+    version="2.0.0-security-preview",
+    lifespan=lifespan,
+    docs_url=None if settings.app_env == "production" else "/docs",
+    redoc_url=None if settings.app_env == "production" else "/redoc",
 )
 
 from rate_limiter import setup_rate_limiting, limiter, RATE_LIMITS
 
-# Rate limiter first, then CORS added LAST so it runs FIRST on requests
 setup_rate_limiting(app)
 
-# CORS must be the LAST middleware added so it handles preflight OPTIONS first
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://pragent-eta.vercel.app", "http://localhost:3000"],
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=["*"],
-    expose_headers=["*"],
+    allow_headers=["Content-Type", "Authorization", "X-CSRF-Token"],
+    expose_headers=["X-Request-ID"],
 )
 
-# Explicit OPTIONS handler to ensure preflight works
-@app.options("/{rest_of_path:path}")
-async def preflight_handler(rest_of_path: str):
-    return Response(
-        status_code=200,
-        headers={
-            "Access-Control-Allow-Origin": "https://pragent-eta.vercel.app",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-            "Access-Control-Allow-Headers": "*",
-            "Access-Control-Allow-Credentials": "true",
-        }
+PUBLIC_API_PATHS = {
+    "/api/health",
+    "/api/auth/telegram",
+}
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = (
+        "camera=(), geolocation=(), microphone=()"
     )
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    if settings.session_cookie_secure:
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
+    return response
+
+
+@app.middleware("http")
+async def enforce_private_api_identity(request: Request, call_next):
+    path = request.url.path.rstrip("/") or "/"
+    if (
+        request.method == "OPTIONS"
+        or not path.startswith("/api/")
+        or path in PUBLIC_API_PATHS
+    ):
+        return await call_next(request)
+
+    try:
+        current_user = authenticate_request(request)
+        request.state.current_user = current_user
+
+        memory = get_memory_manager()
+        allowed = memory.consume_rate_limit(
+            subject_key=f"user:{current_user.user_id}",
+            scope="private_api",
+            limit=120,
+            window_seconds=60,
+        )
+        if not allowed:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Rate limit exceeded"},
+            )
+
+        # Temporary compatibility bridge for legacy route signatures. A
+        # caller-supplied Telegram ID is removed and replaced only with the
+        # authenticated server-side identity before request validation.
+        query_pairs = [
+            (key, value)
+            for key, value in parse_qsl(
+                request.scope.get("query_string", b"").decode("utf-8"),
+                keep_blank_values=True,
+            )
+            if key != "telegram_id"
+        ]
+        query_pairs.append(("telegram_id", str(current_user.telegram_id)))
+        request.scope["query_string"] = urlencode(query_pairs).encode("utf-8")
+    except HTTPException as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+        )
+    except Exception:
+        logger.exception("Private API security middleware failed")
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Authentication service unavailable"},
+        )
+
+    return await call_next(request)
 
 @app.get("/", tags=["Health"])
 @limiter.limit(RATE_LIMITS["health"])
@@ -161,54 +238,182 @@ async def health_check(request: Request, response: Response):
 @app.post("/webhook", tags=["Telegram"])
 @limiter.limit(RATE_LIMITS["webhook"])
 async def telegram_webhook(request: Request, response: Response, background_tasks: BackgroundTasks):
+    configured_secret = settings.telegram_webhook_secret
+    if not configured_secret:
+        raise HTTPException(
+            status_code=503,
+            detail="Telegram webhook is not configured",
+        )
+
+    provided_secret = request.headers.get(
+        "X-Telegram-Bot-Api-Secret-Token",
+        "",
+    )
+    if not provided_secret or not hmac.compare_digest(
+        provided_secret,
+        configured_secret,
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid Telegram webhook secret",
+        )
+
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > settings.max_webhook_body_bytes:
+                raise HTTPException(status_code=413, detail="Webhook body too large")
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid content length",
+            ) from exc
+
     try:
-        data = await request.json()
+        raw_body = await request.body()
+        if len(raw_body) > settings.max_webhook_body_bytes:
+            raise HTTPException(status_code=413, detail="Webhook body too large")
+        data = json.loads(raw_body)
         update = TelegramUpdate(**data)
-        
+
         if update.message and update.message.from_user:
             request.state.telegram_user_id = update.message.from_user.id
-        
-        bot_handler = get_bot_handler()
-        background_tasks.add_task(bot_handler.handle_update, update)
-        
-        return JSONResponse(content={"ok": True})
-        
+            subject = f"telegram:{update.message.from_user.id}"
+        else:
+            subject = "telegram:unknown"
+
+        memory = get_memory_manager()
+        if not memory.register_telegram_update(update.update_id):
+            return JSONResponse(content={"ok": True, "duplicate": True})
+
+        if not memory.consume_rate_limit(
+            subject_key=subject,
+            scope="telegram_webhook",
+            limit=60,
+            window_seconds=60,
+        ):
+            memory.mark_telegram_update(
+                update.update_id,
+                "failed",
+                "rate_limited",
+            )
+            raise HTTPException(status_code=429, detail="Rate limit exceeded")
+
+        async def process_update() -> None:
+            try:
+                await get_bot_handler().handle_update(update)
+                memory.mark_telegram_update(update.update_id, "completed")
+            except Exception as exc:
+                memory.mark_telegram_update(
+                    update.update_id,
+                    "failed",
+                    type(exc).__name__,
+                )
+                logger.exception(
+                    "Telegram update processing failed",
+                    extra={"update_id": update.update_id},
+                )
+
+        background_tasks.add_task(process_update)
+        return JSONResponse(content={"ok": True, "duplicate": False})
+    except HTTPException:
+        raise
+    except (json.JSONDecodeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid Telegram update")
     except Exception as e:
-        logger.error(f"Webhook error: {e}", exc_info=True)
-        return JSONResponse(content={"ok": True, "error": str(e)})
+        logger.exception("Webhook request failed")
+        raise HTTPException(status_code=500, detail="Webhook processing failed") from e
 
 
-@app.post("/webhook/set")
-async def set_webhook(url: Optional[str] = None):
-    webhook_url = url or f"{settings.webhook_url}/webhook"
-    
-    telegram = TelegramClient(settings.telegram_bot_token)
-    result = await telegram.set_webhook(webhook_url)
-    
-    return {
-        "success": result.get("ok", False),
-        "webhook_url": webhook_url,
-        "result": result
-    }
+@app.post(
+    "/api/auth/telegram",
+    response_model=AuthResponse,
+    tags=["Authentication"],
+)
+async def authenticate_telegram_mini_app(
+    payload: TelegramMiniAppAuthRequest,
+    request: Request,
+    response: Response,
+):
+    memory = get_memory_manager()
+    remote_address = request.client.host if request.client else "unknown"
+    subject_hash = hashlib.sha256(
+        remote_address.encode("utf-8")
+    ).hexdigest()[:32]
+    if not memory.consume_rate_limit(
+        subject_key=f"auth_ip:{subject_hash}",
+        scope="mini_app_auth",
+        limit=10,
+        window_seconds=60,
+    ):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+
+    telegram_user = validate_telegram_init_data(payload.init_data)
+    user = memory.get_or_create_user(
+        telegram_id=telegram_user["telegram_id"],
+        first_name=telegram_user["first_name"],
+        last_name=telegram_user["last_name"],
+        username=telegram_user["username"],
+    )
+    if user.id is None:
+        raise HTTPException(status_code=500, detail="User session unavailable")
+
+    session_token, csrf_token = create_session(
+        user_id=user.id,
+        telegram_id=user.telegram_id,
+        username=user.username,
+    )
+    same_site = "none" if settings.session_cookie_secure else "lax"
+    response.set_cookie(
+        key=settings.session_cookie_name,
+        value=session_token,
+        max_age=settings.session_max_age_seconds,
+        httponly=True,
+        secure=settings.session_cookie_secure,
+        samesite=same_site,
+        path="/",
+    )
+    response.set_cookie(
+        key=settings.csrf_cookie_name,
+        value=csrf_token,
+        max_age=settings.session_max_age_seconds,
+        httponly=False,
+        secure=settings.session_cookie_secure,
+        samesite=same_site,
+        path="/",
+    )
+
+    return AuthResponse(
+        success=True,
+        message="Authentication successful",
+        csrf_token=csrf_token,
+        expires_in=settings.session_max_age_seconds,
+        user={
+            "id": user.id,
+            "telegram_id": user.telegram_id,
+            "username": user.username,
+            "first_name": user.first_name,
+        },
+    )
 
 
-@app.get("/webhook/info")
-async def get_webhook_info():
-    telegram = TelegramClient(settings.telegram_bot_token)
-    result = await telegram.get_webhook_info()
-    
-    return result
-
-
-@app.post("/webhook/delete")
-async def delete_webhook():
-    telegram = TelegramClient(settings.telegram_bot_token)
-    result = await telegram.delete_webhook()
-    
-    return result
+@app.post("/api/auth/logout", tags=["Authentication"])
+async def logout(response: Response):
+    response.delete_cookie(
+        settings.session_cookie_name,
+        path="/",
+        secure=settings.session_cookie_secure,
+    )
+    response.delete_cookie(
+        settings.csrf_cookie_name,
+        path="/",
+        secure=settings.session_cookie_secure,
+    )
+    return {"success": True}
 
 class UserSettingsUpdate(BaseModel):
-    telegram_id: str
+    model_config = ConfigDict(extra="forbid")
+
     timezone: str = "UTC"
     display_name: str = ""
     default_tone: str = "professional"
@@ -220,28 +425,26 @@ class UserSettingsUpdate(BaseModel):
 
 
 @app.get("/api/settings")
-async def get_settings(telegram_id: Optional[int] = None):
-    if telegram_id:
-        memory = get_memory_manager()
-        user = memory.get_user(telegram_id)
-        
-        if user:
-            prefs = user.preferences or {}
-            display_name = (prefs.get("display_name") or "").strip() or (user.first_name or "")
-            return {
-                "telegram_id": str(user.telegram_id),
-                "timezone": prefs.get("timezone", settings.timezone),
-                "display_name": display_name,
-                "default_tone": prefs.get("default_tone", "professional"),
-                "nudge_enabled": prefs.get("nudge_enabled", True),
-                "nudge_time": prefs.get("nudge_time", "09:00"),
-                "daily_reflection_time": prefs.get("daily_reflection_time", "00:00"),
-                "weekly_summary_day": str(prefs.get("weekly_summary_day", "0")),
-                "weekly_summary_time": prefs.get("weekly_summary_time", "20:00"),
-            }
+async def get_settings(request: Request):
+    current_user: TokenData = request.state.current_user
+    memory = get_memory_manager()
+    user = memory.get_user(current_user.telegram_id)
+
+    if user:
+        prefs = user.preferences or {}
+        display_name = (prefs.get("display_name") or "").strip() or (user.first_name or "")
+        return {
+            "timezone": prefs.get("timezone", settings.timezone),
+            "display_name": display_name,
+            "default_tone": prefs.get("default_tone", "professional"),
+            "nudge_enabled": prefs.get("nudge_enabled", True),
+            "nudge_time": prefs.get("nudge_time", "09:00"),
+            "daily_reflection_time": prefs.get("daily_reflection_time", "00:00"),
+            "weekly_summary_day": str(prefs.get("weekly_summary_day", "0")),
+            "weekly_summary_time": prefs.get("weekly_summary_time", "20:00"),
+        }
     
     return {
-        "telegram_id": "",
         "timezone": settings.timezone,
         "display_name": "",
         "default_tone": "professional",
@@ -254,15 +457,9 @@ async def get_settings(telegram_id: Optional[int] = None):
 
 
 @app.put("/api/settings")
-async def update_settings(update: UserSettingsUpdate):
-    if not update.telegram_id:
-        raise HTTPException(status_code=400, detail="Telegram ID is required")
-    
-    try:
-        telegram_id = int(update.telegram_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid Telegram ID format")
-    
+async def update_settings(update: UserSettingsUpdate, request: Request):
+    current_user: TokenData = request.state.current_user
+    telegram_id = current_user.telegram_id
     memory = get_memory_manager()
     user = memory.get_user(telegram_id)
     
@@ -291,19 +488,12 @@ async def update_settings(update: UserSettingsUpdate):
     })
     memory.update_user_preferences(telegram_id, prefs)
 
-    schedule_applied = False
-    try:
-        scheduler = get_scheduler()
-        scheduler.apply_user_schedule(prefs)
-        schedule_applied = True
-    except Exception as e:
-        logger.warning(f"Failed to apply updated schedule for user {telegram_id}: {e}")
-    
     return {
         "success": True,
         "message": "Settings updated successfully",
-        "telegram_id": str(telegram_id),
-        "schedule_applied": schedule_applied
+        # Per-user durable schedules replace the unsafe global reschedule call
+        # in Phase 6. Persisting preferences is safe; changing shared jobs is not.
+        "schedule_applied": False,
     }
 
 
@@ -517,35 +707,31 @@ async def get_posts(
 
 
 @app.get("/api/posts/{post_id}")
-async def get_post(post_id: int):
+async def get_post(post_id: int, request: Request):
     memory = get_memory_manager()
-    
-    with memory.get_session() as session:
-        from memory import LinkedInPostDB
-        
-        post = session.query(LinkedInPostDB).filter(
-            LinkedInPostDB.id == post_id
-        ).first()
-        
-        if not post:
-            raise HTTPException(status_code=404, detail="Post not found")
-        
-        return {
-            "id": post.id,
-            "tone": post.tone,
-            "content": post.edited_content or post.content,
-            "original_content": post.content,
-            "status": post.status,
-            "created_at": post.created_at.isoformat()
-        }
+    current_user: TokenData = request.state.current_user
+    post = memory.get_post(post_id, current_user.telegram_id)
+
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    return {
+        "id": post.id,
+        "tone": post.tone.value,
+        "content": post.edited_content or post.content,
+        "original_content": post.content,
+        "status": post.status.value,
+        "created_at": post.created_at.isoformat()
+    }
 
 
 @app.put("/api/posts/{post_id}")
-async def update_post(post_id: int, update: PostUpdateRequest):
+async def update_post(post_id: int, update: PostUpdateRequest, request: Request):
     memory = get_memory_manager()
-    
+    current_user: TokenData = request.state.current_user
     success = memory.update_post(
         post_id=post_id,
+        telegram_id=current_user.telegram_id,
         content=update.content,
         status=update.status
     )
@@ -571,13 +757,15 @@ async def delete_post(post_id: int, telegram_id: int):
 @app.post("/api/posts/{post_id}/publish")
 async def mark_post_published(
     post_id: int,
+    request: Request,
     linkedin_url: Optional[str] = None,
     week_number: Optional[int] = None
 ):
     memory = get_memory_manager()
-    
+    current_user: TokenData = request.state.current_user
     success = memory.mark_post_as_published(
         post_id=post_id,
+        telegram_id=current_user.telegram_id,
         linkedin_url=linkedin_url,
         week_number=week_number
     )
@@ -724,7 +912,6 @@ async def autonomous_analyze(telegram_id: int):
             themes = list(set([e.category.value for e in recent_entries if e.category]))
             
             user_context = {
-                "telegram_id": telegram_id,
                 "user_name": user.first_name or "User",
                 "streak": user.streak or 0,
                 "time_since_last_entry": round(hours_since, 1),
@@ -740,7 +927,12 @@ async def autonomous_analyze(telegram_id: int):
         
         return {
             "user_context": user_context,
-            "analysis": analysis
+            "analysis": {
+                "plan": analysis.get("plan", []),
+                "decisions": analysis.get("decisions", {}),
+                "priority_action": analysis.get("priority_action", "monitor"),
+                "confidence": analysis.get("confidence", 0.0),
+            },
         }
         
     except HTTPException:
@@ -1062,65 +1254,9 @@ async def search_entries(
     
     return {"results": results}
 
-from auth import (
-    Token, TokenData, AuthResponse, UserCredentials,
-    get_current_user, get_current_user_optional, create_tokens,
-    generate_verification_code, verify_telegram_code
-)
-
-@app.post("/api/auth/request-code", tags=["Authentication"])
-@limiter.limit(RATE_LIMITS["auth"])
-async def request_auth_code(request: Request, response: Response, telegram_id: int):
-    memory = get_memory_manager()
-    
-    user = memory.get_user(telegram_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found. Please /start the bot first.")
-    
-    code = generate_verification_code(telegram_id)
-    
-    bot_handler = get_bot_handler()
-    await bot_handler.telegram.send_message(
-        telegram_id,
-        f"🔐 Your login code is: <code>{code}</code>\n\n"
-        f"This code expires in 5 minutes."
-    )
-    
-    return {"success": True, "message": "Verification code sent to Telegram"}
-
-
-@app.post("/api/auth/verify", response_model=AuthResponse, tags=["Authentication"])
-@limiter.limit(RATE_LIMITS["auth"])
-async def verify_auth_code(request: Request, response: Response, credentials: UserCredentials):
-    if not credentials.verification_code:
-        raise HTTPException(status_code=400, detail="Verification code required")
-    
-    if not verify_telegram_code(credentials.telegram_id, credentials.verification_code):
-        raise HTTPException(status_code=401, detail="Invalid or expired verification code")
-    
-    memory = get_memory_manager()
-    user = memory.get_user(credentials.telegram_id)
-    
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    tokens = create_tokens(user.id, user.telegram_id, user.username)
-    
-    return AuthResponse(
-        success=True,
-        message="Authentication successful",
-        token=tokens,
-        user={
-            "id": user.id,
-            "telegram_id": user.telegram_id,
-            "username": user.username,
-            "first_name": user.first_name,
-        }
-    )
-
-
 @app.get("/api/auth/me", tags=["Authentication"])
-async def get_current_user_info(user: TokenData = Depends(get_current_user)):
+async def get_current_user_info(request: Request):
+    user: TokenData = request.state.current_user
     memory = get_memory_manager()
     db_user = memory.get_user(user.telegram_id)
     
@@ -1135,36 +1271,6 @@ async def get_current_user_info(user: TokenData = Depends(get_current_user)):
         "streak": db_user.streak,
         "total_entries": db_user.total_entries,
     }
-
-
-@app.post("/api/admin/nudge", tags=["Admin"])
-async def trigger_nudge(user_id: int, nudge_type: str = "reminder"):
-    scheduler = get_scheduler()
-    
-    await scheduler._send_nudge(
-        user_id=user_id,
-        nudge_type=nudge_type,
-        user_name="there"
-    )
-    
-    return {"success": True, "message": f"Nudge sent to {user_id}"}
-
-
-@app.post("/api/admin/daily-reflection")
-async def trigger_daily_reflection():
-    scheduler = get_scheduler()
-    await scheduler.run_daily_reflection()
-    
-    return {"success": True, "message": "Daily reflection triggered"}
-
-
-@app.post("/api/admin/weekly-summary")
-async def trigger_weekly_summary():
-    scheduler = get_scheduler()
-    await scheduler.run_weekly_summary()
-    
-    return {"success": True, "message": "Weekly summary triggered"}
-
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {exc}", exc_info=True)

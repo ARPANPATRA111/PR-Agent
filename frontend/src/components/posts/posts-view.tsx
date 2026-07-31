@@ -36,7 +36,7 @@ import {
   Edit,
   Calendar,
   RefreshCw,
-  Linkedin,
+  Briefcase as Linkedin,
   Sparkles,
   ChevronLeft,
   ChevronRight,
@@ -49,7 +49,7 @@ import {
   Wand2,
   Trash2,
 } from 'lucide-react';
-import { fetchAPI, fetchAPIWithUser, getTelegramId, formatDate, getToneColor } from '@/lib/utils';
+import { fetchAPI, fetchAPIWithUser, formatDate, getToneColor } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
 import { Input } from '@/components/ui/input';
 
@@ -126,13 +126,6 @@ export function PostsView() {
   const fetchPosts = async () => {
     try {
       setLoading(true);
-      
-      const telegramId = getTelegramId();
-      if (!telegramId) {
-        setError('Please set your Telegram ID in Settings first');
-        setLoading(false);
-        return;
-      }
       
       const data: PostsResponse = await fetchAPIWithUser(`/api/posts?page=${page}&limit=10`);
       setPosts(data.posts || []);

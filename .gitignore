@@ -125,6 +125,8 @@ docs/*
 !docs/BASELINE_AUDIT.md
 !docs/PUBLIC_V2_SCOPE.md
 !docs/SECRET_ROTATION_CHECKLIST.md
+!docs/SECURITY_MODEL.md
+!docs/TENANT_ISOLATION.md
 changelog.md
 docker-compose.override.yml
 docker-compose.prod.yml

@@ -28,13 +28,13 @@ import {
   Copy,
   Check,
   Calendar,
-  Linkedin,
+  Briefcase as Linkedin,
   Plus,
   ArrowLeft,
   ExternalLink,
   Maximize2,
 } from 'lucide-react';
-import { fetchAPIWithUser, getTelegramId, formatDate } from '@/lib/utils';
+import { fetchAPIWithUser, formatDate } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
 
 interface PostedReport {
@@ -79,13 +79,6 @@ export default function PostedReportsPage() {
       } else {
         setLoading(true);
         setOffset(0);
-      }
-      
-      const telegramId = getTelegramId();
-      if (!telegramId) {
-        setError('Please set your Telegram ID in Settings first');
-        setLoading(false);
-        return;
       }
       
       const currentOffset = loadMore ? offset : 0;

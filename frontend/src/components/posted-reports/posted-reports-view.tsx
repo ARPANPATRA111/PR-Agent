@@ -28,7 +28,7 @@ import {
   Copy,
   Check,
   Calendar,
-  Linkedin,
+  Briefcase as Linkedin,
   Plus,
   ExternalLink,
   Maximize2,
@@ -38,7 +38,7 @@ import {
   TrendingUp,
   Award,
 } from 'lucide-react';
-import { fetchAPIWithUser, getTelegramId, formatDate } from '@/lib/utils';
+import { fetchAPIWithUser, formatDate } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
 
 interface PostedReport {
@@ -108,13 +108,6 @@ export function PostedReportsView() {
       } else {
         setLoading(true);
         setOffset(0);
-      }
-      
-      const telegramId = getTelegramId();
-      if (!telegramId) {
-        setError('Please set your Telegram ID in Settings first');
-        setLoading(false);
-        return;
       }
       
       const currentOffset = loadMore ? offset : 0;
@@ -582,4 +575,3 @@ export function PostedReportsView() {
     </div>
   );
 }
-

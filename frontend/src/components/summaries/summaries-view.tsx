@@ -36,7 +36,7 @@ import {
   Sparkles,
   Clock,
 } from 'lucide-react';
-import { fetchAPIWithUser, getTelegramId, formatDate } from '@/lib/utils';
+import { fetchAPIWithUser, formatDate } from '@/lib/utils';
 
 interface Summary {
   id: number;
@@ -88,13 +88,6 @@ export function SummariesView() {
   const fetchSummaries = async () => {
     try {
       setLoading(true);
-      
-      const telegramId = getTelegramId();
-      if (!telegramId) {
-        setError('Please set your Telegram ID in Settings first');
-        setLoading(false);
-        return;
-      }
       
       const data: SummariesResponse = await fetchAPIWithUser(
         `/api/summaries?page=${page}&limit=10`

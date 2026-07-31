@@ -101,10 +101,16 @@ class TelegramClient:
         except Exception:
             pass
     
-    async def set_webhook(self, url: str) -> dict:
+    async def set_webhook(self, url: str, secret_token: str) -> dict:
+        if not secret_token:
+            raise ValueError("Telegram webhook secret is required")
         return await self._request_with_retry(
             "POST", "setWebhook",
-            json={"url": url, "allowed_updates": ["message"]}
+            json={
+                "url": url,
+                "secret_token": secret_token,
+                "allowed_updates": ["message"],
+            }
         )
     
     async def delete_webhook(self) -> dict:

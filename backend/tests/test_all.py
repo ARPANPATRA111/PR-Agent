@@ -169,21 +169,15 @@ class TestAuthentication:
         assert verify_password(password, hashed) == True
         assert verify_password("wrong_password", hashed) == False
     
-    def test_verification_code(self):
-        """Test verification code generation and validation."""
-        from auth import generate_verification_code, verify_telegram_code
-        
-        telegram_id = 12345
-        code = generate_verification_code(telegram_id)
-        
-        assert len(code) == 6
-        assert code.isdigit()
-        
-        # Verify correct code
-        assert verify_telegram_code(telegram_id, code) == True
-        
-        # Code should be consumed
-        assert verify_telegram_code(telegram_id, code) == False
+    def test_session_contains_csrf_binding(self):
+        """Session tokens carry an unpredictable CSRF binding."""
+        from auth import create_session, verify_token
+
+        token, csrf_token = create_session(123, 456, "testuser")
+        token_data = verify_token(token)
+
+        assert len(csrf_token) >= 32
+        assert token_data.csrf_token == csrf_token
 
 
 class TestBackupSystem:

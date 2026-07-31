@@ -62,7 +62,7 @@ import {
   Zap,
   AudioLines,
 } from 'lucide-react';
-import { fetchAPIWithUser, getTelegramId, formatDate, formatRelativeTime } from '@/lib/utils';
+import { fetchAPIWithUser, formatDate, formatRelativeTime } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
 
 interface Entry {
@@ -168,13 +168,6 @@ export function EntriesView() {
     try {
       setLoading(true);
       
-      const telegramId = getTelegramId();
-      if (!telegramId) {
-        setError('Please set your Telegram ID in Settings first');
-        setLoading(false);
-        return;
-      }
-      
       let url = `/api/entries?page=${page}&limit=10`;
       if (categoryFilter && categoryFilter !== 'all') {
         url += `&category=${categoryFilter}`;
@@ -211,9 +204,6 @@ export function EntriesView() {
 
   const handleDelete = async () => {
     if (!entryToDelete) return;
-    
-    const telegramId = getTelegramId();
-    if (!telegramId) return;
     
     try {
       setDeleting(true);

@@ -9,7 +9,7 @@ backend_dir = Path(__file__).parent.parent / "backend"
 sys.path.insert(0, str(backend_dir))
 
 
-async def set_webhook(url: str, token: str) -> dict:
+async def set_webhook(url: str, token: str, secret: str) -> dict:
     import httpx
     
     webhook_url = f"{url.rstrip('/')}/webhook"
@@ -19,7 +19,8 @@ async def set_webhook(url: str, token: str) -> dict:
             f"https://api.telegram.org/bot{token}/setWebhook",
             json={
                 "url": webhook_url,
-                "allowed_updates": ["message"]
+                "allowed_updates": ["message"],
+                "secret_token": secret,
             }
         )
         return response.json()
@@ -78,6 +79,10 @@ def main():
         "--token",
         help="Telegram bot token (or set TELEGRAM_BOT_TOKEN env var)"
     )
+    parser.add_argument(
+        "--secret",
+        help="Webhook secret (or set TELEGRAM_WEBHOOK_SECRET env var)"
+    )
     
     args = parser.parse_args()
     
@@ -87,6 +92,7 @@ def main():
     
     import os
     token = args.token or os.environ.get("TELEGRAM_BOT_TOKEN")
+    secret = args.secret or os.environ.get("TELEGRAM_WEBHOOK_SECRET")
     
     if not token:
         try:
@@ -106,7 +112,7 @@ def main():
         print("   Token should be in format: 123456789:ABCdefGHIjklMNOpqrsTUVwxyz")
         return 1
     
-    print(f"\n🤖 Using bot token: {token[:10]}...{token[-5:]}")
+    print("\nBot credentials loaded from protected configuration.")
     
     print("\n📡 Fetching bot info...")
     try:
@@ -158,6 +164,10 @@ def main():
         print("   Usage: python setup_webhook.py https://your-domain.com")
         print("   Or use --info to see current webhook")
         return 1
+
+    if not secret:
+        print("\nError: TELEGRAM_WEBHOOK_SECRET is required.")
+        return 1
     
     url = args.url
     if not url.startswith("https://"):
@@ -169,7 +179,7 @@ def main():
             print(f"   Changed to: {url}")
     
     print(f"\n🔗 Setting webhook to: {url}/webhook")
-    result = asyncio.run(set_webhook(url, token))
+    result = asyncio.run(set_webhook(url, token, secret))
     
     if result.get("ok"):
         print("   ✓ Webhook set successfully!")

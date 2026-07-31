@@ -36,7 +36,7 @@ import {
   Rocket,
   Star,
 } from 'lucide-react';
-import { fetchAPIWithUser, getTelegramId, formatRelativeTime, getCategoryColor } from '@/lib/utils';
+import { fetchAPIWithUser, formatRelativeTime, getCategoryColor } from '@/lib/utils';
 
 interface StatsData {
   total_entries: number;
@@ -120,16 +120,9 @@ export function Dashboard() {
 
   const fetchData = async () => {
     try {
-      const telegramId = getTelegramId();
-      if (!telegramId) {
-        setError('Please set your Telegram ID in Settings first');
-        setLoading(false);
-        return;
-      }
-      
       const [statsData, entriesData] = await Promise.all([
-        fetchAPIWithUser('/api/stats'),
-        fetchAPIWithUser('/api/entries?limit=5'),
+        fetchAPIWithUser<StatsData>('/api/stats'),
+        fetchAPIWithUser<{ entries: Entry[] }>('/api/entries?limit=5'),
       ]);
       setStats(statsData);
       setRecentEntries(entriesData.entries || []);

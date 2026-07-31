@@ -15,13 +15,13 @@ import { useTheme } from 'next-themes';
 import { useAuth } from '@/lib/auth';
 
 interface HeaderProps {
-  telegramId?: string;
   onMenuClick: () => void;
 }
 
-export function Header({ telegramId, onMenuClick }: HeaderProps) {
+export function Header({ onMenuClick }: HeaderProps) {
   const { theme, setTheme } = useTheme();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
+  const displayName = user?.first_name || user?.username || 'User';
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background">
@@ -66,7 +66,7 @@ export function Header({ telegramId, onMenuClick }: HeaderProps) {
               <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                 <Avatar className="h-8 w-8">
                   <AvatarImage
-                    src={`https://api.dicebear.com/7.x/initials/svg?seed=${telegramId || 'user'}`}
+                    src={`https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(displayName)}`}
                     alt="User avatar"
                   />
                   <AvatarFallback>
@@ -78,9 +78,9 @@ export function Header({ telegramId, onMenuClick }: HeaderProps) {
             <DropdownMenuContent className="w-56" align="end" forceMount>
               <DropdownMenuLabel className="font-normal">
                 <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium leading-none">User</p>
+                  <p className="text-sm font-medium leading-none">{displayName}</p>
                   <p className="text-xs leading-none text-muted-foreground">
-                    {telegramId ? `Telegram ID: ${telegramId}` : 'Not connected'}
+                    {user?.username ? `@${user.username}` : 'Connected with Telegram'}
                   </p>
                 </div>
               </DropdownMenuLabel>
@@ -92,7 +92,7 @@ export function Header({ telegramId, onMenuClick }: HeaderProps) {
                 Settings
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive">
+              <DropdownMenuItem onClick={() => void logout()} className="text-destructive focus:text-destructive">
                 <LogOut className="mr-2 h-4 w-4" />
                 Log out
               </DropdownMenuItem>

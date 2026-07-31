@@ -1,34 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { AlertCircle, Bot, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertCircle, Lock } from 'lucide-react';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export function LoginForm() {
-  const { login } = useAuth();
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setIsSubmitting(true);
-
-    await new Promise((resolve) => setTimeout(resolve, 300));
-
-    const success = login(password);
-    
-    if (!success) {
-      setError('Incorrect password');
-    }
-    
-    setIsSubmitting(false);
-  };
+  const { error, retry } = useAuth();
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -36,38 +21,29 @@ export function LoginForm() {
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-center mb-4">
             <div className="p-3 rounded-full bg-primary/10">
-              <Lock className="h-6 w-6 text-primary" />
+              <Bot className="h-6 w-6 text-primary" />
             </div>
           </div>
-          <CardTitle className="text-2xl text-center">Weekly Progress Agent</CardTitle>
+          <CardTitle className="text-2xl text-center">PR-Agent</CardTitle>
           <CardDescription className="text-center">
-            Enter your password to access the dashboard
+            This dashboard is secured by your Telegram account.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {error && (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-            
-            <div className="space-y-2">
-              <Input
-                type="password"
-                placeholder="Enter password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-                autoFocus
-              />
-            </div>
-            
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
-              {isSubmitting ? 'Verifying...' : 'Sign In'}
-            </Button>
-          </form>
+        <CardContent className="space-y-4">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              {error || 'Telegram authentication could not be completed.'}
+            </AlertDescription>
+          </Alert>
+          <p className="text-sm text-muted-foreground text-center">
+            Open the Mini App from the bot menu. A copied browser link cannot
+            sign you in.
+          </p>
+          <Button className="w-full" onClick={() => void retry()}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Try again
+          </Button>
         </CardContent>
       </Card>
     </div>

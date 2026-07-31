@@ -5,7 +5,22 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple, Generator
 from contextlib import contextmanager
 
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Float, Boolean, ForeignKey, JSON, text, Index
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+    create_engine,
+    text,
+)
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session
 from sqlalchemy.pool import StaticPool
@@ -210,6 +225,43 @@ class ReportFeedbackDB(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class ProcessedTelegramUpdateDB(Base):
+    __tablename__ = "processed_telegram_updates"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    update_id = Column(Integer, nullable=False, unique=True, index=True)
+    status = Column(String(32), nullable=False, default="processing")
+    received_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+    retry_count = Column(Integer, nullable=False, default=0)
+    error_category = Column(String(64), nullable=True)
+
+
+class RateLimitBucketDB(Base):
+    __tablename__ = "rate_limit_buckets"
+    __table_args__ = (
+        UniqueConstraint(
+            "subject_key",
+            "scope",
+            "window_start",
+            name="uq_rate_limit_subject_scope_window",
+        ),
+        Index(
+            "ix_rate_limit_subject_scope_window",
+            "subject_key",
+            "scope",
+            "window_start",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    subject_key = Column(String(128), nullable=False)
+    scope = Column(String(64), nullable=False)
+    window_start = Column(DateTime, nullable=False)
+    request_count = Column(Integer, nullable=False, default=0)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 class MemoryManager:
     
     def __init__(self):
@@ -308,6 +360,112 @@ class MemoryManager:
             raise
         finally:
             session.close()
+
+    def register_telegram_update(self, update_id: int) -> bool:
+        try:
+            with self.get_session() as session:
+                existing = session.query(ProcessedTelegramUpdateDB).filter(
+                    ProcessedTelegramUpdateDB.update_id == update_id
+                ).first()
+                if existing:
+                    if existing.status == "failed":
+                        existing.status = "processing"
+                        existing.retry_count = (existing.retry_count or 0) + 1
+                        existing.error_category = None
+                        existing.completed_at = None
+                        return True
+                    return False
+
+                session.add(ProcessedTelegramUpdateDB(
+                    update_id=update_id,
+                    status="processing",
+                ))
+                session.flush()
+                return True
+        except IntegrityError:
+            return False
+
+    def mark_telegram_update(
+        self,
+        update_id: int,
+        status: str,
+        error_category: Optional[str] = None,
+    ) -> None:
+        if status not in {"completed", "failed"}:
+            raise ValueError("Unsupported Telegram update status")
+
+        with self.get_session() as session:
+            record = session.query(ProcessedTelegramUpdateDB).filter(
+                ProcessedTelegramUpdateDB.update_id == update_id
+            ).first()
+            if not record:
+                return
+            record.status = status
+            record.completed_at = datetime.utcnow()
+            record.error_category = (
+                (error_category or "processing_error")[:64]
+                if status == "failed"
+                else None
+            )
+
+    def consume_rate_limit(
+        self,
+        subject_key: str,
+        scope: str,
+        *,
+        limit: int,
+        window_seconds: int,
+        now: Optional[datetime] = None,
+    ) -> bool:
+        if limit <= 0 or window_seconds <= 0:
+            raise ValueError("Rate-limit values must be positive")
+
+        current = now or datetime.utcnow()
+        epoch = int(current.timestamp())
+        window_epoch = epoch - (epoch % window_seconds)
+        window_start = datetime.utcfromtimestamp(window_epoch)
+
+        try:
+            with self.get_session() as session:
+                bucket = (
+                    session.query(RateLimitBucketDB)
+                    .filter(
+                        RateLimitBucketDB.subject_key == subject_key[:128],
+                        RateLimitBucketDB.scope == scope[:64],
+                        RateLimitBucketDB.window_start == window_start,
+                    )
+                    .with_for_update()
+                    .first()
+                )
+                if bucket is None:
+                    session.add(RateLimitBucketDB(
+                        subject_key=subject_key[:128],
+                        scope=scope[:64],
+                        window_start=window_start,
+                        request_count=1,
+                        updated_at=current,
+                    ))
+                    session.flush()
+                    return True
+
+                if bucket.request_count >= limit:
+                    return False
+                bucket.request_count += 1
+                bucket.updated_at = current
+                return True
+        except IntegrityError:
+            # A concurrent insert won the unique key. Retry once against it.
+            with self.get_session() as session:
+                bucket = session.query(RateLimitBucketDB).filter(
+                    RateLimitBucketDB.subject_key == subject_key[:128],
+                    RateLimitBucketDB.scope == scope[:64],
+                    RateLimitBucketDB.window_start == window_start,
+                ).first()
+                if bucket is None or bucket.request_count >= limit:
+                    return False
+                bucket.request_count += 1
+                bucket.updated_at = current
+                return True
 
     def get_or_create_user(self, telegram_id: int, first_name: str, 
                           last_name: Optional[str] = None,
@@ -778,11 +936,25 @@ class MemoryManager:
             
             return [LinkedInPost.model_validate(p) for p in posts]
     
-    def update_post(self, post_id: int, content: str, 
-                   status: Optional[PostStatus] = None) -> bool:
+    def get_post(self, post_id: int, telegram_id: int) -> Optional[LinkedInPost]:
         with self.get_session() as session:
             post = session.query(LinkedInPostDB).filter(
-                LinkedInPostDB.id == post_id
+                LinkedInPostDB.id == post_id,
+                LinkedInPostDB.telegram_id == telegram_id,
+            ).first()
+            return LinkedInPost.model_validate(post) if post else None
+
+    def update_post(
+        self,
+        post_id: int,
+        telegram_id: int,
+        content: str,
+        status: Optional[PostStatus] = None,
+    ) -> bool:
+        with self.get_session() as session:
+            post = session.query(LinkedInPostDB).filter(
+                LinkedInPostDB.id == post_id,
+                LinkedInPostDB.telegram_id == telegram_id,
             ).first()
             
             if not post:
@@ -802,11 +974,17 @@ class MemoryManager:
             
             return [LinkedInPost.model_validate(p) for p in posts]
     
-    def mark_post_as_published(self, post_id: int, linkedin_url: Optional[str] = None,
-                                week_number: Optional[int] = None) -> bool:
+    def mark_post_as_published(
+        self,
+        post_id: int,
+        telegram_id: int,
+        linkedin_url: Optional[str] = None,
+        week_number: Optional[int] = None,
+    ) -> bool:
         with self.get_session() as session:
             post = session.query(LinkedInPostDB).filter(
-                LinkedInPostDB.id == post_id
+                LinkedInPostDB.id == post_id,
+                LinkedInPostDB.telegram_id == telegram_id,
             ).first()
             
             if not post:

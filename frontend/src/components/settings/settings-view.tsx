@@ -9,7 +9,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
@@ -25,7 +24,7 @@ import {
   Settings as SettingsIcon,
   Bot,
   Clock,
-  Linkedin,
+  Briefcase as Linkedin,
   Bell,
   Database,
   Save,
@@ -41,11 +40,10 @@ import {
   HelpCircle,
   Cog,
 } from 'lucide-react';
-import { fetchAPI, getTelegramId, setTelegramId } from '@/lib/utils';
+import { fetchAPI } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
 
 interface SettingsData {
-  telegram_id: string;
   timezone: string;
   display_name: string;
   default_tone: string;
@@ -101,7 +99,6 @@ const cardVariants = {
 
 export function SettingsView() {
   const [settings, setSettings] = useState<SettingsData>({
-    telegram_id: '',
     timezone: 'UTC',
     display_name: '',
     default_tone: 'professional',
@@ -121,24 +118,12 @@ export function SettingsView() {
     try {
       setLoading(true);
       
-      const savedTelegramId = getTelegramId();
-      if (savedTelegramId) {
-        setSettings(prev => ({ ...prev, telegram_id: savedTelegramId }));
-      }
-      
-      const settingsUrl = savedTelegramId 
-        ? `/api/settings?telegram_id=${savedTelegramId}` 
-        : '/api/settings';
-      
       const [settingsData, statusData] = await Promise.all([
-        fetchAPI(settingsUrl).catch(() => null),
-        fetchAPI('/api/health').catch(() => null),
+        fetchAPI<SettingsData>('/api/settings').catch(() => null),
+        fetchAPI<SystemStatus>('/api/health').catch(() => null),
       ]);
       if (settingsData) {
-        setSettings({
-          ...settingsData,
-          telegram_id: savedTelegramId || settingsData.telegram_id || ''
-        });
+        setSettings(settingsData);
       }
       if (statusData) {
         setStatus(statusData);
@@ -162,7 +147,7 @@ export function SettingsView() {
   const refreshStatus = async () => {
     setRefreshingStatus(true);
     try {
-      const statusData = await fetchAPI('/api/health');
+      const statusData = await fetchAPI<SystemStatus>('/api/health');
       setStatus(statusData);
     } catch (err) {
       console.error('Failed to refresh status:', err);
@@ -172,19 +157,8 @@ export function SettingsView() {
   };
 
   const handleSave = async () => {
-    if (!settings.telegram_id) {
-      toast({
-        title: 'Telegram ID required',
-        description: 'Please enter your Telegram ID to use the dashboard',
-        variant: 'destructive',
-      });
-      return;
-    }
-    
     try {
       setSaving(true);
-      
-      setTelegramId(settings.telegram_id);
 
       await fetchAPI('/api/settings', {
         method: 'PUT',
@@ -345,24 +319,6 @@ export function SettingsView() {
               </div>
             </CardHeader>
             <CardContent className="space-y-5 pt-6">
-              <div className="space-y-2">
-                <label className="text-sm font-medium flex items-center gap-2">
-                  Your Telegram ID
-                  <Badge variant="outline" className="text-xs rounded-lg border-primary/30 text-primary">Required</Badge>
-                </label>
-                <Input
-                  value={settings.telegram_id}
-                  onChange={(e) =>
-                    setSettings({ ...settings, telegram_id: e.target.value })
-                  }
-                  placeholder="Enter your Telegram user ID"
-                  className="rounded-xl"
-                />
-                <p className="text-xs text-muted-foreground flex items-center gap-1">
-                  <HelpCircle className="h-3 w-3" />
-                  Send /start to @your_bot to get your ID
-                </p>
-              </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium flex items-center gap-2">
                   Display Name
