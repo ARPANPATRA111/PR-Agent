@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: weekly-progress-agent
+    runtime: python
+    pythonVersion: "3.12.0"
+    region: oregon
+    plan: free
+    buildCommand: |
+      cd backend && pip install -r requirements.txt
+    startCommand: |
+      cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_ADMIN_ID
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: WHISPER_MODEL
+        value: base
+      - key: WHISPER_LANGUAGE
+        value: auto
+      - key: DEBUG
+        value: "false"
+      - key: TIMEZONE
+        value: Asia/Kolkata

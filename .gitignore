@@ -119,16 +119,29 @@ temp/
 *.seed
 *.pid.lock
 .lock-wscript
-docs/
+# Public-v2 documentation is tracked selectively. Legacy local documentation
+# remains ignored until it has been reviewed for personal content.
+docs/*
+!docs/BASELINE_AUDIT.md
+!docs/PUBLIC_V2_SCOPE.md
+!docs/SECRET_ROTATION_CHECKLIST.md
 changelog.md
-docker-compose.yml
 docker-compose.override.yml
 docker-compose.prod.yml
-render.yaml
-deployment.md
 update.md
 dockerfile
 ci.yml
 dp.md
-.github/
 .gitlab-ci.yml
+
+# Public-v2 infrastructure templates must be versioned.
+!.github/
+!.github/workflows/
+!.github/workflows/*.yml
+!docker-compose.yml
+!render.yaml
+!DEPLOYMENT.md
+
+# Personal legacy material stays available in the safety tag and the owner's
+# local workspace, but must not be included in public-v2 commits.
+OldProgress.txt
