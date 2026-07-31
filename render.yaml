@@ -8,24 +8,40 @@ services:
     buildCommand: |
       cd backend && pip install -r requirements.txt
     startCommand: |
-      cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+      cd backend && python -m alembic upgrade head && exec uvicorn main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_BASE_URL
+        sync: false
+      - key: FRONTEND_BASE_URL
+        sync: false
+      - key: PUBLIC_V2_ENABLED
+        value: "false"
       - key: TELEGRAM_BOT_TOKEN
         sync: false
-      - key: TELEGRAM_ADMIN_ID
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
+      - key: TELEGRAM_WEBHOOK_URL
+        sync: false
+      - key: TELEGRAM_MINI_APP_URL
         sync: false
       - key: GROQ_API_KEY
         sync: false
       - key: DATABASE_URL
         sync: false
-      - key: SECRET_KEY
+      - key: SESSION_SIGNING_SECRET
+        sync: false
+      - key: CORS_ORIGINS
         sync: false
       - key: WHISPER_MODEL
-        value: base
+        value: whisper-large-v3-turbo
       - key: WHISPER_LANGUAGE
         value: auto
       - key: DEBUG
+        value: "false"
+      - key: DISABLE_SSL_VERIFY
         value: "false"
       - key: TIMEZONE
         value: Asia/Kolkata

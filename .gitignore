@@ -127,6 +127,8 @@ docs/*
 !docs/SECRET_ROTATION_CHECKLIST.md
 !docs/SECURITY_MODEL.md
 !docs/TENANT_ISOLATION.md
+!docs/DATABASE_MIGRATIONS.md
+!docs/LOCAL_DEVELOPMENT.md
 changelog.md
 docker-compose.override.yml
 docker-compose.prod.yml

@@ -100,6 +100,10 @@ class Settings(BaseSettings):
         default="sqlite:///./data/weekly_agent.db",
         description="Database URL (sqlite:///path or postgresql://user:pass@host:port/db)"
     )
+    test_database_url: str = Field(
+        default="",
+        description="Isolated database URL used only when APP_ENV=test",
+    )
     chroma_persist_dir: str = Field(
         default="./data/chroma",
         description="ChromaDB persistence directory"
@@ -242,6 +246,14 @@ class Settings(BaseSettings):
     @property
     def session_cookie_secure(self) -> bool:
         return self.app_env in {"staging", "production"}
+
+    @property
+    def active_database_url(self) -> str:
+        if self.app_env == "test":
+            if not self.test_database_url:
+                raise ValueError("TEST_DATABASE_URL is required when APP_ENV=test")
+            return self.test_database_url
+        return self.database_url
     
     log_level: str = Field(
         default="INFO",
@@ -304,6 +316,15 @@ class Settings(BaseSettings):
     def validate_security_configuration(self) -> "Settings":
         if "*" in self.cors_origins_list:
             raise ValueError("CORS_ORIGINS must not contain a wildcard")
+        if (
+            self.test_database_url
+            and self.test_database_url.strip() == self.database_url.strip()
+        ):
+            raise ValueError(
+                "TEST_DATABASE_URL and DATABASE_URL must reference different databases"
+            )
+        if self.app_env == "test" and not self.test_database_url:
+            raise ValueError("TEST_DATABASE_URL is required when APP_ENV=test")
 
         if self.app_env in {"staging", "production"}:
             required = {

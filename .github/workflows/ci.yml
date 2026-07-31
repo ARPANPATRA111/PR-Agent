@@ -8,6 +8,50 @@ on:
     branches: [main]
 
 jobs:
+  test-migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: pr_agent_migration_test
+          POSTGRES_USER: pr_agent
+          POSTGRES_PASSWORD: pr_agent_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pr_agent -d pr_agent_migration_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install migration dependencies
+        working-directory: ./backend
+        run: pip install -r requirements.txt
+
+      - name: Validate upgrade and downgrade
+        working-directory: ./backend
+        env:
+          APP_ENV: test
+          DATABASE_URL: postgresql://unused:unused@localhost:5432/not_the_test_database
+          TEST_DATABASE_URL: postgresql://pr_agent:pr_agent_test@localhost:5432/pr_agent_migration_test
+          DEBUG: "false"
+        run: |
+          python -m alembic upgrade head
+          python -m alembic check
+          python -m alembic downgrade base
+          python -m alembic upgrade head
+          POSTGRES_TEST_URL="$TEST_DATABASE_URL" pytest -q tests/test_postgres_schema.py
+
   test-backend:
     runs-on: ubuntu-latest
 

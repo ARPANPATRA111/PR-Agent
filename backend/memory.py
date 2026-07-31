@@ -280,7 +280,7 @@ class MemoryManager:
         logs_dir.mkdir(parents=True, exist_ok=True)
     
     def _init_sqlite(self):
-        db_url = settings.database_url
+        db_url = settings.active_database_url
         self.is_postgres = db_url.startswith("postgresql")
         
         if self.is_postgres:
@@ -309,8 +309,20 @@ class MemoryManager:
                 conn.execute(text("PRAGMA synchronous=NORMAL"))
                 conn.commit()
         
-        Base.metadata.create_all(bind=self.engine)
-        self._run_migrations()
+        # Legacy compatibility is bootstrapped only in disposable local/test
+        # environments. Staging and production schemas must be migrated by
+        # Alembic before application startup.
+        if settings.app_env in {"development", "test"}:
+            Base.metadata.create_all(bind=self.engine)
+            self._run_migrations()
+        else:
+            from sqlalchemy import inspect
+
+            inspector = inspect(self.engine)
+            if "alembic_version" not in inspector.get_table_names():
+                raise RuntimeError(
+                    "Database is not migrated; run `python -m alembic upgrade head`"
+                )
         self.SessionLocal = sessionmaker(
             autocommit=False,
             autoflush=False,

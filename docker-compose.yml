@@ -1,6 +1,37 @@
-version: '3.8'
-
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: pr_agent_dev
+      POSTGRES_USER: pr_agent
+      POSTGRES_PASSWORD: pr_agent_local
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pr_agent -d pr_agent_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  postgres_test:
+    image: postgres:16-alpine
+    profiles: ["test"]
+    environment:
+      POSTGRES_DB: pr_agent_test
+      POSTGRES_USER: pr_agent_test
+      POSTGRES_PASSWORD: pr_agent_test_local
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pr_agent_test -d pr_agent_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
   backend:
     build:
       context: ./backend
@@ -8,13 +39,22 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - GROQ_API_KEY=${GROQ_API_KEY}
-      - WEBHOOK_URL=${WEBHOOK_URL}
-      - DATABASE_PATH=/app/data/weekly_agent.db
-      - CHROMA_PATH=/app/data/chroma
-      - TIMEZONE=${TIMEZONE:-UTC}
-      - ALLOWED_USERS=${ALLOWED_USERS:-}
+      APP_ENV: development
+      DATABASE_URL: postgresql://pr_agent:pr_agent_local@postgres:5432/pr_agent_dev
+      # Intentionally disconnected from the repository .env. Use a separate
+      # untracked override file containing development-only credentials.
+      TELEGRAM_BOT_TOKEN: ""
+      TELEGRAM_WEBHOOK_SECRET: ""
+      GROQ_API_KEY: ""
+      CORS_ORIGINS: http://localhost:3000
+      DEBUG: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - python -m alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000
     volumes:
       - backend_data:/app/data
       - ./prompts:/app/prompts:ro
@@ -24,14 +64,14 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 20s
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_API_URL=http://backend:8000
+        NEXT_PUBLIC_API_URL: http://localhost:8000
     ports:
       - "3000:3000"
     depends_on:
@@ -39,7 +79,8 @@ services:
         condition: service_healthy
     restart: unless-stopped
     environment:
-      - NEXT_PUBLIC_API_URL=http://backend:8000
+      NEXT_PUBLIC_API_URL: http://localhost:8000
 
 volumes:
   backend_data:
+  postgres_data:
