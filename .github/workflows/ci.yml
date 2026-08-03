@@ -33,13 +33,16 @@ jobs:
         working-directory: backend
         run: |
           black --check abuse_controls.py admin_cli.py assistant api auth.py \
-            bot.py config.py domain main.py observability.py public_models.py \
+            bot.py config.py domain inline_staging_worker.py main.py \
+            observability.py public_models.py \
             telegram_commands.py utils.py worker.py tests/test_abuse_controls.py \
+            tests/test_free_staging_profile.py tests/test_inline_staging_worker.py \
             tests/test_security_boundary.py
       - name: Lint
         working-directory: backend
         run: |
-          flake8 abuse_controls.py admin_cli.py assistant observability.py worker.py \
+          flake8 abuse_controls.py admin_cli.py assistant inline_staging_worker.py \
+            observability.py worker.py \
             --max-line-length=88 --extend-ignore=E203,W503
       - name: Unit and integration tests
         working-directory: backend
