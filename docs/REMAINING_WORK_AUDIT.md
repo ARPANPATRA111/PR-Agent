@@ -8,15 +8,15 @@ Owner-authored untracked documents were excluded and left unchanged.
 
 | Classification | Count | Meaning |
 |---|---:|---|
-| Implemented in this deployment pass | 5 | Deterministic, free, and locally verifiable |
+| Implemented in this deployment pass | 6 | Deterministic, free, and locally verifiable |
 | Intentionally deferred | 5 | Requires a later privacy/provider/scale gate |
 | Production-only | 3 | Not appropriate for the free staging profile |
 | Obsolete/dead | 4 | Retained only for rollback/history or awaiting cleanup |
 | False positive | 5 | Search hit is intentional code/test configuration |
-| External activation | 6 | Requires an authenticated provider or owner-only action |
+| External activation | 5 | Requires an authenticated provider or owner-only action |
 | **Total classified items** | **28** | No unclassified TODO/FIXME markers found |
 
-## Implemented in this pass (5)
+## Implemented in this pass (6)
 
 1. Telegram-independent staging configuration and fail-closed activation.
 2. A pre-bot API lifespan that does not build Telegram delivery/cleanup clients
@@ -28,6 +28,9 @@ Owner-authored untracked documents were excluded and left unchanged.
 5. `scripts/activate_staging_bot.py`, which reuses the command/webhook helpers,
    supports dry-run and status modes, restricts the destination, and does not
    print secrets.
+6. The wrong Render CLI session was logged out; the CLI now verifies
+   `ranjeetapatra24@gmail.com` and the expected `Ranjeeta's workspace`. No older
+   Render services were listed or changed.
 
 ## Intentionally deferred (5)
 
@@ -76,23 +79,23 @@ Owner-authored untracked documents were excluded and left unchanged.
 5. TypeScript `skipLibCheck` and UI `disabled` attributes are compiler/accessibility
    settings, not disabled product features.
 
-## External activation (6)
+## External activation (5)
 
-1. Authenticate the Render CLI as `ranjeetapatra24@gmail.com` and select only
-   that account's workspace.
-2. Create the free Blueprint resources from `render.free.yaml` and supply the
+1. Create the free Blueprint resources from `render.free.yaml` and supply the
    existing staging Neon `DATABASE_URL` through Render's secret field.
-3. Verify the live API and static site with the deployment diagnostic.
-4. Create a distinct staging bot in BotFather, configure its Mini App URL, and
+2. Verify the live API and static site with the deployment diagnostic.
+3. Create a distinct staging bot in BotFather, configure its Mini App URL, and
    store its token/secret in Render before enabling Telegram.
-5. Create and privately deliver a short-lived beta invite after deployment.
-6. Update GitHub About/homepage and close issue #1 only after live smoke tests.
+4. Create and privately deliver a short-lived beta invite after deployment.
+5. Update GitHub About/homepage and close issue #1 only after live smoke tests.
 
 ## Blockers and credentials
 
-- Render deployment is blocked until the CLI browser authorization completes
-  in the confirmed account. The prior wrong CLI session was logged out and no
-  resources from it were listed or changed.
+- Render deployment is blocked at Blueprint creation. The authenticated CLI
+  can validate Blueprints but cannot create them, and Render's validation API
+  currently returns a Cloudflare 403 from this machine. The official flow
+  therefore requires **Dashboard > New > Blueprint** in the already-confirmed
+  workspace. No resource has been created yet.
 - Render needs the existing staging Neon connection string as a masked
   `DATABASE_URL`; it must never be committed or pasted into chat.
 - Telegram activation later needs a new staging-only bot token and a webhook
