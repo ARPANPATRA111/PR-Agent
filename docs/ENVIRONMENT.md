@@ -48,6 +48,21 @@ Worker and monitoring:
 - `INTERNAL_MONITORING_TOKEN`, `SENTRY_DSN`, `LOG_LEVEL`, `LOG_FILE`,
   `JSON_LOGS`, `DEBUG`, `DISABLE_SSL_VERIFY`
 
+Free staging only:
+
+- `INLINE_STAGING_WORKER_ENABLED` starts the durable delivery loop within the
+  staging API lifespan. It defaults to `false`, is rejected outside
+  `APP_ENV=staging`, requires `PUBLIC_V2_ENABLED=true`, and cannot be combined
+  with `REMINDER_WORKER_ENABLED=true`.
+- `INLINE_STAGING_POLL_INTERVAL_SECONDS` controls the awake-time interval and
+  defaults to 15 seconds. It does not prevent Render from sleeping.
+
+The free profile uses `AI_AGENT_ENABLED=false`, `AI_PROVIDER=disabled`,
+`NUTRITION_PROVIDER=disabled`, an empty `SENTRY_DSN`, and no provider keys.
+Manual nutrition values and deterministic stored-value calculations remain
+available. Voice input returns the disabled-feature response without calling a
+transcription provider.
+
 Legacy-only development variables are `WEBHOOK_URL`, `CHROMA_PERSIST_DIR`,
 `AUDIO_TEMP_DIR`, `TIMEZONE`, `DAILY_REFLECTION_HOUR`,
 `DAILY_REFLECTION_MINUTE`, `WEEKLY_SUMMARY_DAY`, `WEEKLY_SUMMARY_HOUR`,

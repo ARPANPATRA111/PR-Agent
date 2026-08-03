@@ -27,6 +27,30 @@ completed in the isolated staging environment for the exact candidate commit.
 | 39 | LinkedIn/report generation is absent from public mode | public-v2 legacy-route 404 regression test; legacy scheduler disabled | Code verified |
 | 40 | No hidden reasoning is public | strict proposal schema and retired legacy agent endpoints | Code verified |
 
+## Correct-account free staging addendum
+
+Before calling the free staging deployment live:
+
+- [ ] Verify the active Render account matches the owner-provided account in
+  the browser; do not use an older CLI session as proof.
+- [ ] Deploy only `render.free.yaml`; confirm one free web service and one free
+  static site, with no worker, cron, workflow, database, or payment request.
+- [ ] Confirm the new URLs use the `pr-agent-r24-staging-*` resources and do not
+  point to the mistaken-account static site.
+- [ ] Confirm startup migration, `/health`, `/ready`, Neon SSL connectivity,
+  and absence of restart loops.
+- [ ] Confirm `Referrer-Policy: no-referrer` and the other static-site headers.
+- [ ] Create a separate staging bot, register commands, set the new webhook,
+  configure the new Mini App URL, and create one limited invite.
+- [ ] Test startup catch-up, awake-time reminder delivery, duplicate prevention,
+  one Sunday digest, graceful stop, and delayed-delivery disclosure.
+- [ ] Keep AI, voice transcription, external nutrition estimation, message
+  cleanup, and paid monitoring disabled for initial validation.
+- [ ] After commit-before-cleanup behavior passes with disposable messages,
+  enable and retest message cleanup separately.
+
+Free staging is not suitable for public production or exact-time delivery.
+
 Before invitations are sent, also verify `/ready`, worker heartbeat, due-job
 lag, failed deliveries, authentication rejection, duplicate update, provider
 failure, export failure, and deletion failure monitoring. Begin with 10–30
