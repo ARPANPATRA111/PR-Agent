@@ -48,7 +48,7 @@ money arithmetic, dates, and all writes.
 Requirements:
 
 - Python 3.12
-- Node.js 20+
+- Node.js 24+
 - pnpm
 - Docker with Compose
 

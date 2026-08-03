@@ -124,7 +124,7 @@ projects:
             runtime: static
             repo: https://github.com/ARPANPATRA111/PR-Agent
             branch: public-v2
-            buildCommand: cd frontend && corepack enable && pnpm install --frozen-lockfile && pnpm build
+            buildCommand: cd frontend && corepack pnpm install --frozen-lockfile && corepack pnpm build
             staticPublishPath: ./frontend/out
             autoDeployTrigger: checksPass
             envVars:
