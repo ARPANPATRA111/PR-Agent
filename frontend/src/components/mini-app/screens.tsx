@@ -1117,6 +1117,10 @@ export function NutritionScreen() {
     log: NutritionLog;
     item: NutritionItem;
   } | null>(null);
+  const [manualLog, setManualLog] = useState<NutritionLog | null>(null);
+  const [manualName, setManualName] = useState('');
+  const [manualCalories, setManualCalories] = useState('');
+  const [manualProtein, setManualProtein] = useState('');
   const [quantity, setQuantity] = useState('');
   const [unit, setUnit] = useState('');
   const [calories, setCalories] = useState('');
@@ -1173,6 +1177,40 @@ export function NutritionScreen() {
       },
     );
     setEditingItem(null);
+    await resource.reload();
+  }
+
+  async function saveManualNutrition(event: FormEvent) {
+    event.preventDefault();
+    if (!manualLog) return;
+    const assumption = 'Calories and protein entered manually by the user.';
+    await fetchAPI(`/api/v2/nutrition/${manualLog.id}/manual`, {
+      method: 'POST',
+      body: JSON.stringify({
+        version: manualLog.version,
+        items: [
+          {
+            original_item_text: manualLog.original_text,
+            normalized_name: manualName,
+            quantity_value: '1',
+            quantity_unit: 'serving',
+            portion_description: 'User-entered serving',
+            estimated_grams: null,
+            calories: manualCalories,
+            protein_grams: manualProtein,
+            carbohydrate_grams: null,
+            fat_grams: null,
+            visible_assumptions: [assumption],
+            confidence: '1',
+          },
+        ],
+        visible_assumptions: [assumption],
+      }),
+    });
+    setManualLog(null);
+    setManualName('');
+    setManualCalories('');
+    setManualProtein('');
     await resource.reload();
   }
 
@@ -1300,6 +1338,67 @@ export function NutritionScreen() {
           </div>
         </form>
       ) : null}
+      {manualLog ? (
+        <form
+          onSubmit={saveManualNutrition}
+          className="mb-5 grid gap-3 rounded-xl border-2 border-primary bg-card p-4 sm:grid-cols-2"
+          aria-label="Enter nutrition manually"
+        >
+          <div className="sm:col-span-2">
+            <h2 className="font-semibold">Enter nutrition manually</h2>
+            <p className="text-xs text-muted-foreground">
+              These values come from you. PR-Agent will not estimate or verify
+              them.
+            </p>
+          </div>
+          <FormField label="Food name" htmlFor="manual-food-name">
+            <input
+              id="manual-food-name"
+              required
+              maxLength={255}
+              value={manualName}
+              onChange={(event) => setManualName(event.target.value)}
+              className={inputClassName}
+            />
+          </FormField>
+          <FormField label="Calories" htmlFor="manual-food-calories">
+            <input
+              id="manual-food-calories"
+              required
+              type="number"
+              min="0"
+              step="0.01"
+              value={manualCalories}
+              onChange={(event) => setManualCalories(event.target.value)}
+              className={inputClassName}
+            />
+          </FormField>
+          <FormField label="Protein grams" htmlFor="manual-food-protein">
+            <input
+              id="manual-food-protein"
+              required
+              type="number"
+              min="0"
+              step="0.001"
+              value={manualProtein}
+              onChange={(event) => setManualProtein(event.target.value)}
+              className={inputClassName}
+            />
+          </FormField>
+          <div className="flex gap-2 sm:col-span-2">
+            <button type="submit" className={buttonClassName}>
+              Save manual values
+            </button>
+            <button
+              type="button"
+              onClick={() => setManualLog(null)}
+              className={secondaryButtonClassName}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : null}
       <ResourceList
         resource={{ ...resource, data: resource.data?.logs || null }}
         emptyLabel="No food logs for this day."
@@ -1320,9 +1419,23 @@ export function NutritionScreen() {
               </span>
             </div>
             {log.clarification_question ? (
-              <p className="mt-3 rounded-lg bg-amber-500/10 p-3 text-sm">
-                {log.clarification_question}
-              </p>
+              <div className="mt-3 rounded-lg bg-amber-500/10 p-3 text-sm">
+                <p>{log.clarification_question}</p>
+                {!log.items.length ? (
+                  <button
+                    type="button"
+                    className={`${secondaryButtonClassName} mt-3`}
+                    onClick={() => {
+                      setManualLog(log);
+                      setManualName(log.meal_name || log.original_text.slice(0, 255));
+                      setManualCalories('');
+                      setManualProtein('');
+                    }}
+                  >
+                    Enter calories and protein
+                  </button>
+                ) : null}
+              </div>
             ) : null}
             <ul className="mt-3 space-y-2">
               {log.items.map((item) => (

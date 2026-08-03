@@ -42,6 +42,7 @@ PUBLIC_COMMANDS = [
     ("food", "Add a food log"),
     ("nutrition", "Show nutrition totals"),
     ("confirmfood", "Confirm a food estimate"),
+    ("savefoodnote", "Save food without estimates"),
     ("editfood", "Edit a food item"),
     ("deletefood", "Delete a food log"),
     ("nutritiontargets", "Set nutrition targets"),

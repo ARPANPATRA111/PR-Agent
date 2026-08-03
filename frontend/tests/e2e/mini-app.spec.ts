@@ -32,7 +32,11 @@ async function installTelegram(page: Page) {
   });
 }
 
-async function mockApi(page: Page, validAuth = true) {
+async function mockApi(
+  page: Page,
+  validAuth = true,
+  nutritionProviderDisabled = false,
+) {
   const state: MockState = {
     work: [],
     notes: [],
@@ -301,18 +305,22 @@ async function mockApi(page: Page, validAuth = true) {
           timezone: 'UTC',
           original_text: payload?.original_text,
           status: 'draft',
-          total_calories: '132.50',
-          total_protein_grams: '9.150',
-          total_carbohydrate_grams: '0.600',
-          total_fat_grams: '10.400',
-          estimation_source: 'bundled_reference:2026.07',
-          overall_confidence: '0.8000',
+          total_calories: nutritionProviderDisabled ? '0.00' : '132.50',
+          total_protein_grams: nutritionProviderDisabled ? '0.000' : '9.150',
+          total_carbohydrate_grams: nutritionProviderDisabled ? '0.000' : '0.600',
+          total_fat_grams: nutritionProviderDisabled ? '0.000' : '10.400',
+          estimation_source: nutritionProviderDisabled
+            ? 'provider_unavailable'
+            : 'bundled_reference:2026.07',
+          overall_confidence: nutritionProviderDisabled ? null : '0.8000',
           visible_assumptions: [],
           provider_metadata: {},
-          clarification_question: null,
+          clarification_question: nutritionProviderDisabled
+            ? 'Estimation is unavailable. Save as an unestimated food note or enter calories and protein manually.'
+            : null,
           confirmed_by_user: false,
           user_modified: false,
-          items: [
+          items: nutritionProviderDisabled ? [] : [
             {
               id: 1,
               nutrition_log_id: 1,
@@ -341,6 +349,34 @@ async function mockApi(page: Page, validAuth = true) {
       } else {
         await json(state.nutrition);
       }
+      return;
+    }
+    if (path === '/api/v2/nutrition/1/manual') {
+      const manualItems =
+        (payload?.items as Array<Record<string, unknown>> | undefined) || [];
+      const manualValues = manualItems[0] || {};
+      const manualItem = {
+        id: 1,
+        nutrition_log_id: 1,
+        version: 1,
+        ...manualValues,
+        estimation_source: 'manual:user',
+        user_modified: true,
+        ...timestamps(),
+      };
+      state.nutrition[0] = {
+        ...state.nutrition[0],
+        version: 3,
+        status: 'confirmed',
+        total_calories: manualValues.calories,
+        total_protein_grams: manualValues.protein_grams,
+        estimation_source: 'manual',
+        clarification_question: null,
+        confirmed_by_user: true,
+        user_modified: true,
+        items: [manualItem],
+      };
+      await json(state.nutrition[0]);
       return;
     }
     if (path === '/api/v2/nutrition/1/confirm') {
@@ -478,6 +514,26 @@ test('session expiry and logout reset authentication', async ({ page }) => {
   await expect(
     page.getByText('Open the Mini App from the bot to sign in again.'),
   ).toBeVisible();
+});
+
+test('provider-disabled nutrition accepts explicit manual values', async ({
+  page,
+}) => {
+  await mockApi(page, true, true);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open Nutrition' }).click();
+  await page.getByLabel('Food description').fill('Homemade lunch');
+  await page.getByRole('button', { name: 'Preview food' }).click();
+  await expect(page.getByText(/Estimation is unavailable/)).toBeVisible();
+  await page
+    .getByRole('button', { name: 'Enter calories and protein' })
+    .click();
+  await page.getByLabel('Food name').fill('Homemade lunch');
+  await page.getByLabel('Calories').fill('650');
+  await page.getByLabel('Protein grams').fill('31');
+  await page.getByRole('button', { name: 'Save manual values' }).click();
+  await expect(page.getByText(/650 kcal/).first()).toBeVisible();
+  await expect(page.getByText(/31 g protein/).first()).toBeVisible();
 });
 
 test('account deletion requires explicit confirmation', async ({ page }) => {
