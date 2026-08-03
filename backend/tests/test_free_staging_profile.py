@@ -11,9 +11,9 @@ def load_yaml(name: str) -> dict:
 
 
 def test_free_blueprint_contains_only_free_api_and_static_site():
-    services = load_yaml("render.free.yaml")["projects"][0]["environments"][0][
-        "services"
-    ]
+    blueprint = load_yaml("render.free.yaml")
+    assert set(blueprint) == {"services"}
+    services = blueprint["services"]
     assert [service["name"] for service in services] == [
         "pr-agent-r24-staging-api",
         "pr-agent-r24-staging-web",
@@ -21,8 +21,12 @@ def test_free_blueprint_contains_only_free_api_and_static_site():
     assert [service["type"] for service in services] == ["web", "web"]
     assert services[0]["plan"] == "free"
     assert services[1]["runtime"] == "static"
+    assert "plan" not in services[1]
     assert "alembic upgrade head" in services[0]["dockerCommand"]
     assert "$PORT" in services[0]["dockerCommand"]
+    assert (REPOSITORY_ROOT / "backend" / "Dockerfile").is_file()
+    assert (REPOSITORY_ROOT / "backend" / "migrations").is_dir()
+    assert (REPOSITORY_ROOT / "frontend" / "next.config.js").is_file()
 
     environment = {item["key"]: item.get("value") for item in services[0]["envVars"]}
     assert environment["PUBLIC_V2_ENABLED"] == "true"
@@ -34,6 +38,56 @@ def test_free_blueprint_contains_only_free_api_and_static_site():
     assert environment["NUTRITION_PROVIDER"] == "disabled"
     assert environment["MESSAGE_CLEANUP_ENABLED"] == "false"
     assert "TELEGRAM_BOT_TOKEN" not in environment
+
+
+def test_free_blueprint_structurally_rejects_billable_resources():
+    blueprint = load_yaml("render.free.yaml")
+    forbidden_keys = {
+        "projects",
+        "environments",
+        "envVarGroups",
+        "databases",
+        "keyvalue",
+        "redis",
+        "disk",
+        "disks",
+        "maintenanceMode",
+        "previews",
+        "previewPlan",
+        "scaling",
+        "autoscaling",
+        "highAvailability",
+        "readReplicas",
+        "numInstances",
+    }
+    forbidden_types = {"worker", "cron", "workflow", "pserv", "private_service"}
+    paid_plans = {
+        "starter",
+        "standard",
+        "pro",
+        "pro_plus",
+        "pro_max",
+        "pro_ultra",
+    }
+
+    def walk(value):
+        if isinstance(value, dict):
+            assert forbidden_keys.isdisjoint(value.keys())
+            if "type" in value:
+                assert str(value["type"]).lower() not in forbidden_types
+            if "plan" in value:
+                assert str(value["plan"]).lower() not in paid_plans
+            for child in value.values():
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+
+    walk(blueprint)
+    services = blueprint["services"]
+    assert len(services) == 2
+    assert sum(service.get("plan") == "free" for service in services) == 1
+    assert sum(service.get("runtime") == "static" for service in services) == 1
 
 
 def test_production_blueprint_keeps_dedicated_worker():

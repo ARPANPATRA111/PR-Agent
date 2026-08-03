@@ -8,15 +8,15 @@ Owner-authored untracked documents were excluded and left unchanged.
 
 | Classification | Count | Meaning |
 |---|---:|---|
-| Implemented in this deployment pass | 6 | Deterministic, free, and locally verifiable |
+| Implemented in this deployment pass | 7 | Deterministic, free, and locally verifiable |
 | Intentionally deferred | 5 | Requires a later privacy/provider/scale gate |
 | Production-only | 3 | Not appropriate for the free staging profile |
 | Obsolete/dead | 4 | Retained only for rollback/history or awaiting cleanup |
 | False positive | 5 | Search hit is intentional code/test configuration |
 | External activation | 5 | Requires an authenticated provider or owner-only action |
-| **Total classified items** | **28** | No unclassified TODO/FIXME markers found |
+| **Total classified items** | **29** | No unclassified TODO/FIXME markers found |
 
-## Implemented in this pass (6)
+## Implemented in this pass (7)
 
 1. Telegram-independent staging configuration and fail-closed activation.
 2. A pre-bot API lifespan that does not build Telegram delivery/cleanup clients
@@ -31,6 +31,10 @@ Owner-authored untracked documents were excluded and left unchanged.
 6. The wrong Render CLI session was logged out; the CLI now verifies
    `ranjeetapatra24@gmail.com` and the expected `Ranjeeta's workspace`. No older
    Render services were listed or changed.
+7. `render.free.yaml` now uses root-level `services` only. A recursive YAML test
+   rejects Render projects/environments, datastores, disks, scaling fields,
+   non-web service types, and paid plans while allowing the external Neon
+   `DATABASE_URL` secret name. The official Render JSON Schema accepts it.
 
 ## Intentionally deferred (5)
 
@@ -92,13 +96,28 @@ Owner-authored untracked documents were excluded and left unchanged.
 ## Blockers and credentials
 
 - Render deployment is blocked at Blueprint creation. The authenticated CLI
-  can validate Blueprints but cannot create them, and Render's validation API
-  currently returns a Cloudflare 403 from this machine. The official flow
-  therefore requires **Dashboard > New > Blueprint** in the already-confirmed
-  workspace. No resource has been created yet.
+  can validate Blueprints but cannot create them. The public official schema
+  accepts the flattened file, while the authenticated validation API currently
+  returns a Cloudflare 403 from this machine. The official flow therefore
+  requires **Dashboard > New > Blueprint** in the already-confirmed workspace.
+  No resource has been created yet.
+- The exact payment prompt and triggering preview row are not available through
+  the CLI and have not been captured. Its root cause remains unconfirmed until
+  the flattened dashboard preview explicitly shows both resources at `$0` or
+  identifies the resource/account verification requirement.
 - Render needs the existing staging Neon connection string as a masked
   `DATABASE_URL`; it must never be committed or pasted into chat.
 - Telegram activation later needs a new staging-only bot token and a webhook
   secret of at least 16 characters. Neither is required for initial deployment.
 - No paid Render service, Render cron, worker, database, KV, trial, or payment
   action is authorized by the free staging runbook.
+
+## Free Blueprint search-match explanation
+
+- `worker` and `cron` in the leading comment state that those resources are not
+  created. `--workers 1` is Uvicorn's single-process setting, not a Render worker.
+- `INLINE_STAGING_WORKER_ENABLED=true` enables an in-process best-effort loop;
+  `REMINDER_WORKER_ENABLED=false` explicitly disables the paid standalone worker.
+- `WORKER_BATCH_SIZE` is an application batch limit, not a service declaration.
+- `DATABASE_URL` is the masked external Neon connection string. There is no
+  root-level Render `databases` resource.

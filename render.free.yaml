@@ -1,93 +1,98 @@
-projects:
-  - name: pr-agent-r24
-    environments:
-      - name: staging
-        services:
-          - type: web
-            name: pr-agent-r24-staging-api
-            runtime: docker
-            repo: https://github.com/ARPANPATRA111/PR-Agent
-            branch: public-v2
-            region: singapore
-            plan: free
-            dockerfilePath: ./backend/Dockerfile
-            dockerContext: ./backend
-            dockerCommand: sh -c 'python -m alembic upgrade head && exec uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1'
-            healthCheckPath: /ready
-            maxShutdownDelaySeconds: 60
-            autoDeployTrigger: checksPass
-            envVars:
-              - key: APP_ENV
-                value: staging
-              - key: APP_BASE_URL
-                value: https://pr-agent-r24-staging-api.onrender.com
-              - key: FRONTEND_BASE_URL
-                value: https://pr-agent-r24-staging-web.onrender.com
-              - key: PUBLIC_V2_ENABLED
-                value: "true"
-              - key: INVITE_ONLY
-                value: "true"
-              - key: TELEGRAM_INTEGRATION_ENABLED
-                value: "false"
-              - key: INLINE_STAGING_WORKER_ENABLED
-                value: "true"
-              - key: INLINE_STAGING_POLL_INTERVAL_SECONDS
-                value: "15"
-              - key: REMINDER_WORKER_ENABLED
-                value: "false"
-              - key: WORKER_BATCH_SIZE
-                value: "10"
-              - key: MESSAGE_CLEANUP_ENABLED
-                value: "false"
-              - key: AI_AGENT_ENABLED
-                value: "false"
-              - key: AI_PROVIDER
-                value: disabled
-              - key: NUTRITION_PROVIDER
-                value: disabled
-              - key: TELEGRAM_WEBHOOK_URL
-                value: https://pr-agent-r24-staging-api.onrender.com/webhook
-              - key: TELEGRAM_MINI_APP_URL
-                value: https://pr-agent-r24-staging-web.onrender.com
-              - key: DATABASE_URL
-                sync: false
-              - key: SESSION_SIGNING_SECRET
-                generateValue: true
-              - key: INTERNAL_MONITORING_TOKEN
-                generateValue: true
-              - key: CORS_ORIGINS
-                value: https://pr-agent-r24-staging-web.onrender.com
-              - key: DEBUG
-                value: "false"
-              - key: DISABLE_SSL_VERIFY
-                value: "false"
-              - key: JSON_LOGS
-                value: "true"
-              - key: TIMEZONE
-                value: Asia/Kolkata
+# Free staging only.
+# Creates one Free web service and one free static site.
+# Does not create a worker, cron job, Render database, disk, or paid resource.
+# Scheduled delivery is best-effort while the API is awake.
 
-          - type: web
-            name: pr-agent-r24-staging-web
-            runtime: static
-            repo: https://github.com/ARPANPATRA111/PR-Agent
-            branch: public-v2
-            buildCommand: cd frontend && corepack pnpm install --frozen-lockfile && corepack pnpm build
-            staticPublishPath: ./frontend/out
-            autoDeployTrigger: checksPass
-            envVars:
-              - key: NEXT_PUBLIC_API_URL
-                value: https://pr-agent-r24-staging-api.onrender.com
-            routes:
-              - type: rewrite
-                source: /*
-                destination: /index.html
-            headers:
-              - path: /*
-                name: X-Content-Type-Options
-                value: nosniff
-              - path: /*
-                name: Referrer-Policy
-                value: no-referrer
-              - path: /*
-                name: Permissions-Policy
-                value: camera=(), geolocation=(), microphone=()
+services:
+  - type: web
+    name: pr-agent-r24-staging-api
+    runtime: docker
+    plan: free
+    repo: https://github.com/ARPANPATRA111/PR-Agent
+    branch: public-v2
+    region: singapore
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    dockerCommand: >-
+      sh -c 'python -m alembic upgrade head &&
+      exec uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1'
+    healthCheckPath: /ready
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: APP_ENV
+        value: staging
+      - key: APP_BASE_URL
+        value: https://pr-agent-r24-staging-api.onrender.com
+      - key: FRONTEND_BASE_URL
+        value: https://pr-agent-r24-staging-web.onrender.com
+      - key: PUBLIC_V2_ENABLED
+        value: "true"
+      - key: INVITE_ONLY
+        value: "true"
+      - key: TELEGRAM_INTEGRATION_ENABLED
+        value: "false"
+      - key: INLINE_STAGING_WORKER_ENABLED
+        value: "true"
+      - key: INLINE_STAGING_POLL_INTERVAL_SECONDS
+        value: "15"
+      - key: REMINDER_WORKER_ENABLED
+        value: "false"
+      - key: WORKER_BATCH_SIZE
+        value: "10"
+      - key: MESSAGE_CLEANUP_ENABLED
+        value: "false"
+      - key: AI_AGENT_ENABLED
+        value: "false"
+      - key: AI_PROVIDER
+        value: disabled
+      - key: NUTRITION_PROVIDER
+        value: disabled
+      - key: TELEGRAM_WEBHOOK_URL
+        value: https://pr-agent-r24-staging-api.onrender.com/webhook
+      - key: TELEGRAM_MINI_APP_URL
+        value: https://pr-agent-r24-staging-web.onrender.com
+      - key: DATABASE_URL
+        sync: false
+      - key: SESSION_SIGNING_SECRET
+        generateValue: true
+      - key: INTERNAL_MONITORING_TOKEN
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: https://pr-agent-r24-staging-web.onrender.com
+      - key: DEBUG
+        value: "false"
+      - key: DISABLE_SSL_VERIFY
+        value: "false"
+      - key: JSON_LOGS
+        value: "true"
+      - key: TIMEZONE
+        value: Asia/Kolkata
+
+  - type: web
+    name: pr-agent-r24-staging-web
+    runtime: static
+    repo: https://github.com/ARPANPATRA111/PR-Agent
+    branch: public-v2
+    buildCommand: >-
+      cd frontend &&
+      corepack pnpm install --frozen-lockfile &&
+      corepack pnpm build
+    staticPublishPath: ./frontend/out
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        value: https://pr-agent-r24-staging-api.onrender.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: no-referrer
+      - path: /*
+        name: Permissions-Policy
+        value: camera=(), geolocation=(), microphone=()
