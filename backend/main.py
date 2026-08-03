@@ -73,15 +73,30 @@ if settings.sentry_dsn:
 async def lifespan(app: FastAPI):
     logger.info("Starting Weekly Progress Agent...")
     legacy_scheduler = None
+    inline_staging_loop = None
+    inline_staging_task = None
     try:
         memory = get_memory_manager()
         logger.info("Memory manager initialized")
 
         if settings.public_v2_enabled:
-            logger.info(
-                "Public-v2 uses the standalone durable worker; "
-                "legacy in-process schedules are disabled"
-            )
+            if settings.inline_staging_worker_enabled:
+                from inline_staging_worker import build_inline_staging_loop
+
+                inline_staging_loop = build_inline_staging_loop()
+                app.state.inline_staging_loop = inline_staging_loop
+                inline_staging_task = asyncio.create_task(
+                    inline_staging_loop.run_forever(),
+                    name="inline-staging-delivery",
+                )
+                logger.warning(
+                    "Public-v2 free staging uses best-effort inline delivery"
+                )
+            else:
+                logger.info(
+                    "Public-v2 uses the standalone durable worker; "
+                    "legacy in-process schedules are disabled"
+                )
         else:
             legacy_scheduler = get_scheduler()
             legacy_scheduler.start()
@@ -102,14 +117,26 @@ async def lifespan(app: FastAPI):
 
     logger.info("Weekly Progress Agent started successfully!")
 
-    yield
+    try:
+        yield
+    finally:
+        logger.info("Shutting down Weekly Progress Agent...")
 
-    logger.info("Shutting down Weekly Progress Agent...")
+        if legacy_scheduler is not None:
+            legacy_scheduler.shutdown()
 
-    if legacy_scheduler is not None:
-        legacy_scheduler.shutdown()
+        if inline_staging_loop is not None and inline_staging_task is not None:
+            await inline_staging_loop.stop()
+            await inline_staging_task
+            app.state.inline_staging_loop = None
 
-    logger.info("Shutdown complete")
+        logger.info("Shutdown complete")
+
+
+def request_inline_staging_sweep() -> None:
+    loop = getattr(app.state, "inline_staging_loop", None)
+    if loop is not None:
+        loop.request_sweep()
 
 
 app = FastAPI(
@@ -249,7 +276,10 @@ async def enforce_private_api_identity(request: Request, call_next):
             content={"detail": "Authentication service unavailable"},
         )
 
-    return await call_next(request)
+    response = await call_next(request)
+    if response.status_code < 500:
+        request_inline_staging_sweep()
+    return response
 
 
 @app.get("/", tags=["Health"])
@@ -435,6 +465,7 @@ async def telegram_webhook(
 
                     await asyncio.to_thread(queue_inbound_cleanup)
                 memory.mark_telegram_update(update.update_id, "completed")
+                request_inline_staging_sweep()
             except Exception as exc:
                 memory.mark_telegram_update(
                     update.update_id,

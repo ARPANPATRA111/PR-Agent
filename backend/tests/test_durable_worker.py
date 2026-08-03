@@ -249,6 +249,35 @@ async def test_pause_after_claim_cancels_delivery_before_network_send(delivery_d
         assert session.get(ReminderDelivery, claim.delivery_id).status == "cancelled"
 
 
+@pytest.mark.asyncio
+async def test_missed_recurring_reminder_catches_up_once_without_flood(delivery_db):
+    factory, (owner_a, _) = delivery_db
+    now = future_clock()
+    reminder_id = create_reminder(
+        factory,
+        owner_a,
+        now,
+        "missed-daily",
+        schedule_type="daily",
+    )
+    gateway = FakeGateway()
+    worker = DurableWorker(
+        DurableDeliveryStore(factory),
+        gateway,
+        clock=lambda: now,
+    )
+
+    assert await worker.run_once() == 1
+    assert await worker.run_once() == 0
+    assert len(gateway.messages) == 1
+    with factory() as session:
+        delivery = session.query(ReminderDelivery).one()
+        reminder = session.get(Reminder, reminder_id)
+        assert delivery.scheduled_occurrence_at_utc < now.replace(tzinfo=None)
+        assert delivery.delivered_at_utc == now.replace(tzinfo=None)
+        assert reminder.next_run_at_utc > now.replace(tzinfo=None)
+
+
 def test_expired_final_attempt_is_dead_lettered_without_an_extra_send(delivery_db):
     factory, (owner_a, _) = delivery_db
     now = future_clock()

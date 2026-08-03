@@ -49,6 +49,14 @@ class DeterministicCommandMixin:
         )
 
     async def _cmd_help(self, message: TelegramMessage) -> None:
+        availability = (
+            "\n\nâš ï¸ <b>Free staging availability:</b> This deployment can "
+            "sleep when inactive. Telegram commands wake it automatically, but "
+            "the first response may be delayed. Reminders and Sunday summaries "
+            "are best-effort and may arrive late while it is sleeping."
+            if settings.inline_staging_worker_enabled
+            else ""
+        )
         await self.telegram.send_message(
             message.chat.get("id"),
             "<b>PR-Agent commands</b>\n\n"
@@ -60,8 +68,8 @@ class DeterministicCommandMixin:
             "/completegoal, /pausegoal, /deletegoal\n"
             "<b>Reminders:</b> /remind, /reminders, /editreminder, "
             "/pausereminder, /resumereminder, /deletereminder\n\n"
-            "<b>Food:</b> /food, /nutrition, /confirmfood, /editfood, "
-            "/deletefood, /nutritiontargets\n\n"
+            "<b>Food:</b> /food, /nutrition, /confirmfood, /savefoodnote, "
+            "/editfood, /deletefood, /nutritiontargets\n\n"
             "<b>Assistant follow-up:</b> /answeragent, /confirmagent, "
             "/cancelagent\n\n"
             "<b>Summaries and privacy:</b> /today, /week, /spending, "
@@ -71,7 +79,8 @@ class DeterministicCommandMixin:
             "<code>/note Ask HR about relocation</code>\n"
             "<code>/expense 240 INR dinner</code>\n"
             "<code>/income 5000 INR freelance payment</code>\n"
-            "<code>/remind once 2026-08-10 19:00 Asia/Kolkata Submit assignment</code>",
+            "<code>/remind once 2026-08-10 19:00 Asia/Kolkata Submit assignment</code>"
+            + availability,
         )
 
     def _run_domain(self, message: TelegramMessage, operation):

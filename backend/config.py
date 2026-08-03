@@ -45,6 +45,16 @@ class Settings(BaseSettings):
         default=False,
         description="Permit the standalone durable delivery worker to run",
     )
+    inline_staging_worker_enabled: bool = Field(
+        default=False,
+        description=("Run best-effort delivery polling inside the staging API process"),
+    )
+    inline_staging_poll_interval_seconds: float = Field(
+        default=15.0,
+        ge=5.0,
+        le=300.0,
+        description="Polling interval for the free staging inline worker",
+    )
     message_cleanup_enabled: bool = Field(
         default=False,
         description="Queue processed Telegram messages for best-effort deletion",
@@ -390,6 +400,20 @@ class Settings(BaseSettings):
             )
         if self.app_env == "test" and not self.test_database_url:
             raise ValueError("TEST_DATABASE_URL is required when APP_ENV=test")
+
+        if self.inline_staging_worker_enabled:
+            if self.app_env != "staging":
+                raise ValueError(
+                    "INLINE_STAGING_WORKER_ENABLED is allowed only in staging"
+                )
+            if not self.public_v2_enabled:
+                raise ValueError(
+                    "INLINE_STAGING_WORKER_ENABLED requires PUBLIC_V2_ENABLED"
+                )
+            if self.reminder_worker_enabled:
+                raise ValueError(
+                    "Inline staging and dedicated reminder workers are mutually exclusive"
+                )
 
         if self.app_env in {"staging", "production"}:
             required = {
