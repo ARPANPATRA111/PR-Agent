@@ -80,7 +80,15 @@ def test_deployment_diagnostic_checks_pre_bot_profile(monkeypatch):
                 200,
                 headers={"access-control-allow-origin": frontend},
             )
-        return httpx.Response(200, text="PR-Agent staging")
+        return httpx.Response(
+            200,
+            text="PR-Agent staging",
+            headers={
+                "X-Content-Type-Options": "nosniff",
+                "Referrer-Policy": "no-referrer",
+                "Permissions-Policy": "camera=(), geolocation=(), microphone=()",
+            },
+        )
 
     original_client = module.httpx.Client
     transport = httpx.MockTransport(handler)
@@ -100,6 +108,7 @@ def test_deployment_diagnostic_checks_pre_bot_profile(monkeypatch):
         "readiness=pass",
         "telegram_disabled=pass",
         "frontend=pass",
+        "route_refresh=pass",
         "cors=pass",
         "delivery_metrics=skip(no token)",
     ]

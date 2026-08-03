@@ -79,7 +79,19 @@ def verify(
         body = frontend.text.lower()
         if any(host in body for host in RETIRED_HOSTS):
             raise RuntimeError("frontend contains a retired deployment URL")
+        expected_headers = {
+            "x-content-type-options": "nosniff",
+            "referrer-policy": "no-referrer",
+            "permissions-policy": "camera=(), geolocation=(), microphone=()",
+        }
+        for name, value in expected_headers.items():
+            if frontend.headers.get(name) != value:
+                raise RuntimeError(f"frontend security header is missing: {name}")
         results.append("frontend=pass")
+
+        route_refresh = client.get(f"{frontend_url}/settings")
+        require(route_refresh, 200, "frontend route refresh")
+        results.append("route_refresh=pass")
 
         preflight = client.options(
             f"{api_url}/api/health",

@@ -85,22 +85,35 @@ Owner-authored untracked documents were excluded and left unchanged.
 
 ## External activation (5)
 
-1. Create the free Blueprint resources from `render.free.yaml` and supply the
-   existing staging Neon `DATABASE_URL` through Render's secret field.
+1. Complete the dashboard-only manual configuration: add the static site's
+   `/* -> /index.html` rewrite and missing `Referrer-Policy` and
+   `Permissions-Policy` response headers, then set the API's Docker Command to
+   the migration-and-Uvicorn command tracked in `render.free.yaml`.
 2. Verify the live API and static site with the deployment diagnostic.
 3. Create a distinct staging bot in BotFather, configure its Mini App URL, and
    store its token/secret in Render before enabling Telegram.
 4. Create and privately deliver a short-lived beta invite after deployment.
 5. Update GitHub About/homepage and close issue #1 only after live smoke tests.
 
-## Blockers and credentials
+## Deployment state, blockers, and credentials
 
-- Render deployment is blocked at Blueprint creation. The authenticated CLI
-  can validate Blueprints but cannot create them. The public official schema
-  accepts the flattened file, while the authenticated validation API currently
-  returns a Cloudflare 403 from this machine. The official flow therefore
-  requires **Dashboard > New > Blueprint** in the already-confirmed workspace.
-  No resource has been created yet.
+- Blueprint preview automation remains unavailable: the authenticated CLI can
+  validate but not create Blueprints, and its validation API returns a
+  Cloudflare 403 from this machine. The public official schema accepts the
+  flattened file.
+- The Blueprint was bypassed using documented CLI service creation. The new
+  static site and one-instance `plan: free` API are live on commit `203690b`;
+  neither creation requested payment information. No worker, cron, Render
+  datastore, project, environment, disk, preview, or additional instance was
+  created.
+- Manual CLI creation cannot configure static-site headers or rewrite rules.
+  Live validation found the `/* -> /index.html` rewrite, `Referrer-Policy`, and
+  `Permissions-Policy` missing. Render documents those settings as dashboard
+  configuration, so this is the remaining `MANUAL SERVICE CONFIGURATION` block.
+- Render CLI also rejects `--start-command` for Docker runtimes, leaving the
+  service's Docker Command empty. The current database revision is correct and
+  readiness passes, but the tracked migration-and-Uvicorn Docker Command must
+  be copied into the API dashboard before future deployments are accepted.
 - The exact payment prompt and triggering preview row are not available through
   the CLI and have not been captured. Its root cause remains unconfirmed until
   the flattened dashboard preview explicitly shows both resources at `$0` or

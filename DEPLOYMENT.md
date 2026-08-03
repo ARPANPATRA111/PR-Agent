@@ -54,6 +54,14 @@ python scripts/verify_staging_deployment.py `
   --frontend-url https://pr-agent-r24-staging-web.onrender.com
 ```
 
+If the services are created separately with the Render CLI, its static-site
+creation command does not expose header or rewrite flags. Before accepting the
+deployment, add the three tracked `headers` rules and the `/* -> /index.html`
+rewrite from `render.free.yaml` in the static site's dashboard. The verification
+script fails closed when any of them is absent. The CLI also does not accept a
+Docker Command override; copy the tracked `dockerCommand` into the free API's
+dashboard settings so every deploy runs migrations before starting Uvicorn.
+
 Do not add database write/delete cron jobs or self-pings as keep-alive
 mechanisms. See [availability and scale-to-zero](docs/AVAILABILITY.md) and the
 [staging environment matrix](docs/STAGING_ENV_MATRIX.md).

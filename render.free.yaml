@@ -11,13 +11,14 @@ services:
     repo: https://github.com/ARPANPATRA111/PR-Agent
     branch: public-v2
     region: singapore
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     dockerCommand: >-
       sh -c 'python -m alembic upgrade head &&
       exec uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1'
     healthCheckPath: /ready
-    autoDeployTrigger: checksPass
+    autoDeployTrigger: commit
     envVars:
       - key: APP_ENV
         value: staging
@@ -78,7 +79,7 @@ services:
       corepack pnpm install --frozen-lockfile &&
       corepack pnpm build
     staticPublishPath: ./frontend/out
-    autoDeployTrigger: checksPass
+    autoDeployTrigger: commit
     envVars:
       - key: NEXT_PUBLIC_API_URL
         value: https://pr-agent-r24-staging-api.onrender.com
