@@ -1,93 +1,146 @@
-services:
-  - type: web
-    name: pr-agent-api
-    runtime: python
-    pythonVersion: "3.12.0"
-    region: oregon
-    plan: starter
-    buildCommand: cd backend && pip install -r requirements.txt
-    startCommand: >-
-      cd backend && python -m alembic upgrade head &&
-      exec uvicorn main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /ready
-    envVars: &shared
-      - key: APP_ENV
-        value: production
-      - key: APP_BASE_URL
-        sync: false
-      - key: FRONTEND_BASE_URL
-        sync: false
-      - key: PUBLIC_V2_ENABLED
-        value: "false"
-      - key: INVITE_ONLY
-        value: "true"
-      - key: AI_AGENT_ENABLED
-        value: "false"
-      - key: AI_PROVIDER
-        value: disabled
-      - key: REMINDER_WORKER_ENABLED
-        value: "false"
-      - key: MESSAGE_CLEANUP_ENABLED
-        value: "false"
-      - key: TELEGRAM_BOT_TOKEN
-        sync: false
-      - key: TELEGRAM_WEBHOOK_SECRET
-        sync: false
-      - key: TELEGRAM_WEBHOOK_URL
-        sync: false
-      - key: TELEGRAM_MINI_APP_URL
-        sync: false
-      - key: GROQ_API_KEY
-        sync: false
-      - key: DATABASE_URL
-        sync: false
-      - key: SESSION_SIGNING_SECRET
-        sync: false
-      - key: INTERNAL_MONITORING_TOKEN
-        sync: false
-      - key: SENTRY_DSN
-        sync: false
-      - key: CORS_ORIGINS
-        sync: false
-      - key: NUTRITION_PROVIDER
-        value: reference
-      - key: DEBUG
-        value: "false"
-      - key: DISABLE_SSL_VERIFY
-        value: "false"
-      - key: JSON_LOGS
-        value: "true"
-      - key: TIMEZONE
-        value: Asia/Kolkata
+projects:
+  - name: pr-agent
+    environments:
+      - name: staging
+        services:
+          - type: web
+            name: pr-agent-staging-api
+            runtime: docker
+            repo: https://github.com/ARPANPATRA111/PR-Agent
+            branch: public-v2
+            region: singapore
+            plan: starter
+            dockerfilePath: ./backend/Dockerfile
+            dockerContext: ./backend
+            dockerCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1
+            preDeployCommand: python -m alembic upgrade head
+            healthCheckPath: /ready
+            maxShutdownDelaySeconds: 60
+            autoDeployTrigger: checksPass
+            envVars:
+              - key: APP_ENV
+                value: staging
+              - key: APP_BASE_URL
+                value: https://pr-agent-staging-api.onrender.com
+              - key: FRONTEND_BASE_URL
+                value: https://pr-agent-staging-web.onrender.com
+              - key: PUBLIC_V2_ENABLED
+                value: "false"
+              - key: INVITE_ONLY
+                value: "true"
+              - key: AI_AGENT_ENABLED
+                value: "false"
+              - key: AI_PROVIDER
+                value: disabled
+              - key: REMINDER_WORKER_ENABLED
+                value: "false"
+              - key: MESSAGE_CLEANUP_ENABLED
+                value: "false"
+              - key: TELEGRAM_BOT_TOKEN
+                sync: false
+              - key: TELEGRAM_WEBHOOK_SECRET
+                generateValue: true
+              - key: TELEGRAM_WEBHOOK_URL
+                value: https://pr-agent-staging-api.onrender.com/webhook
+              - key: TELEGRAM_MINI_APP_URL
+                value: https://pr-agent-staging-web.onrender.com
+              - key: DATABASE_URL
+                sync: false
+              - key: SESSION_SIGNING_SECRET
+                generateValue: true
+              - key: INTERNAL_MONITORING_TOKEN
+                generateValue: true
+              - key: CORS_ORIGINS
+                value: https://pr-agent-staging-web.onrender.com
+              - key: NUTRITION_PROVIDER
+                value: reference
+              - key: DEBUG
+                value: "false"
+              - key: DISABLE_SSL_VERIFY
+                value: "false"
+              - key: JSON_LOGS
+                value: "true"
+              - key: TIMEZONE
+                value: Asia/Kolkata
 
-  - type: worker
-    name: pr-agent-worker
-    runtime: python
-    pythonVersion: "3.12.0"
-    region: oregon
-    plan: starter
-    buildCommand: cd backend && pip install -r requirements.txt
-    startCommand: cd backend && exec python worker.py
-    envVars:
-      - key: APP_ENV
-        value: production
-      - key: PUBLIC_V2_ENABLED
-        sync: false
-      - key: REMINDER_WORKER_ENABLED
-        sync: false
-      - key: MESSAGE_CLEANUP_ENABLED
-        sync: false
-      - key: DATABASE_URL
-        sync: false
-      - key: TELEGRAM_BOT_TOKEN
-        sync: false
-      - key: GROQ_API_KEY
-        sync: false
-      - key: SENTRY_DSN
-        sync: false
-      - key: DEBUG
-        value: "false"
-      - key: DISABLE_SSL_VERIFY
-        value: "false"
-      - key: JSON_LOGS
-        value: "true"
+          - type: worker
+            name: pr-agent-staging-worker
+            runtime: docker
+            repo: https://github.com/ARPANPATRA111/PR-Agent
+            branch: public-v2
+            region: singapore
+            plan: starter
+            dockerfilePath: ./backend/Dockerfile
+            dockerContext: ./backend
+            dockerCommand: python worker.py
+            maxShutdownDelaySeconds: 60
+            autoDeployTrigger: checksPass
+            envVars:
+              - key: APP_ENV
+                value: staging
+              - key: APP_BASE_URL
+                value: https://pr-agent-staging-api.onrender.com
+              - key: FRONTEND_BASE_URL
+                value: https://pr-agent-staging-web.onrender.com
+              - key: PUBLIC_V2_ENABLED
+                value: "false"
+              - key: INVITE_ONLY
+                value: "true"
+              - key: AI_AGENT_ENABLED
+                value: "false"
+              - key: AI_PROVIDER
+                value: disabled
+              - key: REMINDER_WORKER_ENABLED
+                value: "false"
+              - key: MESSAGE_CLEANUP_ENABLED
+                value: "false"
+              - key: TELEGRAM_BOT_TOKEN
+                sync: false
+              - key: TELEGRAM_WEBHOOK_SECRET
+                generateValue: true
+              - key: TELEGRAM_WEBHOOK_URL
+                value: https://pr-agent-staging-api.onrender.com/webhook
+              - key: TELEGRAM_MINI_APP_URL
+                value: https://pr-agent-staging-web.onrender.com
+              - key: DATABASE_URL
+                sync: false
+              - key: SESSION_SIGNING_SECRET
+                generateValue: true
+              - key: CORS_ORIGINS
+                value: https://pr-agent-staging-web.onrender.com
+              - key: NUTRITION_PROVIDER
+                value: reference
+              - key: DEBUG
+                value: "false"
+              - key: DISABLE_SSL_VERIFY
+                value: "false"
+              - key: JSON_LOGS
+                value: "true"
+              - key: TIMEZONE
+                value: Asia/Kolkata
+
+          - type: web
+            name: pr-agent-staging-web
+            runtime: static
+            repo: https://github.com/ARPANPATRA111/PR-Agent
+            branch: public-v2
+            buildCommand: cd frontend && corepack enable && pnpm install --frozen-lockfile && pnpm build
+            staticPublishPath: ./frontend/out
+            autoDeployTrigger: checksPass
+            envVars:
+              - key: NEXT_PUBLIC_API_URL
+                value: https://pr-agent-staging-api.onrender.com
+            routes:
+              - type: rewrite
+                source: /*
+                destination: /index.html
+            headers:
+              - path: /*
+                name: X-Content-Type-Options
+                value: nosniff
+              - path: /*
+                name: Referrer-Policy
+                value: no-referrer
+              - path: /*
+                name: Permissions-Policy
+                value: camera=(), geolocation=(), microphone=()

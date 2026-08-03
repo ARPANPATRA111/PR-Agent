@@ -8,6 +8,8 @@ $env:TELEGRAM_BOT_TOKEN = "<secret from the platform vault>"
 $env:TELEGRAM_WEBHOOK_SECRET = "<random secret>"
 python scripts/setup_webhook.py https://staging-api.example.invalid
 python scripts/setup_webhook.py --info
+python scripts/register_bot_commands.py
+python scripts/register_bot_commands.py --verify-only
 ```
 
 Replace the placeholder URL only at execution time. The script registers

@@ -411,7 +411,9 @@ def test_food_without_quantity_stays_a_safe_draft(assistant_db):
                     "kind": "create_reminder",
                     "title": "Call the doctor",
                     "schedule_type": "once",
-                    "start_at_local": "2026-08-02T09:00:00",
+                    "start_at_local": (datetime.now(UTC) + timedelta(days=2))
+                    .replace(tzinfo=None)
+                    .isoformat(),
                     "timezone": "Asia/Kolkata",
                 },
             },

@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -13,6 +14,7 @@ from durable_worker import (
     DurableDeliveryStore,
     DurableWorker,
 )
+import worker as worker_entrypoint
 from public_models import (
     DigestDelivery,
     PublicBase,
@@ -22,6 +24,11 @@ from public_models import (
 )
 
 UTC = timezone.utc
+
+
+def future_clock() -> datetime:
+    """Return a stable test clock that remains ahead of wall-clock validation."""
+    return datetime.now(UTC).replace(microsecond=0) + timedelta(days=1)
 
 
 class FakeGateway:
@@ -98,9 +105,17 @@ def create_reminder(factory, owner_id, now, key, schedule_type="once"):
         return reminder.id
 
 
+@pytest.mark.asyncio
+async def test_disabled_worker_stays_idle(monkeypatch):
+    monkeypatch.setattr(worker_entrypoint.settings, "public_v2_enabled", False)
+    monkeypatch.setattr(worker_entrypoint.settings, "reminder_worker_enabled", False)
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(worker_entrypoint.main(), timeout=0.01)
+
+
 def test_claim_lease_prevents_two_workers_and_recovers_after_restart(delivery_db):
     factory, (owner_a, _) = delivery_db
-    now = datetime(2026, 8, 1, 10, tzinfo=UTC)
+    now = future_clock()
     create_reminder(factory, owner_a, now, "lease")
     first = DurableDeliveryStore(factory, lease_seconds=30)
     second = DurableDeliveryStore(factory, lease_seconds=30)
@@ -125,7 +140,7 @@ def test_claim_lease_prevents_two_workers_and_recovers_after_restart(delivery_db
 @pytest.mark.asyncio
 async def test_transient_timeout_retries_with_backoff_and_then_succeeds(delivery_db):
     factory, (owner_a, _) = delivery_db
-    now = datetime(2026, 8, 1, 10, tzinfo=UTC)
+    now = future_clock()
     create_reminder(factory, owner_a, now, "retry")
     clock = Clock(now)
     gateway = FakeGateway([DeliveryFailure("telegram_timeout"), 777])
@@ -154,7 +169,7 @@ async def test_transient_timeout_retries_with_backoff_and_then_succeeds(delivery
 @pytest.mark.asyncio
 async def test_permanent_telegram_error_is_dead_lettered(delivery_db):
     factory, (owner_a, _) = delivery_db
-    now = datetime(2026, 8, 1, 10, tzinfo=UTC)
+    now = future_clock()
     create_reminder(factory, owner_a, now, "blocked")
     gateway = FakeGateway([DeliveryFailure("telegram_403", permanent=True)])
     worker = DurableWorker(
@@ -175,7 +190,7 @@ async def test_permanent_telegram_error_is_dead_lettered(delivery_db):
 @pytest.mark.asyncio
 async def test_paused_edited_and_deleted_reminders_do_not_run(delivery_db):
     factory, (owner_a, _) = delivery_db
-    now = datetime(2026, 8, 1, 10, tzinfo=UTC)
+    now = future_clock()
     paused_id = create_reminder(factory, owner_a, now, "paused")
     edited_id = create_reminder(factory, owner_a, now, "edited")
     deleted_id = create_reminder(factory, owner_a, now, "deleted")
@@ -213,7 +228,7 @@ async def test_paused_edited_and_deleted_reminders_do_not_run(delivery_db):
 @pytest.mark.asyncio
 async def test_pause_after_claim_cancels_delivery_before_network_send(delivery_db):
     factory, (owner_a, _) = delivery_db
-    now = datetime(2026, 8, 1, 10, tzinfo=UTC)
+    now = future_clock()
     reminder_id = create_reminder(factory, owner_a, now, "pause-race")
     store = DurableDeliveryStore(factory)
     claim = store.claim_reminders(now)[0]
@@ -236,7 +251,7 @@ async def test_pause_after_claim_cancels_delivery_before_network_send(delivery_d
 
 def test_expired_final_attempt_is_dead_lettered_without_an_extra_send(delivery_db):
     factory, (owner_a, _) = delivery_db
-    now = datetime(2026, 8, 1, 10, tzinfo=UTC)
+    now = future_clock()
     create_reminder(factory, owner_a, now, "final-lease")
     store = DurableDeliveryStore(
         factory,

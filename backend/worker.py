@@ -25,12 +25,12 @@ from utils import setup_logging
 
 async def main() -> None:
     setup_logging()
-    if not settings.public_v2_enabled:
-        raise RuntimeError("PUBLIC_V2_ENABLED must be true for the durable worker")
-    if not settings.reminder_worker_enabled:
-        raise RuntimeError(
-            "REMINDER_WORKER_ENABLED must be true for the durable worker"
+    if not settings.public_v2_enabled or not settings.reminder_worker_enabled:
+        logging.getLogger(__name__).warning(
+            "Durable delivery worker is disabled and waiting for activation"
         )
+        await asyncio.Event().wait()
+        return
     if not settings.telegram_bot_token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is required for the durable worker")
     memory = get_memory_manager()

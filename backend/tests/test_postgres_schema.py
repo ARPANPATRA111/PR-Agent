@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -223,7 +223,7 @@ def test_two_postgres_workers_claim_one_occurrence():
     engine = create_engine(POSTGRES_TEST_URL, pool_pre_ping=True)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     telegram_id = 9_876_543_211
-    now = datetime(2026, 8, 1, 10, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(days=1)
     with factory() as session:
         session.execute(
             text("DELETE FROM app_users WHERE telegram_id = :telegram_id"),
@@ -238,7 +238,7 @@ def test_two_postgres_workers_claim_one_occurrence():
             ReminderCreate(
                 title="One delivery",
                 schedule_type="once",
-                start_at_local=datetime(2026, 8, 2, 10),
+                start_at_local=(now + timedelta(days=1)).replace(tzinfo=None),
                 timezone="UTC",
                 idempotency_key="postgres-worker-reminder",
             ),
