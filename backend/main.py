@@ -71,16 +71,21 @@ if settings.sentry_dsn:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting Weekly Progress Agent...")
+    logger.info("Starting PR-Agent Public Edition")
     legacy_scheduler = None
     inline_staging_loop = None
     inline_staging_task = None
+    app.state.inline_staging_loop = None
+    app.state.telegram_delivery_status = "disabled"
     try:
         memory = get_memory_manager()
         logger.info("Memory manager initialized")
 
         if settings.public_v2_enabled:
-            if settings.inline_staging_worker_enabled:
+            if (
+                settings.inline_staging_worker_enabled
+                and settings.telegram_integration_enabled
+            ):
                 from inline_staging_worker import build_inline_staging_loop
 
                 inline_staging_loop = build_inline_staging_loop()
@@ -91,6 +96,13 @@ async def lifespan(app: FastAPI):
                 )
                 logger.warning(
                     "Public-v2 free staging uses best-effort inline delivery"
+                )
+                app.state.telegram_delivery_status = "running"
+            elif settings.inline_staging_worker_enabled:
+                app.state.telegram_delivery_status = "awaiting_telegram"
+                logger.info(
+                    "Telegram integration is disabled; pending delivery records "
+                    "remain unclaimed until activation"
                 )
             else:
                 logger.info(
@@ -115,12 +127,12 @@ async def lifespan(app: FastAPI):
         logger.exception("Application startup failed")
         raise
 
-    logger.info("Weekly Progress Agent started successfully!")
+    logger.info("PR-Agent Public Edition started successfully")
 
     try:
         yield
     finally:
-        logger.info("Shutting down Weekly Progress Agent...")
+        logger.info("Shutting down PR-Agent Public Edition")
 
         if legacy_scheduler is not None:
             legacy_scheduler.shutdown()
@@ -297,9 +309,7 @@ async def root(request: Request, response: Response):
 @app.head("/health", tags=["Health"])
 @limiter.limit(RATE_LIMITS["health"])
 async def keep_alive_check(request: Request, response: Response):
-    """
-    Lightweight keep-alive endpoint for UptimeRobot.
-    """
+    """Lightweight liveness endpoint for platform health checks."""
     return Response(status_code=200)
 
 
@@ -329,9 +339,36 @@ async def readiness_check():
             status_code=503,
             content={"status": "not_ready", "database": "unavailable"},
         )
+    try:
+        revision = session.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one_or_none()
+    except Exception:
+        revision = "unversioned"
     finally:
         session.close()
-    return {"status": "ready", "database": "connected"}
+    return {
+        "status": "ready",
+        "database": "connected",
+        "migration_revision": revision,
+        "environment": settings.app_env,
+        "debug": settings.debug,
+        "components": {
+            "telegram": (
+                "enabled" if settings.telegram_integration_enabled else "disabled"
+            ),
+            "telegram_delivery": getattr(
+                app.state,
+                "telegram_delivery_status",
+                "disabled",
+            ),
+            "ai": "enabled" if settings.ai_agent_enabled else "disabled",
+            "nutrition_provider": settings.nutrition_provider,
+            "message_cleanup": (
+                "enabled" if settings.message_cleanup_enabled else "disabled"
+            ),
+        },
+    }
 
 
 @app.get("/internal/metrics", tags=["Operations"])
@@ -357,6 +394,11 @@ def internal_metrics(request: Request):
 async def telegram_webhook(
     request: Request, response: Response, background_tasks: BackgroundTasks
 ):
+    if not settings.telegram_integration_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="Telegram integration is disabled",
+        )
     configured_secret = settings.telegram_webhook_secret
     if not configured_secret:
         raise HTTPException(
@@ -498,6 +540,11 @@ def authenticate_telegram_mini_app(
     request: Request,
     response: Response,
 ):
+    if not settings.telegram_integration_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="Telegram integration is disabled",
+        )
     memory = get_memory_manager()
     remote_address = request.client.host if request.client else "unknown"
     subject_hash = hashlib.sha256(remote_address.encode("utf-8")).hexdigest()[:32]

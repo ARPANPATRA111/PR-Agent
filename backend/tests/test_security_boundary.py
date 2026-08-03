@@ -62,6 +62,7 @@ def secure_app(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(settings, "audio_temp_dir", str(tmp_path / "audio"))
     monkeypatch.setattr(settings, "telegram_bot_token", TEST_BOT_TOKEN)
+    monkeypatch.setattr(settings, "telegram_integration_enabled", True)
     monkeypatch.setattr(settings, "telegram_webhook_secret", TEST_WEBHOOK_SECRET)
     monkeypatch.setattr(settings, "session_signing_secret", TEST_SESSION_SECRET)
     monkeypatch.setattr(settings, "telegram_auth_max_age_seconds", 300)

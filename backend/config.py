@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     public_v2_enabled: bool = Field(
         default=False, description="Enable public-v2 application behavior"
     )
+    telegram_integration_enabled: bool = Field(
+        default=False,
+        description="Enable Telegram authentication, webhook, and delivery clients",
+    )
     invite_only: bool = Field(
         default=True,
         description="Require a claimed beta invite for public-v2 access",
@@ -415,15 +419,30 @@ class Settings(BaseSettings):
                     "Inline staging and dedicated reminder workers are mutually exclusive"
                 )
 
+        if not self.telegram_integration_enabled:
+            if self.message_cleanup_enabled:
+                raise ValueError(
+                    "MESSAGE_CLEANUP_ENABLED requires TELEGRAM_INTEGRATION_ENABLED"
+                )
+            if self.reminder_worker_enabled:
+                raise ValueError(
+                    "REMINDER_WORKER_ENABLED requires TELEGRAM_INTEGRATION_ENABLED"
+                )
+
         if self.app_env in {"staging", "production"}:
             required = {
                 "DATABASE_URL": self.database_url,
                 "SESSION_SIGNING_SECRET": self.session_signing_secret,
-                "TELEGRAM_BOT_TOKEN": self.telegram_bot_token,
-                "TELEGRAM_WEBHOOK_SECRET": self.telegram_webhook_secret,
-                "TELEGRAM_WEBHOOK_URL": self.telegram_webhook_url,
-                "TELEGRAM_MINI_APP_URL": self.telegram_mini_app_url,
             }
+            if self.telegram_integration_enabled:
+                required.update(
+                    {
+                        "TELEGRAM_BOT_TOKEN": self.telegram_bot_token,
+                        "TELEGRAM_WEBHOOK_SECRET": self.telegram_webhook_secret,
+                        "TELEGRAM_WEBHOOK_URL": self.telegram_webhook_url,
+                        "TELEGRAM_MINI_APP_URL": self.telegram_mini_app_url,
+                    }
+                )
             missing = [
                 name
                 for name, value in required.items()
@@ -450,18 +469,19 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "SESSION_SIGNING_SECRET must contain at least 32 characters"
                 )
-            if len(self.telegram_webhook_secret) < 16:
-                raise ValueError(
-                    "TELEGRAM_WEBHOOK_SECRET must contain at least 16 characters"
-                )
             if not self.app_base_url.startswith("https://"):
                 raise ValueError("Production APP_BASE_URL must use HTTPS")
             if not self.frontend_base_url.startswith("https://"):
                 raise ValueError("Production FRONTEND_BASE_URL must use HTTPS")
-            if not self.telegram_webhook_url.startswith("https://"):
-                raise ValueError("Production TELEGRAM_WEBHOOK_URL must use HTTPS")
-            if not self.telegram_mini_app_url.startswith("https://"):
-                raise ValueError("Production TELEGRAM_MINI_APP_URL must use HTTPS")
+            if self.telegram_integration_enabled:
+                if len(self.telegram_webhook_secret) < 16:
+                    raise ValueError(
+                        "TELEGRAM_WEBHOOK_SECRET must contain at least 16 characters"
+                    )
+                if not self.telegram_webhook_url.startswith("https://"):
+                    raise ValueError("Production TELEGRAM_WEBHOOK_URL must use HTTPS")
+                if not self.telegram_mini_app_url.startswith("https://"):
+                    raise ValueError("Production TELEGRAM_MINI_APP_URL must use HTTPS")
             if self.disable_ssl_verify:
                 raise ValueError("DISABLE_SSL_VERIFY is forbidden outside development")
             if self.debug:

@@ -26,6 +26,7 @@ def staging_settings(**overrides):
         "app_base_url": "https://pr-agent-r24-staging-api.onrender.com",
         "frontend_base_url": "https://pr-agent-r24-staging-web.onrender.com",
         "public_v2_enabled": True,
+        "telegram_integration_enabled": True,
         "inline_staging_worker_enabled": True,
         "database_url": "postgresql://staging.example.invalid/pr_agent",
         "session_signing_secret": "s" * 32,

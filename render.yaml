@@ -26,6 +26,8 @@ projects:
                 value: https://pr-agent-staging-web.onrender.com
               - key: PUBLIC_V2_ENABLED
                 value: "false"
+              - key: TELEGRAM_INTEGRATION_ENABLED
+                value: "true"
               - key: INVITE_ONLY
                 value: "true"
               - key: AI_AGENT_ENABLED
@@ -84,6 +86,8 @@ projects:
                 value: https://pr-agent-staging-web.onrender.com
               - key: PUBLIC_V2_ENABLED
                 value: "false"
+              - key: TELEGRAM_INTEGRATION_ENABLED
+                value: "true"
               - key: INVITE_ONLY
                 value: "true"
               - key: AI_AGENT_ENABLED

@@ -134,6 +134,8 @@ def build_inline_staging_loop() -> InlineStagingDeliveryLoop:
         raise RuntimeError("Inline staging delivery is disabled")
     if settings.app_env != "staging":
         raise RuntimeError("Inline staging delivery may run only in staging")
+    if not settings.telegram_integration_enabled:
+        raise RuntimeError("Telegram integration is disabled")
     if settings.reminder_worker_enabled:
         raise RuntimeError("Dedicated and inline delivery workers cannot run together")
     if not settings.telegram_bot_token:

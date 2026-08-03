@@ -71,8 +71,8 @@ async def telegram_call(token: str, method: str, payload: dict | None = None) ->
     return result
 
 
-async def run(*, verify_only: bool) -> int:
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+async def register_commands(token: str, *, verify_only: bool) -> int:
+    """Set and verify the canonical menu without logging credentials."""
     if not token or ":" not in token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is required")
     expected = [
@@ -86,6 +86,12 @@ async def run(*, verify_only: bool) -> int:
         raise RuntimeError("Telegram command menu does not match the public registry")
     print(f"registered_commands={len(actual)}")
     print("legacy_commands_present=false")
+    return len(actual)
+
+
+async def run(*, verify_only: bool) -> int:
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    await register_commands(token, verify_only=verify_only)
     return 0
 
 

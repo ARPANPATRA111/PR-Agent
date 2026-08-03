@@ -135,6 +135,7 @@ docs/*
 !docs/DURABLE_WORKER.md
 !docs/PRIVACY_LIFECYCLE.md
 !docs/BOUNDED_ASSISTANT.md
+!docs/REMAINING_WORK_AUDIT.md
 changelog.md
 docker-compose.override.yml
 docker-compose.prod.yml

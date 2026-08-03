@@ -27,6 +27,8 @@ projects:
                 value: "true"
               - key: INVITE_ONLY
                 value: "true"
+              - key: TELEGRAM_INTEGRATION_ENABLED
+                value: "false"
               - key: INLINE_STAGING_WORKER_ENABLED
                 value: "true"
               - key: INLINE_STAGING_POLL_INTERVAL_SECONDS
@@ -43,10 +45,6 @@ projects:
                 value: disabled
               - key: NUTRITION_PROVIDER
                 value: disabled
-              - key: TELEGRAM_BOT_TOKEN
-                sync: false
-              - key: TELEGRAM_WEBHOOK_SECRET
-                generateValue: true
               - key: TELEGRAM_WEBHOOK_URL
                 value: https://pr-agent-r24-staging-api.onrender.com/webhook
               - key: TELEGRAM_MINI_APP_URL

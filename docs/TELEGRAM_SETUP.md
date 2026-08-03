@@ -25,15 +25,17 @@ BotFather navigation:
 ```powershell
 $env:TELEGRAM_BOT_TOKEN = "<secret from the platform vault>"
 $env:TELEGRAM_WEBHOOK_SECRET = "<random secret>"
-python scripts/setup_webhook.py https://staging-api.example.invalid
-python scripts/setup_webhook.py --info
-python scripts/register_bot_commands.py
-python scripts/register_bot_commands.py --verify-only
+python scripts/activate_staging_bot.py --dry-run
+python scripts/activate_staging_bot.py --status
+python scripts/activate_staging_bot.py
 ```
 
-Replace the placeholder URL only at execution time. The script registers
-`/webhook`, restricts updates to messages, and sends Telegram's secret-token
-header configuration.
+The coordinator accepts only the independently named `r24` staging API, refuses
+the retired and production-looking URLs, never prints credentials, registers
+the canonical public command menu, configures `/webhook`, and verifies both.
+Add the same token and secret to the API service and switch
+`TELEGRAM_INTEGRATION_ENABLED=true` before activation. Keep
+`MESSAGE_CLEANUP_ENABLED=false` until the privacy checklist has been exercised.
 
 Rollback to a previous healthy API by running the setup command with that
 API's HTTPS base URL. To stop delivery without discarding pending Telegram

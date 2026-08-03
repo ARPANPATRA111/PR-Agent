@@ -26,12 +26,14 @@ def test_free_blueprint_contains_only_free_api_and_static_site():
 
     environment = {item["key"]: item.get("value") for item in services[0]["envVars"]}
     assert environment["PUBLIC_V2_ENABLED"] == "true"
+    assert environment["TELEGRAM_INTEGRATION_ENABLED"] == "false"
     assert environment["INLINE_STAGING_WORKER_ENABLED"] == "true"
     assert environment["REMINDER_WORKER_ENABLED"] == "false"
     assert environment["AI_AGENT_ENABLED"] == "false"
     assert environment["AI_PROVIDER"] == "disabled"
     assert environment["NUTRITION_PROVIDER"] == "disabled"
     assert environment["MESSAGE_CLEANUP_ENABLED"] == "false"
+    assert "TELEGRAM_BOT_TOKEN" not in environment
 
 
 def test_production_blueprint_keeps_dedicated_worker():
