@@ -22,8 +22,8 @@ def test_free_blueprint_contains_only_free_api_and_static_site():
     assert services[0]["plan"] == "free"
     assert services[1]["runtime"] == "static"
     assert "plan" not in services[1]
-    assert "alembic upgrade head" in services[0]["dockerCommand"]
-    assert "$PORT" in services[0]["dockerCommand"]
+    assert services[0]["dockerCommand"] == "python render_start.py"
+    assert (REPOSITORY_ROOT / "backend" / "render_start.py").is_file()
     assert (REPOSITORY_ROOT / "backend" / "Dockerfile").is_file()
     assert (REPOSITORY_ROOT / "backend" / "migrations").is_dir()
     assert (REPOSITORY_ROOT / "frontend" / "next.config.js").is_file()

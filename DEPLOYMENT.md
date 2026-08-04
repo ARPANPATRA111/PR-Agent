@@ -58,9 +58,9 @@ If the services are created separately with the Render CLI, its static-site
 creation command does not expose header or rewrite flags. Before accepting the
 deployment, add the three tracked `headers` rules and the `/* -> /index.html`
 rewrite from `render.free.yaml` in the static site's dashboard. The verification
-script fails closed when any of them is absent. The CLI also does not accept a
-Docker Command override; copy the tracked `dockerCommand` into the free API's
-dashboard settings so every deploy runs migrations before starting Uvicorn.
+script fails closed when any of them is absent. The tracked API `dockerCommand`
+runs `render_start.py`, which upgrades Alembic and then replaces itself with
+Uvicorn without shell quoting ambiguity.
 
 Do not add database write/delete cron jobs or self-pings as keep-alive
 mechanisms. See [availability and scale-to-zero](docs/AVAILABILITY.md) and the

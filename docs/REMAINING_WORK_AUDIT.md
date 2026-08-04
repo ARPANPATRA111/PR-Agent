@@ -85,10 +85,8 @@ Owner-authored untracked documents were excluded and left unchanged.
 
 ## External activation (5)
 
-1. Complete the dashboard-only manual configuration: add the static site's
-   `/* -> /index.html` rewrite and missing `Referrer-Policy` and
-   `Permissions-Policy` response headers, then set the API's Docker Command to
-   the migration-and-Uvicorn command tracked in `render.free.yaml`.
+1. Revalidate the live Blueprint-managed API after the migration-first Python
+   entrypoint sync reaches `live`.
 2. Verify the live API and static site with the deployment diagnostic.
 3. Create a distinct staging bot in BotFather, configure its Mini App URL, and
    store its token/secret in Render before enabling Telegram.
@@ -110,10 +108,10 @@ Owner-authored untracked documents were excluded and left unchanged.
   Live validation found the `/* -> /index.html` rewrite, `Referrer-Policy`, and
   `Permissions-Policy` missing. Render documents those settings as dashboard
   configuration, so this is the remaining `MANUAL SERVICE CONFIGURATION` block.
-- Render CLI also rejects `--start-command` for Docker runtimes, leaving the
-  service's Docker Command empty. The current database revision is correct and
-  readiness passes, but the tracked migration-and-Uvicorn Docker Command must
-  be copied into the API dashboard before future deployments are accepted.
+- The first Blueprint-managed Docker Command used nested shell quoting and
+  produced an `update_failed` attempt even though the prior instance remained
+  healthy. It is replaced by the provider-independent `render_start.py`
+  entrypoint, which runs Alembic and then `exec`s Uvicorn directly.
 - The exact payment prompt and triggering preview row are not available through
   the CLI and have not been captured. Its root cause remains unconfirmed until
   the flattened dashboard preview explicitly shows both resources at `$0` or
