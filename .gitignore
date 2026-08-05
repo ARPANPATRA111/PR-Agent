@@ -138,6 +138,7 @@ docs/*
 !docs/BOUNDED_ASSISTANT.md
 !docs/REMAINING_WORK_AUDIT.md
 !docs/KEEP_ALIVE.md
+!docs/PUBLIC_LAUNCH.md
 changelog.md
 docker-compose.override.yml
 docker-compose.prod.yml
