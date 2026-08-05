@@ -173,9 +173,7 @@ class DomainServices:
             self.session.add(
                 ScheduledDigest(
                     owner_id=owner.id,
-                    timezone=(
-                        preference.timezone if preference else settings.timezone
-                    ),
+                    timezone=(preference.timezone if preference else settings.timezone),
                     weekday=6,
                     scheduled_local_time="20:00:00",
                     enabled=False,

@@ -896,14 +896,36 @@ class BoundedAssistant:
     @staticmethod
     def _major_amount(amount_minor: int, currency: str) -> str:
         zero_decimal = {
-            "BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW",
-            "PYG", "RWF", "UGX", "UYI", "VND", "VUV", "XAF", "XOF",
+            "BIF",
+            "CLP",
+            "DJF",
+            "GNF",
+            "ISK",
+            "JPY",
+            "KMF",
+            "KRW",
+            "PYG",
+            "RWF",
+            "UGX",
+            "UYI",
+            "VND",
+            "VUV",
+            "XAF",
+            "XOF",
             "XPF",
         }
         three_decimal = {
-            "BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND",
+            "BHD",
+            "IQD",
+            "JOD",
+            "KWD",
+            "LYD",
+            "OMR",
+            "TND",
         }
-        digits = 0 if currency in zero_decimal else 3 if currency in three_decimal else 2
+        digits = (
+            0 if currency in zero_decimal else 3 if currency in three_decimal else 2
+        )
         return f"{Decimal(amount_minor) / (Decimal(10) ** digits):f}"
 
     @staticmethod
