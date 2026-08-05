@@ -123,6 +123,19 @@ def test_voice_metadata_limits(monkeypatch):
         )
 
 
+def test_groq_upload_descriptor_normalizes_telegram_oga():
+    import utils
+
+    assert utils.groq_audio_upload_descriptor("/tmp/telegram-voice.oga") == (
+        "voice.ogg",
+        "audio/ogg",
+    )
+    assert utils.groq_audio_upload_descriptor("/tmp/telegram-voice.opus") == (
+        "voice.opus",
+        "audio/opus",
+    )
+
+
 @pytest.mark.asyncio
 async def test_voice_temp_file_is_deleted_after_provider_failure(
     tmp_path,

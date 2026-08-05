@@ -710,6 +710,17 @@ class BotHandler(DeterministicCommandMixin):
                 message.voice.file_id,
                 settings.telegram_bot_token,
             )
+        except Exception:
+            logger.exception(
+                "Bounded voice transcription failed",
+                extra={"voice_stage": "transcription"},
+            )
+            await self.telegram.send_message(
+                message.chat.get("id"),
+                "I could not transcribe that voice note. No action was taken.",
+            )
+            return
+        try:
             reply = await asyncio.to_thread(
                 self._get_bounded_assistant().handle,
                 self._actor(message),
@@ -724,7 +735,10 @@ class BotHandler(DeterministicCommandMixin):
                 "The assistant is unavailable. Slash commands still work.",
             )
         except Exception:
-            logger.exception("Bounded voice handling failed")
+            logger.exception(
+                "Bounded voice intent handling failed",
+                extra={"voice_stage": "intent"},
+            )
             await self.telegram.send_message(
                 message.chat.get("id"),
                 "I could not process that voice note. No action was taken.",

@@ -4,7 +4,7 @@ import json
 import tempfile
 from pathlib import Path
 from typing import Optional, Tuple
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import asyncio
 
 import httpx
@@ -14,6 +14,17 @@ from config import settings
 logger = logging.getLogger(__name__)
 
 ALLOWED_VOICE_SUFFIXES = {".ogg", ".oga", ".opus", ".mp3", ".m4a", ".wav", ".webm"}
+GROQ_UPLOAD_SUFFIXES = {
+    ".oga": ".ogg",
+}
+GROQ_AUDIO_CONTENT_TYPES = {
+    ".ogg": "audio/ogg",
+    ".opus": "audio/opus",
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".wav": "audio/wav",
+    ".webm": "audio/webm",
+}
 ALLOWED_VOICE_MIME_TYPES = {
     "audio/ogg",
     "audio/opus",
@@ -121,12 +132,25 @@ def cleanup_audio_files(*file_paths: str) -> None:
             logger.warning("Temporary voice cleanup failed")
 
 
+def groq_audio_upload_descriptor(audio_path: str) -> tuple[str, str]:
+    """Return a provider-supported filename and content type.
+
+    Telegram commonly names Ogg/Opus voice notes with an ``.oga`` suffix,
+    while Groq accepts the same container only when uploaded as ``.ogg``.
+    """
+    source_suffix = Path(audio_path).suffix.lower()
+    upload_suffix = GROQ_UPLOAD_SUFFIXES.get(source_suffix, source_suffix)
+    if upload_suffix not in GROQ_AUDIO_CONTENT_TYPES:
+        raise ValueError("That voice file type is not supported.")
+    return f"voice{upload_suffix}", GROQ_AUDIO_CONTENT_TYPES[upload_suffix]
+
+
 async def transcribe_audio_groq(audio_path: str) -> str:
     """Transcribe one bounded temporary audio file."""
     audio_bytes = await asyncio.to_thread(Path(audio_path).read_bytes)
     if len(audio_bytes) > settings.max_voice_file_size:
         raise ValueError("That voice note is larger than the supported limit.")
-    suffix = Path(audio_path).suffix.lower()
+    upload_name, content_type = groq_audio_upload_descriptor(audio_path)
     last_error: Exception | None = None
     for attempt in range(settings.voice_provider_max_attempts):
         try:
@@ -139,9 +163,9 @@ async def transcribe_audio_groq(audio_path: str) -> str:
                         headers={"Authorization": f"Bearer {settings.groq_api_key}"},
                         files={
                             "file": (
-                                f"voice{suffix}",
+                                upload_name,
                                 audio_bytes,
-                                "application/octet-stream",
+                                content_type,
                             ),
                             "model": (None, settings.whisper_model),
                         },
@@ -159,6 +183,20 @@ async def transcribe_audio_groq(audio_path: str) -> str:
                 return transcript
         except (httpx.HTTPError, asyncio.TimeoutError, RuntimeError) as exc:
             last_error = exc
+            provider_status = (
+                exc.response.status_code
+                if isinstance(exc, httpx.HTTPStatusError)
+                else None
+            )
+            logger.warning(
+                "Voice transcription attempt failed",
+                extra={
+                    "attempt": attempt + 1,
+                    "exception_type": type(exc).__name__,
+                    "provider_status_code": provider_status,
+                    "upload_suffix": Path(upload_name).suffix,
+                },
+            )
             if attempt + 1 < settings.voice_provider_max_attempts:
                 await asyncio.sleep(0.5 * (attempt + 1))
     raise RuntimeError("Voice transcription failed.") from last_error
@@ -364,9 +402,6 @@ def get_week_boundaries(
     week_end = week_end.replace(hour=23, minute=59, second=59, microsecond=999999)
 
     return week_start, week_end
-
-
-from datetime import timedelta
 
 
 def get_day_boundaries(
