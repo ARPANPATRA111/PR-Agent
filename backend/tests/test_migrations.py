@@ -14,7 +14,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from config import Settings
-from public_models import LedgerEntry, NutritionItem, NutritionLog, PublicUser
+from public_models import (
+    LedgerEntry,
+    NutritionItem,
+    NutritionLog,
+    PublicUser,
+    WorkerHeartbeat,
+)
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 PUBLIC_TABLES = {
@@ -247,6 +253,18 @@ def test_unique_foreign_keys_precision_timezone_and_indexes(migrated_engine):
             index["column_names"] and index["column_names"][0] == "owner_id"
             for index in indexes
         ), table_name
+
+
+def test_worker_heartbeat_accepts_stopped_state(migrated_engine):
+    with Session(migrated_engine) as session:
+        session.add(
+            WorkerHeartbeat(
+                worker_name="test-worker",
+                instance_id="test-instance",
+                status="stopped",
+            )
+        )
+        session.commit()
 
 
 def test_test_and_application_databases_must_differ():

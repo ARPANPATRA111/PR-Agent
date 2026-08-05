@@ -896,7 +896,7 @@ class WorkerHeartbeat(PublicBase):
             name="uq_worker_heartbeats_worker_instance",
         ),
         CheckConstraint(
-            "status IN ('starting', 'running', 'stopping', 'failed')",
+            "status IN ('starting', 'running', 'stopping', 'stopped', 'failed')",
             name="status_supported",
         ),
         Index(
