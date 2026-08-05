@@ -41,10 +41,12 @@ For the free API, migrations run in the single container startup command before
 Uvicorn starts. Keep one instance. The existing staging Neon project is supplied
 only through Render's secret store. AI, voice transcription, external nutrition
 estimation, message cleanup, and paid monitoring remain disabled initially.
-Telegram is also disabled for the pre-bot deployment: the Blueprint sets
-`TELEGRAM_INTEGRATION_ENABLED=false` and does not request a bot token. In this
-state `/ready` reports `awaiting_telegram`, the webhook and Mini App
-authentication return 503, and no delivery or cleanup client is constructed.
+The first pre-bot deployment used `TELEGRAM_INTEGRATION_ENABLED=false`; in that
+state `/ready` reported `awaiting_telegram`, the webhook and Mini App
+authentication returned 503, and no delivery or cleanup client was constructed.
+After the staging bot is provisioned, the Blueprint enables Telegram and keeps
+`TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET` as `sync: false` placeholders.
+Their values remain only in Render's secret store and are never committed.
 
 After deployment, verify the exact new URLs without Telegram credentials:
 

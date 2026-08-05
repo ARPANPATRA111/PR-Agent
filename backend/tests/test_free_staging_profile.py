@@ -30,14 +30,25 @@ def test_free_blueprint_contains_only_free_api_and_static_site():
 
     environment = {item["key"]: item.get("value") for item in services[0]["envVars"]}
     assert environment["PUBLIC_V2_ENABLED"] == "true"
-    assert environment["TELEGRAM_INTEGRATION_ENABLED"] == "false"
+    assert environment["TELEGRAM_INTEGRATION_ENABLED"] == "true"
     assert environment["INLINE_STAGING_WORKER_ENABLED"] == "true"
     assert environment["REMINDER_WORKER_ENABLED"] == "false"
     assert environment["AI_AGENT_ENABLED"] == "false"
     assert environment["AI_PROVIDER"] == "disabled"
     assert environment["NUTRITION_PROVIDER"] == "disabled"
     assert environment["MESSAGE_CLEANUP_ENABLED"] == "false"
-    assert "TELEGRAM_BOT_TOKEN" not in environment
+    secret_entries = {
+        item["key"]: item
+        for item in services[0]["envVars"]
+        if item["key"] in {"TELEGRAM_BOT_TOKEN", "TELEGRAM_WEBHOOK_SECRET"}
+    }
+    assert secret_entries == {
+        "TELEGRAM_BOT_TOKEN": {"key": "TELEGRAM_BOT_TOKEN", "sync": False},
+        "TELEGRAM_WEBHOOK_SECRET": {
+            "key": "TELEGRAM_WEBHOOK_SECRET",
+            "sync": False,
+        },
+    }
 
 
 def test_free_blueprint_structurally_rejects_billable_resources():

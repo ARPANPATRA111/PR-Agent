@@ -29,7 +29,11 @@ services:
       - key: INVITE_ONLY
         value: "true"
       - key: TELEGRAM_INTEGRATION_ENABLED
-        value: "false"
+        value: "true"
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
       - key: INLINE_STAGING_WORKER_ENABLED
         value: "true"
       - key: INLINE_STAGING_POLL_INTERVAL_SECONDS
