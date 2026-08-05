@@ -1,8 +1,11 @@
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import List, Literal, Optional
 from pydantic_settings import BaseSettings
 from pydantic import Field, model_validator
+
+TELEGRAM_WEBHOOK_SECRET_PATTERN = re.compile(r"^[A-Za-z0-9_-]{16,256}$")
 
 
 def find_env_file() -> Optional[str]:
@@ -474,9 +477,12 @@ class Settings(BaseSettings):
             if not self.frontend_base_url.startswith("https://"):
                 raise ValueError("Production FRONTEND_BASE_URL must use HTTPS")
             if self.telegram_integration_enabled:
-                if len(self.telegram_webhook_secret) < 16:
+                if not TELEGRAM_WEBHOOK_SECRET_PATTERN.fullmatch(
+                    self.telegram_webhook_secret
+                ):
                     raise ValueError(
-                        "TELEGRAM_WEBHOOK_SECRET must contain at least 16 characters"
+                        "TELEGRAM_WEBHOOK_SECRET must contain 16-256 characters "
+                        "using only letters, digits, underscores, and hyphens"
                     )
                 if not self.telegram_webhook_url.startswith("https://"):
                     raise ValueError("Production TELEGRAM_WEBHOOK_URL must use HTTPS")

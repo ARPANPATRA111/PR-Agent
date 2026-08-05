@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import re
 import sys
 from pathlib import Path
 from urllib.parse import urlparse
@@ -19,6 +20,7 @@ from setup_webhook import get_webhook_info, set_webhook
 
 EXPECTED_HOST = "pr-agent-r24-staging-api.onrender.com"
 RETIRED_HOST = "pr-agent-staging-api.onrender.com"
+WEBHOOK_SECRET_PATTERN = re.compile(r"^[A-Za-z0-9_-]{16,256}$")
 
 
 def validate_staging_api_url(value: str) -> str:
@@ -37,6 +39,15 @@ def required_secret(name: str) -> str:
     value = os.environ.get(name, "")
     if not value:
         raise RuntimeError(f"{name} is required through protected configuration")
+    return value
+
+
+def validate_webhook_secret(value: str) -> str:
+    if not WEBHOOK_SECRET_PATTERN.fullmatch(value):
+        raise RuntimeError(
+            "TELEGRAM_WEBHOOK_SECRET must contain 16-256 characters using only "
+            "letters, digits, underscores, and hyphens"
+        )
     return value
 
 
@@ -98,9 +109,7 @@ def main() -> int:
         if args.status:
             asyncio.run(status(token))
         else:
-            secret = required_secret("TELEGRAM_WEBHOOK_SECRET")
-            if len(secret) < 16:
-                raise RuntimeError("TELEGRAM_WEBHOOK_SECRET is too short")
+            secret = validate_webhook_secret(required_secret("TELEGRAM_WEBHOOK_SECRET"))
             asyncio.run(activate(api_url, token, secret))
         return 0
     except (RuntimeError, ValueError) as exc:

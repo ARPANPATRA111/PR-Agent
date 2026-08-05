@@ -49,6 +49,22 @@ def test_activation_dry_run_never_prints_secrets(monkeypatch, capsys):
     assert "mutation_planned=false" in output.out
 
 
+@pytest.mark.parametrize(
+    "secret",
+    ["too-short", "invalid secret value!", "x" * 257],
+)
+def test_activation_rejects_invalid_webhook_secret(secret):
+    module = load_script("activate_staging_bot.py")
+    with pytest.raises(RuntimeError, match="TELEGRAM_WEBHOOK_SECRET"):
+        module.validate_webhook_secret(secret)
+
+
+def test_activation_accepts_url_safe_webhook_secret():
+    module = load_script("activate_staging_bot.py")
+    secret = "valid_Webhook-Secret_1234567890"
+    assert module.validate_webhook_secret(secret) == secret
+
+
 def test_deployment_diagnostic_checks_pre_bot_profile(monkeypatch):
     module = load_script("verify_staging_deployment.py")
     api = "https://pr-agent-r24-staging-api.onrender.com"

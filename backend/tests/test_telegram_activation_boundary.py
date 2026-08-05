@@ -38,6 +38,24 @@ def test_enabling_telegram_requires_all_credentials():
         staging_settings(telegram_integration_enabled=True)
 
 
+@pytest.mark.parametrize(
+    "secret",
+    ["too-short", "invalid secret value!", "x" * 257],
+)
+def test_enabling_telegram_rejects_invalid_webhook_secret(secret):
+    with pytest.raises(
+        ValidationError,
+        match="telegram_webhook_secret|TELEGRAM_WEBHOOK_SECRET",
+    ):
+        staging_settings(
+            telegram_integration_enabled=True,
+            telegram_bot_token="123456:valid-test-token",
+            telegram_webhook_secret=secret,
+            telegram_webhook_url="https://staging.example.invalid/webhook",
+            telegram_mini_app_url="https://staging.example.invalid",
+        )
+
+
 def test_cleanup_and_dedicated_delivery_require_telegram():
     with pytest.raises(ValidationError, match="MESSAGE_CLEANUP_ENABLED"):
         staging_settings(message_cleanup_enabled=True)
