@@ -35,6 +35,7 @@ htmlcov/
 .tox/
 .nox/
 coverage.xml
+*.md
 *.cover
 *.py,cover
 .hypothesis/
@@ -156,3 +157,10 @@ dp.md
 # Personal legacy material stays available in the safety tag and the owner's
 # local workspace, but must not be included in public-v2 commits.
 OldProgress.txt
+
+# Local planning and handoff notes. These stay in the owner's workspace and
+# must never reach the public repository or a deployed build.
+PROJECT_HANDOFF_CONTEXT.txt
+VOICE_CAPABILITY_TEST_PLAN.txt
+*_HANDOFF_*.txt
+*_TEST_PLAN.txt
