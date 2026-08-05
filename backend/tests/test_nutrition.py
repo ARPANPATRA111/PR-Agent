@@ -346,11 +346,11 @@ def test_groq_provider_validates_estimates_with_inferred_serving_assumptions():
                 "protein_grams": 7,
                 "carbohydrate_grams": 42,
                 "fat_grams": 10,
-                "visible_assumptions": ["One medium homemade paratha."],
+                "visible_assumptions": "One medium homemade paratha.",
                 "confidence": 0.72,
             }
         ],
-        "visible_assumptions": ["One medium homemade paratha."],
+        "visible_assumptions": "One medium homemade paratha.",
         "confidence": 0.72,
         "clarification_required": False,
         "clarification_question": None,
