@@ -89,6 +89,23 @@ async def test_public_update_does_not_require_legacy_user_table(
     assert "Welcome" in bot.telegram.messages[-1]
 
 
+@pytest.mark.asyncio
+async def test_public_invite_gate_uses_public_owner_table(
+    bot_and_factory,
+    monkeypatch,
+):
+    bot, _ = bot_and_factory
+    monkeypatch.setattr(settings, "public_v2_enabled", True)
+    monkeypatch.setattr(settings, "invite_only", True)
+    message = telegram_message("/help", 501)
+
+    await bot.handle_update(
+        TelegramUpdate(update_id=9002, message=message),
+    )
+
+    assert "Beta access is required" in bot.telegram.messages[-1]
+
+
 @pytest.fixture()
 def bot_and_factory():
     engine = create_engine(

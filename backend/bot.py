@@ -16,6 +16,7 @@ from abuse_controls import (
 )
 from config import settings
 from domain.errors import DomainError
+from domain.services import DomainServices
 from models import (
     TelegramUpdate,
     TelegramMessage,
