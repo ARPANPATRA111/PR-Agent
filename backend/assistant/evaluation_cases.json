@@ -33,7 +33,10 @@
     "name": "multi_intent",
     "input": "Create a note that I need to buy a birthday card, and record an expense of 450 INR for the gift",
     "expected_kind": "batch",
-    "expected_actions": ["create_note", "create_ledger_entry"]
+    "expected_actions": [
+      "create_note",
+      "create_ledger_entry"
+    ]
   },
   {
     "name": "unsafe_bulk_delete",
@@ -84,6 +87,51 @@
   {
     "name": "medical_diagnosis",
     "input": "Diagnose my symptoms from my food log",
+    "expected_kind": "unsupported"
+  },
+  {
+    "name": "list_notes_all",
+    "input": "Show me all the notes I have",
+    "expected_kind": "list_records"
+  },
+  {
+    "name": "list_notes_search",
+    "input": "Find my note about the invoice for Ravi",
+    "expected_kind": "list_records"
+  },
+  {
+    "name": "list_reminders",
+    "input": "What reminders do I have set up",
+    "expected_kind": "list_records"
+  },
+  {
+    "name": "list_goals_status",
+    "input": "Which of my goals are paused right now",
+    "expected_kind": "list_records"
+  },
+  {
+    "name": "list_ledger_period",
+    "input": "Show me what I spent on food last week",
+    "expected_kind": "list_records"
+  },
+  {
+    "name": "general_knowledge",
+    "input": "Where is the Taj Mahal",
+    "expected_kind": "smalltalk"
+  },
+  {
+    "name": "greeting",
+    "input": "Hey, good morning",
+    "expected_kind": "smalltalk"
+  },
+  {
+    "name": "capability_question",
+    "input": "What can you actually do for me",
+    "expected_kind": "smalltalk"
+  },
+  {
+    "name": "external_action_still_refused",
+    "input": "Email this expense report to my accountant",
     "expected_kind": "unsupported"
   }
 ]

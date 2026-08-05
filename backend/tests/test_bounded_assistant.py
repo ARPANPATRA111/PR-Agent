@@ -678,4 +678,13 @@ def test_versioned_evaluation_corpus_covers_security_and_ambiguity():
         "hidden_reasoning",
         "third_party_message",
         "medical_diagnosis",
+        "list_notes_all",
+        "list_notes_search",
+        "list_reminders",
+        "list_goals_status",
+        "list_ledger_period",
+        "general_knowledge",
+        "greeting",
+        "capability_question",
+        "external_action_still_refused",
     } <= names

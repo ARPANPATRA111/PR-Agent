@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from abuse_controls import QuotaExceeded, QuotaService
 from assistant.providers import IntentProvider
 from assistant.schemas import (
+    READ_ONLY_ACTIONS,
     AgentProposal,
     ClarificationAction,
     CreateGoalAction,
@@ -26,7 +27,9 @@ from assistant.schemas import (
     CreateReminderAction,
     CreateWorkLogAction,
     DeleteRecordAction,
+    ListRecordsAction,
     QueryAction,
+    SmalltalkAction,
     UnsupportedAction,
 )
 from domain.errors import DomainError, RecordNotFound
@@ -513,7 +516,14 @@ class BoundedAssistant:
                 prompt=clarification.question,
                 replace_existing=replace_existing,
             )
-        if proposal.confidence < self.min_confidence:
+        # Reading owned records or answering conversationally cannot change
+        # anything, so neither the review step nor the confidence floor applies.
+        # Both exist to protect writes, and applying them here only forces a
+        # button tap between the user and an answer they already asked for.
+        read_only = all(isinstance(action, READ_ONLY_ACTIONS) for action in actions)
+        uncertain = proposal.confidence < self.min_confidence
+
+        if uncertain and not read_only and not review_required:
             arguments = (
                 actions[0].model_dump(mode="json")
                 if len(actions) == 1
@@ -537,7 +547,11 @@ class BoundedAssistant:
                 ),
                 replace_existing=replace_existing,
             )
-        if review_required or len(actions) > 1:
+        if not read_only and (review_required or len(actions) > 1):
+            # A reviewed request that the provider was unsure about still goes
+            # to the user rather than to a dead end: nothing is saved until the
+            # proposal is read and confirmed, so showing it is safe and is far
+            # more useful than discarding a usable transcript.
             return self._pending(
                 owner_id,
                 run_id,
@@ -550,7 +564,15 @@ class BoundedAssistant:
                     "actions": [action.model_dump(mode="json") for action in actions],
                 },
                 missing_fields=[],
-                prompt=self._review_prompt(actions),
+                prompt=self._review_prompt(actions, uncertain=uncertain),
+                replace_existing=replace_existing,
+            )
+        if len(actions) > 1:
+            return self._execute_read_only_batch(
+                owner_id,
+                run_id,
+                idempotency_key,
+                actions,
                 replace_existing=replace_existing,
             )
         action = actions[0]
@@ -579,7 +601,7 @@ class BoundedAssistant:
         )
 
     @staticmethod
-    def _review_prompt(actions) -> str:
+    def _review_prompt(actions, *, uncertain: bool = False) -> str:
         def short(value, limit: int = 180) -> str:
             normalized = " ".join(str(value).split())
             return (
@@ -588,7 +610,14 @@ class BoundedAssistant:
                 else normalized[: limit - 1] + "…"
             )
 
-        lines = ["I understood the following. No changes have been made yet:"]
+        lines = [
+            (
+                "I am not fully sure I understood this. Here is my best reading — "
+                "nothing has been saved yet:"
+                if uncertain
+                else "I understood the following. No changes have been made yet:"
+            )
+        ]
         for index, action in enumerate(actions, start=1):
             if isinstance(action, CreateWorkLogAction):
                 summary = f"Work log — {short(action.text)}"
@@ -610,6 +639,10 @@ class BoundedAssistant:
                 summary = f"Goal — {short(action.title)}"
             elif isinstance(action, QueryAction):
                 summary = f"Read {action.query_type} summary"
+            elif isinstance(action, ListRecordsAction):
+                summary = f"List {action.record_type.replace('_', ' ')} records"
+            elif isinstance(action, SmalltalkAction):
+                summary = f"Reply — {short(action.answer)}"
             elif isinstance(action, DeleteRecordAction):
                 summary = (
                     f"Delete {action.record_type.replace('_', ' ')} "
@@ -680,6 +713,68 @@ class BoundedAssistant:
                 run.completed_at_utc = self.clock()
             session.commit()
             return reply
+
+    def _execute_read_only_batch(
+        self,
+        owner_id: int,
+        run_id: int,
+        idempotency_key: str,
+        actions,
+        *,
+        replace_existing: bool,
+    ) -> AssistantReply:
+        """Answer several read-only intentions in one turn without a review."""
+        with self.session_factory() as session:
+            record = (
+                session.query(AgentAction)
+                .filter(
+                    AgentAction.owner_id == owner_id,
+                    AgentAction.idempotency_key == idempotency_key,
+                )
+                .one_or_none()
+            )
+            if record is None:
+                record = AgentAction(
+                    run_id=run_id,
+                    owner_id=owner_id,
+                    action_type="batch",
+                    status="proposed",
+                    idempotency_key=idempotency_key,
+                    argument_fields=[],
+                )
+                session.add(record)
+                session.flush()
+            elif not replace_existing:
+                return AssistantReply("That update was already processed.", "completed")
+            service = DomainServices(session)
+            sections: list[str] = []
+            try:
+                for index, action in enumerate(actions, start=1):
+                    reply = self._execute_tool(
+                        service,
+                        owner_id,
+                        f"{idempotency_key}:{index}",
+                        action,
+                    )
+                    sections.append(reply.text)
+            except (DomainError, ValueError) as exc:
+                record.status = "failed"
+                record.safe_error_category = type(exc).__name__
+                run = session.get(AgentRun, run_id)
+                if run:
+                    run.status = "failed"
+                    run.safe_error_category = type(exc).__name__
+                    run.completed_at_utc = self.clock()
+                session.commit()
+                return AssistantReply(escape(str(exc)), "failed")
+            record.status = "executed"
+            record.completed_at_utc = self.clock()
+            run = session.get(AgentRun, run_id)
+            if run:
+                run.status = "completed"
+                run.completed_at_utc = self.clock()
+            session.commit()
+        return AssistantReply("\n\n".join(sections), "completed")
 
     def _execute_tool(
         self,
@@ -806,7 +901,148 @@ class BoundedAssistant:
                 self._query(service, owner_id, action),
                 "completed",
             )
+        if isinstance(action, ListRecordsAction):
+            return AssistantReply(
+                self._list_records(service, owner_id, action),
+                "completed",
+            )
+        if isinstance(action, SmalltalkAction):
+            return AssistantReply(escape(action.answer), "completed")
         raise DomainError("The proposed action is not an allowed tool.")
+
+    def _list_records(
+        self,
+        service: DomainServices,
+        owner_id: int,
+        action: ListRecordsAction,
+    ) -> str:
+        QuotaService(service.session).require(
+            owner_id,
+            "summaries",
+            limit=self.daily_summary_limit,
+        )
+        renderer = {
+            "work_log": self._list_work_logs,
+            "note": self._list_notes,
+            "reminder": self._list_reminders,
+            "ledger_entry": self._list_ledger_entries,
+            "nutrition_log": self._list_nutrition_logs,
+            "goal": self._list_goals,
+        }[action.record_type]
+        heading, lines = renderer(service, owner_id, action)
+        if not lines:
+            return f"No {heading} matched that."
+        return "\n".join([f"{heading.capitalize()}:", *lines])
+
+    @staticmethod
+    def _clip(value: object, limit: int = 140) -> str:
+        normalized = " ".join(str(value or "").split())
+        if len(normalized) > limit:
+            normalized = normalized[: limit - 1] + "…"
+        return escape(normalized)
+
+    def _list_work_logs(self, service, owner_id, action):
+        rows = service.list_work_logs(
+            owner_id,
+            start_date=action.start_date,
+            end_date=action.end_date,
+            tag=action.tag,
+            search=action.search,
+            limit=action.limit,
+        )
+        return "work logs", [
+            f"• #{row.id} · {row.user_local_date} — {self._clip(row.original_text)}"
+            for row in rows
+        ]
+
+    def _list_notes(self, service, owner_id, action):
+        rows = service.list_notes(
+            owner_id,
+            search=action.search,
+            tag=action.tag,
+            pinned=True if action.status == "pinned" else None,
+            limit=action.limit,
+        )
+        return "notes", [
+            f"• #{row.id} {'📌 ' if row.pinned else ''}"
+            f"{self._clip(row.title, 60)} — {self._clip(row.body, 110)}"
+            for row in rows
+        ]
+
+    def _list_reminders(self, service, owner_id, action):
+        enabled = {"enabled": True, "active": True, "paused": False, "disabled": False}
+        rows = service.list_reminders(
+            owner_id,
+            enabled=enabled.get(action.status or ""),
+            limit=action.limit,
+        )
+        lines = []
+        for row in rows:
+            when = (
+                row.next_run_at_utc.astimezone(ZoneInfo(row.timezone)).strftime(
+                    "%Y-%m-%d %H:%M"
+                )
+                if row.next_run_at_utc is not None
+                else "not scheduled"
+            )
+            state = "" if row.enabled else " (paused)"
+            lines.append(
+                f"• #{row.id} {self._clip(row.title, 70)} — "
+                f"{row.schedule_type}, next {when} {row.timezone}{state}"
+            )
+        return "reminders", lines
+
+    def _list_ledger_entries(self, service, owner_id, action):
+        rows = service.list_ledger_entries(
+            owner_id,
+            start_date=action.start_date,
+            end_date=action.end_date,
+            search=action.search,
+            limit=action.limit,
+        )
+        return "ledger entries", [
+            f"• #{row.id} · {row.user_local_date} — {row.direction} "
+            f"{row.currency} {self._major_amount(row.amount_minor, row.currency)}"
+            f" — {self._clip(row.description, 90)}"
+            for row in rows
+        ]
+
+    def _list_nutrition_logs(self, service, owner_id, action):
+        status = action.status if action.status in {"draft", "confirmed"} else None
+        rows = service.list_nutrition_logs(
+            owner_id,
+            start_date=action.start_date,
+            end_date=action.end_date,
+            status=status,
+            limit=action.limit,
+        )
+        return "food logs", [
+            f"• #{row.id} · {row.user_local_date} [{row.status}] "
+            f"{self._clip(row.meal_name or row.original_text, 90)} — "
+            f"approximately {row.total_calories} kcal, "
+            f"{row.total_protein_grams} g protein"
+            for row in rows
+        ]
+
+    def _list_goals(self, service, owner_id, action):
+        status = (
+            action.status
+            if action.status in {"active", "paused", "completed"}
+            else None
+        )
+        rows = service.list_goals(owner_id, status=status, limit=action.limit)
+        lines = []
+        for row in rows:
+            progress = (
+                f" — {row.current_value}/{row.target_value} {row.unit or ''}".rstrip()
+                if row.target_value is not None
+                else ""
+            )
+            lines.append(
+                f"• #{row.id} {self._clip(row.title, 80)} "
+                f"[{row.status}]{progress}"
+            )
+        return "goals", lines
 
     def _query(
         self,
@@ -896,38 +1132,19 @@ class BoundedAssistant:
 
     @staticmethod
     def _major_amount(amount_minor: int, currency: str) -> str:
-        zero_decimal = {
-            "BIF",
-            "CLP",
-            "DJF",
-            "GNF",
-            "ISK",
-            "JPY",
-            "KMF",
-            "KRW",
-            "PYG",
-            "RWF",
-            "UGX",
-            "UYI",
-            "VND",
-            "VUV",
-            "XAF",
-            "XOF",
-            "XPF",
-        }
-        three_decimal = {
-            "BHD",
-            "IQD",
-            "JOD",
-            "KWD",
-            "LYD",
-            "OMR",
-            "TND",
-        }
-        digits = (
-            0 if currency in zero_decimal else 3 if currency in three_decimal else 2
+        """Render integer minor units as a fixed-precision major amount."""
+        from domain.schemas import (
+            THREE_DECIMAL_CURRENCIES,
+            ZERO_DECIMAL_CURRENCIES,
         )
-        return f"{Decimal(amount_minor) / (Decimal(10) ** digits):f}"
+
+        digits = (
+            0
+            if currency in ZERO_DECIMAL_CURRENCIES
+            else 3 if currency in THREE_DECIMAL_CURRENCIES else 2
+        )
+        major = Decimal(amount_minor) / (Decimal(10) ** digits)
+        return f"{major.quantize(Decimal(1).scaleb(-digits)):f}"
 
     @staticmethod
     def _delete_record(

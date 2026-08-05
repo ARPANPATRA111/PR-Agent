@@ -157,7 +157,8 @@ class DeterministicCommandMixin:
             if currency in ZERO_DECIMAL_CURRENCIES
             else 3 if currency in THREE_DECIMAL_CURRENCIES else 2
         )
-        return f"{Decimal(amount_minor) / (Decimal(10) ** places):f} {currency}"
+        major = Decimal(amount_minor) / (Decimal(10) ** places)
+        return f"{major.quantize(Decimal(1).scaleb(-places)):f} {currency}"
 
     async def _v2_create_work_log(self, message: TelegramMessage) -> None:
         body = self._command_body(message)

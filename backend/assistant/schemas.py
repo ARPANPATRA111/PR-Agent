@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 
@@ -66,16 +66,60 @@ class QueryAction(StrictAction):
     timezone: str = Field(default="UTC", min_length=1, max_length=64)
 
 
+RecordType = Literal[
+    "work_log",
+    "note",
+    "reminder",
+    "ledger_entry",
+    "nutrition_log",
+    "goal",
+]
+
+
+class ListRecordsAction(StrictAction):
+    """Read-only retrieval across any owned record type.
+
+    Every filter is applied by owner-scoped domain queries. The model chooses
+    what to look for; it never receives or supplies an owner identity.
+    """
+
+    kind: Literal["list_records"]
+    record_type: RecordType
+    search: str | None = Field(default=None, min_length=1, max_length=200)
+    tag: str | None = Field(default=None, min_length=1, max_length=64)
+    status: (
+        Literal[
+            "active",
+            "paused",
+            "completed",
+            "pinned",
+            "enabled",
+            "disabled",
+            "draft",
+            "confirmed",
+        ]
+        | None
+    ) = None
+    start_date: date | None = None
+    end_date: date | None = None
+    limit: int = Field(default=10, ge=1, le=25)
+    timezone: str = Field(default="UTC", min_length=1, max_length=64)
+
+
+class SmalltalkAction(StrictAction):
+    """A brief conversational or general-knowledge reply with no side effects.
+
+    The length cap is the control: the model cannot turn the tracker into a
+    general-purpose chatbot because the schema will not carry a long answer.
+    """
+
+    kind: Literal["smalltalk"]
+    answer: str = Field(min_length=1, max_length=400)
+
+
 class DeleteRecordAction(StrictAction):
     kind: Literal["delete_record"]
-    record_type: Literal[
-        "work_log",
-        "note",
-        "reminder",
-        "ledger_entry",
-        "nutrition_log",
-        "goal",
-    ]
+    record_type: RecordType
     record_id: int = Field(gt=0)
 
 
@@ -89,6 +133,7 @@ class ClarificationAction(StrictAction):
         "create_nutrition_log",
         "create_goal",
         "query",
+        "list_records",
         "delete_record",
         "unknown",
     ]
@@ -127,11 +172,18 @@ AgentActionProposal = Annotated[
     | CreateNutritionAction
     | CreateGoalAction
     | QueryAction
+    | ListRecordsAction
+    | SmalltalkAction
     | DeleteRecordAction
     | ClarificationAction
     | UnsupportedAction,
     Field(discriminator="kind"),
 ]
+
+# Actions that only read owner-scoped data or reply conversationally. They
+# never mutate state, so they skip the Correct/Wrong review that exists to
+# protect writes.
+READ_ONLY_ACTIONS = (QueryAction, ListRecordsAction, SmalltalkAction)
 
 
 class AgentProposal(StrictAction):

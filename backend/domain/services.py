@@ -371,6 +371,7 @@ class DomainServices:
         end_date: date | None = None,
         tag: str | None = None,
         category: str | None = None,
+        search: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[WorkLog]:
@@ -381,6 +382,14 @@ class DomainServices:
             query = query.filter(WorkLog.user_local_date <= end_date)
         if category:
             query = query.filter(WorkLog.category == category.lower())
+        if search:
+            pattern = f"%{search[:200]}%"
+            query = query.filter(
+                or_(
+                    WorkLog.original_text.ilike(pattern),
+                    WorkLog.cleaned_text.ilike(pattern),
+                )
+            )
         rows = (
             query.order_by(WorkLog.logged_at_utc.desc())
             .offset(offset)
@@ -569,6 +578,7 @@ class DomainServices:
         end_date: date | None = None,
         category: str | None = None,
         direction: str | None = None,
+        search: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[LedgerEntry]:
@@ -581,6 +591,14 @@ class DomainServices:
             query = query.filter(LedgerEntry.category == category.lower())
         if direction:
             query = query.filter(LedgerEntry.direction == direction)
+        if search:
+            pattern = f"%{search[:200]}%"
+            query = query.filter(
+                or_(
+                    LedgerEntry.description.ilike(pattern),
+                    LedgerEntry.category.ilike(pattern),
+                )
+            )
         return (
             query.order_by(LedgerEntry.transaction_at_utc.desc())
             .offset(offset)
