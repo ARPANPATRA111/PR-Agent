@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 from bot import BotHandler
 from assistant import AssistantReply
 from config import settings
-from models import TelegramMessage
+from models import TelegramMessage, TelegramUpdate
 from public_models import (
     LedgerEntry,
     Note,
@@ -70,6 +70,23 @@ def telegram_message(text: str, message_id: int = 1) -> TelegramMessage:
             "text": text,
         }
     )
+
+
+@pytest.mark.asyncio
+async def test_public_update_does_not_require_legacy_user_table(
+    bot_and_factory,
+    monkeypatch,
+):
+    bot, _ = bot_and_factory
+    monkeypatch.setattr(settings, "public_v2_enabled", True)
+    monkeypatch.setattr(settings, "invite_only", False)
+    message = telegram_message("/start", 500)
+
+    await bot.handle_update(
+        TelegramUpdate(update_id=9001, message=message),
+    )
+
+    assert "Welcome" in bot.telegram.messages[-1]
 
 
 @pytest.fixture()

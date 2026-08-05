@@ -577,20 +577,17 @@ def authenticate_telegram_mini_app(
         ):
             raise BetaAccessRequired()
         owner_id = owner.id
-
-    user = memory.get_or_create_user(
-        telegram_id=telegram_user["telegram_id"],
-        first_name=telegram_user["first_name"],
-        last_name=telegram_user["last_name"],
-        username=telegram_user["username"],
-    )
-    if user.id is None:
-        raise HTTPException(status_code=500, detail="User session unavailable")
+        auth_user = {
+            "id": owner.id,
+            "telegram_id": owner.telegram_id,
+            "username": owner.username,
+            "first_name": owner.first_name,
+        }
 
     session_token, csrf_token = create_session(
-        user_id=user.id,
-        telegram_id=user.telegram_id,
-        username=user.username,
+        user_id=owner_id,
+        telegram_id=telegram_user["telegram_id"],
+        username=telegram_user["username"],
     )
     with memory.get_session() as session:
         persist_application_session(
@@ -623,12 +620,7 @@ def authenticate_telegram_mini_app(
         message="Authentication successful",
         csrf_token=csrf_token,
         expires_in=settings.session_max_age_seconds,
-        user={
-            "id": user.id,
-            "telegram_id": user.telegram_id,
-            "username": user.username,
-            "first_name": user.first_name,
-        },
+        user=auth_user,
     )
 
 

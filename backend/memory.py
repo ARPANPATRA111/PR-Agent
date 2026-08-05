@@ -257,7 +257,10 @@ class ReportFeedbackDB(Base):
 
 
 class ProcessedTelegramUpdateDB(Base):
-    __tablename__ = "processed_telegram_updates"
+    # This legacy manager is also the shared SQLAlchemy session boundary for
+    # Public V2. Keep its operational mappings aligned with the Alembic-owned
+    # public schema so production never depends on Base.metadata.create_all().
+    __tablename__ = "telegram_update_receipts"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     update_id = Column(Integer, nullable=False, unique=True, index=True)
@@ -269,7 +272,7 @@ class ProcessedTelegramUpdateDB(Base):
 
 
 class RateLimitBucketDB(Base):
-    __tablename__ = "rate_limit_buckets"
+    __tablename__ = "api_rate_limit_buckets"
     __table_args__ = (
         UniqueConstraint(
             "subject_key",

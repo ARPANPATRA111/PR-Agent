@@ -10,13 +10,21 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from auth import create_session, validate_telegram_init_data
 from abuse_controls import InviteService
 from config import settings
 from memory import MemoryManager
 from models import LinkedInPost, PostTone
-from public_models import PublicBase, TelegramMessage
+from public_models import (
+    ProcessedTelegramUpdate,
+    PublicBase,
+    RateLimitBucket,
+    TelegramMessage,
+)
 
 TEST_BOT_TOKEN = "123456:test-telegram-token"
 TEST_WEBHOOK_SECRET = "test_webhook_secret_0123456789"
@@ -358,6 +366,47 @@ def test_webhook_secret_and_duplicate_update(secure_app):
     assert duplicate.status_code == 200
     assert duplicate.json()["duplicate"] is True
     bot_handler.handle_update.assert_awaited_once()
+
+
+def test_webhook_bookkeeping_uses_public_migrated_tables():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    ProcessedTelegramUpdate.__table__.create(engine)
+    RateLimitBucket.__table__.create(engine)
+    memory = MemoryManager.__new__(MemoryManager)
+    memory.engine = engine
+    memory.SessionLocal = sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        bind=engine,
+    )
+
+    assert memory.register_telegram_update(7001) is True
+    assert memory.register_telegram_update(7001) is False
+    memory.mark_telegram_update(7001, "completed")
+    assert (
+        memory.consume_rate_limit(
+            "telegram:101",
+            "telegram_webhook",
+            limit=1,
+            window_seconds=60,
+        )
+        is True
+    )
+    assert (
+        memory.consume_rate_limit(
+            "telegram:101",
+            "telegram_webhook",
+            limit=1,
+            window_seconds=60,
+        )
+        is False
+    )
+
+    engine.dispose()
 
 
 def test_processed_webhook_queues_identifier_only_cleanup(

@@ -215,7 +215,7 @@ class BotHandler(DeterministicCommandMixin):
                     )
                     return
 
-            if message.from_user:
+            if message.from_user and not settings.public_v2_enabled:
                 await asyncio.to_thread(
                     self.memory.get_or_create_user,
                     telegram_id=message.from_user.id,
