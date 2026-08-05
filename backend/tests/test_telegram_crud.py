@@ -259,7 +259,10 @@ async def test_plain_text_uses_only_bounded_assistant_context(
         def __init__(self):
             self.calls = []
 
-        def handle(self, actor, text, *, update_id):
+        def open_clarification_id(self, telegram_id):
+            return None
+
+        def handle(self, actor, text, *, update_id, review_required=False):
             self.calls.append((actor, text, update_id))
             return AssistantReply("Safe action completed.", "completed")
 

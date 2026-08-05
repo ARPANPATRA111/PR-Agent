@@ -734,9 +734,8 @@ class BotHandler(DeterministicCommandMixin):
             )
             return
         try:
-            reply = await asyncio.to_thread(
-                self._get_bounded_assistant().handle,
-                self._actor(message),
+            reply = await self._interpret(
+                message,
                 message.text or "",
                 update_id=update_id,
             )
@@ -746,6 +745,36 @@ class BotHandler(DeterministicCommandMixin):
                 message.chat.get("id"),
                 "The assistant is unavailable. Slash commands still work.",
             )
+
+    async def _interpret(
+        self,
+        message: TelegramMessage,
+        text: str,
+        *,
+        update_id: int,
+        review_required: bool = False,
+    ) -> AssistantReply:
+        """Continue an open question when one is waiting, else start fresh."""
+        assistant = self._get_bounded_assistant()
+        actor = self._actor(message)
+        pending_id = await asyncio.to_thread(
+            assistant.open_clarification_id,
+            actor.telegram_id,
+        )
+        if pending_id is not None:
+            return await asyncio.to_thread(
+                assistant.answer_clarification,
+                actor,
+                pending_id,
+                text,
+            )
+        return await asyncio.to_thread(
+            assistant.handle,
+            actor,
+            text,
+            update_id=update_id,
+            review_required=review_required,
+        )
 
     async def _handle_bounded_voice(
         self,
@@ -799,9 +828,8 @@ class BotHandler(DeterministicCommandMixin):
                 )
                 return
             try:
-                reply = await asyncio.to_thread(
-                    self._get_bounded_assistant().handle,
-                    self._actor(message),
+                reply = await self._interpret(
+                    message,
                     transcript,
                     update_id=update_id,
                     review_required=True,
@@ -866,7 +894,7 @@ class BotHandler(DeterministicCommandMixin):
                 int(parts[1]),
                 parts[2],
             )
-            await self.telegram.send_message(message.chat.get("id"), reply.text)
+            await self._send_assistant_reply(message.chat.get("id"), reply)
         except ProviderUnavailable:
             await self.telegram.send_message(
                 message.chat.get("id"),

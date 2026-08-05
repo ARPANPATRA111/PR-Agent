@@ -158,6 +158,30 @@ class BoundedAssistant:
             review_required=review_required,
         )
 
+    def open_clarification_id(self, telegram_id: int) -> int | None:
+        """Return the caller's newest unanswered question, if one is waiting.
+
+        This lets a spoken or typed reply continue the conversation naturally
+        instead of requiring the user to quote a command and a pending id.
+        """
+        with self.session_factory() as session:
+            pending = (
+                session.query(AgentPendingAction)
+                .join(PublicUser, PublicUser.id == AgentPendingAction.owner_id)
+                .filter(
+                    PublicUser.telegram_id == telegram_id,
+                    AgentPendingAction.state == "clarification",
+                )
+                .order_by(AgentPendingAction.id.desc())
+                .first()
+            )
+            if pending is None:
+                return None
+            expires = pending.expires_at_utc
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=UTC)
+            return pending.id if expires > self.clock() else None
+
     def answer_clarification(
         self,
         actor: ActorContext,

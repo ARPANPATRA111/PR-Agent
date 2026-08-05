@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import create_engine, event
@@ -509,3 +509,106 @@ def test_retrieval_consumes_the_summary_quota(assistant_db):
 
     assert first.status == "completed"
     assert second.status == "failed"
+
+
+def test_a_plain_reply_continues_an_open_question(assistant_db):
+    """The follow-up binds to the pending action without a slash command."""
+    seed_owner(assistant_db, ALICE)
+    assistant = build_assistant(
+        assistant_db,
+        FakeProvider(
+            {
+                "confidence": 0.95,
+                "actions": [
+                    {
+                        "kind": "clarification",
+                        "intended_kind": "create_ledger_entry",
+                        "question": "Which currency was that?",
+                        "missing_fields": ["currency"],
+                        "known_arguments": {},
+                    }
+                ],
+            },
+            {
+                "confidence": 0.95,
+                "actions": [
+                    {
+                        "kind": "create_ledger_entry",
+                        "direction": "expense",
+                        "amount": "500",
+                        "currency": "INR",
+                        "description": "Lunch",
+                        "category": None,
+                    }
+                ],
+            },
+        ),
+    )
+
+    asked = assistant.handle(ALICE, "I spent 500", update_id=30)
+    open_id = assistant.open_clarification_id(ALICE.telegram_id)
+    answered = assistant.answer_clarification(ALICE, open_id, "rupees")
+
+    assert asked.status == "clarification"
+    assert open_id == asked.pending_id
+    assert answered.status == "completed"
+
+
+def test_no_open_question_means_no_pending_id(assistant_db):
+    seed_owner(assistant_db, ALICE)
+    assistant = build_assistant(assistant_db, FakeProvider())
+
+    assert assistant.open_clarification_id(ALICE.telegram_id) is None
+
+
+def test_an_open_question_is_not_visible_to_another_tenant(assistant_db):
+    seed_owner(assistant_db, ALICE)
+    seed_owner(assistant_db, BOB)
+    assistant = build_assistant(
+        assistant_db,
+        FakeProvider(
+            {
+                "confidence": 0.95,
+                "actions": [
+                    {
+                        "kind": "clarification",
+                        "intended_kind": "create_ledger_entry",
+                        "question": "Which currency was that?",
+                        "missing_fields": ["currency"],
+                        "known_arguments": {},
+                    }
+                ],
+            }
+        ),
+    )
+
+    assistant.handle(ALICE, "I spent 500", update_id=31)
+
+    assert assistant.open_clarification_id(BOB.telegram_id) is None
+
+
+def test_an_expired_question_is_not_continued(assistant_db):
+    seed_owner(assistant_db, ALICE)
+    assistant = build_assistant(
+        assistant_db,
+        FakeProvider(
+            {
+                "confidence": 0.95,
+                "actions": [
+                    {
+                        "kind": "clarification",
+                        "intended_kind": "create_ledger_entry",
+                        "question": "Which currency was that?",
+                        "missing_fields": ["currency"],
+                        "known_arguments": {},
+                    }
+                ],
+            }
+        ),
+        pending_ttl_minutes=5,
+    )
+
+    assistant.handle(ALICE, "I spent 500", update_id=32)
+    assistant.clock = lambda: datetime.now(UTC) + timedelta(minutes=10)
+
+    assert assistant.open_clarification_id(ALICE.telegram_id) is None
