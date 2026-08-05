@@ -93,6 +93,33 @@ def queue_telegram_message(
     return record
 
 
+def protect_pinned_telegram_message(
+    session: Session,
+    *,
+    chat_id: int,
+    message_id: int,
+) -> bool:
+    """Cancel queued deletion after Telegram reports that a message was pinned."""
+    record = (
+        session.query(TelegramMessage)
+        .filter(
+            TelegramMessage.telegram_chat_id == chat_id,
+            TelegramMessage.telegram_message_id == message_id,
+            TelegramMessage.deleted_at_utc.is_(None),
+        )
+        .one_or_none()
+    )
+    if record is None:
+        return False
+    record.cleanup_status = "cancelled"
+    record.next_cleanup_attempt_at_utc = None
+    record.cleanup_claimed_at_utc = None
+    record.cleanup_lease_expires_at_utc = None
+    record.cleanup_error_category = None
+    session.flush()
+    return True
+
+
 @dataclass(frozen=True)
 class CleanupClaim:
     record_id: int

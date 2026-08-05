@@ -51,6 +51,7 @@ class TelegramMessage(BaseModel):
     from_user: Optional[TelegramUser] = Field(None, alias="from")
     text: Optional[str] = None
     voice: Optional[TelegramVoice] = None
+    pinned_message: Optional["TelegramMessage"] = None
 
     class Config:
         populate_by_name = True

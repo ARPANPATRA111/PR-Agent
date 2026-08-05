@@ -108,6 +108,7 @@ class TelegramClient:
         parse_mode: str = "HTML",
         reply_to_message_id: Optional[int] = None,
         reply_markup: Optional[dict] = None,
+        queue_cleanup: bool = True,
     ) -> dict:
         payload = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
 
@@ -121,7 +122,7 @@ class TelegramClient:
             "sendMessage",
             json=payload,
         )
-        if settings.message_cleanup_enabled and result.get("ok"):
+        if settings.message_cleanup_enabled and queue_cleanup and result.get("ok"):
             message_id = (result.get("result") or {}).get("message_id")
             if message_id is not None:
                 try:
@@ -221,6 +222,14 @@ class BotHandler(DeterministicCommandMixin):
         chat_id = message.chat.get("id")
         user_id = message.from_user.id if message.from_user else None
 
+        if message.pinned_message is not None:
+            await asyncio.to_thread(
+                self._protect_pinned_message,
+                int(chat_id),
+                message.pinned_message.message_id,
+            )
+            return
+
         try:
             if settings.public_v2_enabled and settings.invite_only:
                 try:
@@ -319,6 +328,16 @@ class BotHandler(DeterministicCommandMixin):
                 return
             await self.telegram.answer_callback_query(callback.id, callback_text)
             await self._send_assistant_reply(chat_id, reply)
+            try:
+                await self.telegram.delete_message(
+                    chat_id,
+                    callback.message.message_id,
+                )
+            except Exception:
+                logger.warning(
+                    "Unable to remove resolved Telegram confirmation",
+                    extra={"callback_stage": "confirmation_cleanup"},
+                )
         except BetaAccessRequired:
             await self.telegram.answer_callback_query(
                 callback.id,
@@ -360,6 +379,18 @@ class BotHandler(DeterministicCommandMixin):
                     raise BetaAccessRequired() from exc
             if not invite_claimed and not invites.has_access(owner.id):
                 raise BetaAccessRequired()
+
+    @staticmethod
+    def _protect_pinned_message(chat_id: int, message_id: int) -> None:
+        from telegram_cleanup import protect_pinned_telegram_message
+
+        memory = get_memory_manager()
+        with memory.get_session() as session:
+            protect_pinned_telegram_message(
+                session,
+                chat_id=chat_id,
+                message_id=message_id,
+            )
 
     async def _handle_voice(self, message: TelegramMessage) -> None:
         chat_id = message.chat.get("id")
@@ -700,49 +731,64 @@ class BotHandler(DeterministicCommandMixin):
             )
             return
         await self.telegram.send_typing_action(message.chat.get("id"))
-        await self.telegram.send_message(
+        processing = await self.telegram.send_message(
             message.chat.get("id"),
             "Voice received. Processing securely...",
             reply_to_message_id=message.message_id,
+            queue_cleanup=False,
         )
+        processing_message_id = (processing.get("result") or {}).get("message_id")
         try:
-            transcript = await transcribe_telegram_voice(
-                message.voice.file_id,
-                settings.telegram_bot_token,
-            )
-        except Exception:
-            logger.exception(
-                "Bounded voice transcription failed",
-                extra={"voice_stage": "transcription"},
-            )
-            await self.telegram.send_message(
-                message.chat.get("id"),
-                "I could not transcribe that voice note. No action was taken.",
-            )
-            return
-        try:
-            reply = await asyncio.to_thread(
-                self._get_bounded_assistant().handle,
-                self._actor(message),
-                transcript,
-                update_id=update_id,
-                review_required=True,
-            )
-            await self._send_assistant_reply(message.chat.get("id"), reply)
-        except ProviderUnavailable:
-            await self.telegram.send_message(
-                message.chat.get("id"),
-                "The assistant is unavailable. Slash commands still work.",
-            )
-        except Exception:
-            logger.exception(
-                "Bounded voice intent handling failed",
-                extra={"voice_stage": "intent"},
-            )
-            await self.telegram.send_message(
-                message.chat.get("id"),
-                "I could not process that voice note. No action was taken.",
-            )
+            try:
+                transcript = await transcribe_telegram_voice(
+                    message.voice.file_id,
+                    settings.telegram_bot_token,
+                )
+            except Exception:
+                logger.exception(
+                    "Bounded voice transcription failed",
+                    extra={"voice_stage": "transcription"},
+                )
+                await self.telegram.send_message(
+                    message.chat.get("id"),
+                    "I could not transcribe that voice note. No action was taken.",
+                )
+                return
+            try:
+                reply = await asyncio.to_thread(
+                    self._get_bounded_assistant().handle,
+                    self._actor(message),
+                    transcript,
+                    update_id=update_id,
+                    review_required=True,
+                )
+                await self._send_assistant_reply(message.chat.get("id"), reply)
+            except ProviderUnavailable:
+                await self.telegram.send_message(
+                    message.chat.get("id"),
+                    "The assistant is unavailable. Slash commands still work.",
+                )
+            except Exception:
+                logger.exception(
+                    "Bounded voice intent handling failed",
+                    extra={"voice_stage": "intent"},
+                )
+                await self.telegram.send_message(
+                    message.chat.get("id"),
+                    "I could not process that voice note. No action was taken.",
+                )
+        finally:
+            if processing_message_id is not None:
+                try:
+                    await self.telegram.delete_message(
+                        message.chat.get("id"),
+                        int(processing_message_id),
+                    )
+                except Exception:
+                    logger.warning(
+                        "Unable to remove Telegram voice processing notice",
+                        extra={"voice_stage": "processing_notice_cleanup"},
+                    )
 
     def _consume_voice_quota(self, message: TelegramMessage) -> None:
         if message.from_user is None or message.voice is None:

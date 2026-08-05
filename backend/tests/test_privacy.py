@@ -34,6 +34,7 @@ from public_models import (
     WorkLog,
 )
 from telegram_cleanup import (
+    protect_pinned_telegram_message,
     TelegramCleanupStore,
     TelegramCleanupWorker,
     queue_telegram_message,
@@ -309,6 +310,40 @@ async def test_cleanup_failure_never_rolls_back_stored_record(privacy_db):
         message = session.query(TelegramMessage).one()
         assert message.cleanup_status == "deleted"
         assert message.deleted_at_utc is not None
+
+
+@pytest.mark.asyncio
+async def test_pinned_message_is_excluded_from_cleanup(privacy_db):
+    factory, _ = privacy_db
+    now = datetime(2026, 8, 1, 10, tzinfo=UTC)
+    with factory() as session:
+        queue_telegram_message(
+            session,
+            telegram_id=101,
+            chat_id=101,
+            message_id=77,
+            direction="outbound",
+            purpose="bot_response",
+            processed_at=now,
+            delete_after=now,
+        )
+        assert protect_pinned_telegram_message(
+            session,
+            chat_id=101,
+            message_id=77,
+        )
+        session.commit()
+
+    gateway = CleanupGateway()
+    worker = TelegramCleanupWorker(
+        TelegramCleanupStore(factory),
+        gateway,
+        clock=lambda: now,
+    )
+    assert await worker.run_once() == 0
+    assert gateway.deleted == []
+    with factory() as session:
+        assert session.query(TelegramMessage).one().cleanup_status == "cancelled"
 
 
 @pytest.mark.asyncio

@@ -445,6 +445,7 @@ test('mobile CRUD flows, nutrition totals, and cross-user denial', async ({
   await page.goto('/');
 
   await page.getByRole('button', { name: 'Open Work' }).click();
+  await page.getByRole('button', { name: 'Add' }).click();
   await page.getByLabel('What did you complete?').fill('Created public API');
   await page.getByRole('button', { name: 'Add work log' }).click();
   await expect(page.getByText('Created public API')).toBeVisible();
@@ -454,6 +455,7 @@ test('mobile CRUD flows, nutrition totals, and cross-user denial', async ({
   await expect(page.getByText('Edited public API')).toBeVisible();
 
   await page.getByRole('button', { name: 'Open Notes' }).click();
+  await page.getByRole('button', { name: 'Add' }).click();
   await page.getByRole('textbox', { name: 'Note', exact: true }).fill('Private note');
   await page.getByRole('button', { name: 'Add note' }).click();
   await expect(page.getByText('Private note').first()).toBeVisible();
@@ -462,6 +464,7 @@ test('mobile CRUD flows, nutrition totals, and cross-user denial', async ({
   await expect(page.getByText('No notes yet.')).toBeVisible();
 
   await page.getByRole('button', { name: 'Open Reminders' }).click();
+  await page.getByRole('button', { name: 'Add' }).click();
   await page
     .getByRole('textbox', { name: 'Reminder', exact: true })
     .fill('Submit assignment');
@@ -470,14 +473,16 @@ test('mobile CRUD flows, nutrition totals, and cross-user denial', async ({
   await expect(page.getByText('Submit assignment')).toBeVisible();
 
   await page.getByRole('button', { name: 'Open Money' }).click();
+  await page.getByRole('button', { name: 'Add' }).click();
   await page.getByLabel('Amount').fill('240');
   await page.getByLabel('Description').fill('Dinner');
   await page.getByRole('button', { name: 'Add transaction' }).click();
   await expect(page.getByText('Dinner')).toBeVisible();
 
   await page.getByRole('button', { name: 'Open Nutrition' }).click();
+  await page.getByRole('button', { name: 'Add' }).click();
   await page.getByLabel('Food description').fill('50 g paneer');
-  await page.getByRole('button', { name: 'Preview food' }).click();
+  await page.getByRole('button', { name: 'Estimate meal' }).click();
   await page.getByRole('button', { name: 'Confirm meal' }).click();
   await expect(page.getByText(/9\.150 g/).first()).toBeVisible();
   await page.getByRole('button', { name: 'Edit paneer serving' }).click();
@@ -497,7 +502,7 @@ test('mobile CRUD flows, nutrition totals, and cross-user denial', async ({
   expect(denied).toBe(404);
 });
 
-test('session expiry and logout reset authentication', async ({ page }) => {
+test('session expiry resets authentication and Mini App has no logout control', async ({ page }) => {
   const state = await mockApi(page);
   await page.goto('/');
   state.expireNotes = true;
@@ -511,10 +516,9 @@ test('session expiry and logout reset authentication', async ({ page }) => {
   await expect(
     page.getByRole('heading', { name: 'Today', exact: true }),
   ).toBeVisible();
-  await page.getByRole('button', { name: 'Log out and clear this session' }).click();
   await expect(
-    page.getByText('Open the Mini App from the bot to sign in again.'),
-  ).toBeVisible();
+    page.getByRole('button', { name: 'Log out and clear this session' }),
+  ).toHaveCount(0);
 });
 
 test('provider-disabled nutrition accepts explicit manual values', async ({
@@ -523,8 +527,9 @@ test('provider-disabled nutrition accepts explicit manual values', async ({
   await mockApi(page, true, true);
   await page.goto('/');
   await page.getByRole('button', { name: 'Open Nutrition' }).click();
+  await page.getByRole('button', { name: 'Add' }).click();
   await page.getByLabel('Food description').fill('Homemade lunch');
-  await page.getByRole('button', { name: 'Preview food' }).click();
+  await page.getByRole('button', { name: 'Estimate meal' }).click();
   await expect(page.getByText(/Estimation is unavailable/)).toBeVisible();
   await page
     .getByRole('button', { name: 'Enter calories and protein' })

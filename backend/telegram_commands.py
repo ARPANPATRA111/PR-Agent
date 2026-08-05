@@ -50,7 +50,7 @@ class DeterministicCommandMixin:
 
     async def _cmd_help(self, message: TelegramMessage) -> None:
         availability = (
-            "\n\nâš ï¸ <b>Free staging availability:</b> This deployment can "
+            "\n\n⚠️ <b>Free staging availability:</b> This deployment can "
             "sleep when inactive. Telegram commands wake it automatically, but "
             "the first response may be delayed. Reminders and Sunday summaries "
             "are best-effort and may arrive late while it is sleeping."
@@ -60,6 +60,8 @@ class DeterministicCommandMixin:
         await self.telegram.send_message(
             message.chat.get("id"),
             "<b>PR-Agent commands</b>\n\n"
+            "Send text or a voice note naturally. Voice requests are shown back "
+            "for confirmation before anything is saved.\n\n"
             "<b>Work:</b> /log, /logs, /editlog, /deletelog\n"
             "<b>Notes:</b> /note, /notes, /editnote, /pin, /deletenote\n"
             "<b>Money:</b> /expense, /income, /ledger, /editledger, "
@@ -72,8 +74,12 @@ class DeterministicCommandMixin:
             "/editfood, /deletefood, /nutritiontargets\n\n"
             "<b>Assistant follow-up:</b> /answeragent, /confirmagent, "
             "/cancelagent\n\n"
-            "<b>Summaries and privacy:</b> /today, /week, /spending, "
+            "<b>Analytics and privacy:</b> /today, /week, /spending, "
             "/settings, /export, /deleteaccount\n\n"
+            "/spending reports income and expenses for the current month. "
+            "/nutrition lists today's meal estimates and totals. Times default "
+            "to Asia/Kolkata for this deployment. Processed chat messages are "
+            "removed after one hour unless you pin them.\n\n"
             "Examples:\n"
             "<code>/log Finished tenant-isolation tests</code>\n"
             "<code>/note Ask HR about relocation</code>\n"
@@ -141,6 +147,17 @@ class DeterministicCommandMixin:
         operation: str,
     ) -> str:
         return f"tg:{message.chat.get('id')}:{message.message_id}:{operation}"
+
+    @staticmethod
+    def _money_value(amount_minor: int, currency: str) -> str:
+        from domain.schemas import THREE_DECIMAL_CURRENCIES, ZERO_DECIMAL_CURRENCIES
+
+        places = (
+            0
+            if currency in ZERO_DECIMAL_CURRENCIES
+            else 3 if currency in THREE_DECIMAL_CURRENCIES else 2
+        )
+        return f"{Decimal(amount_minor) / (Decimal(10) ** places):f} {currency}"
 
     async def _v2_create_work_log(self, message: TelegramMessage) -> None:
         body = self._command_body(message)
@@ -325,21 +342,28 @@ class DeterministicCommandMixin:
     async def _v2_list_ledger(self, message: TelegramMessage) -> None:
         def operation(service, owner):
             rows = service.list_ledger_entries(owner, limit=10)
-            totals = service.summarize_ledger(owner)
+            today = datetime.now(ZoneInfo(settings.timezone)).date()
+            start = today.replace(day=1)
+            totals = service.summarize_ledger(
+                owner,
+                start_date=start,
+                end_date=today,
+            )
             if not rows:
                 return "No ledger entries yet."
             total_text = "\n".join(
-                f"• {item['currency']}: income {item['income_minor']} minor units, "
-                f"expense {item['expense_minor']} minor units"
+                f"• {item['currency']}: income "
+                f"{self._money_value(item['income_minor'], item['currency'])}, "
+                f"expense {self._money_value(item['expense_minor'], item['currency'])}"
                 for item in totals
             )
             row_text = "\n".join(
                 f"• <b>#{row.id}</b> {row.direction} "
-                f"{row.amount_minor} {row.currency} minor units — "
+                f"{self._money_value(row.amount_minor, row.currency)} — "
                 f"{escape(row.description[:80])}"
                 for row in rows
             )
-            return f"<b>Ledger totals</b>\n{total_text}\n\n{row_text}"
+            return f"<b>This month's ledger</b>\n{total_text}\n\n{row_text}"
 
         await self._domain_reply(message, operation)
 
@@ -803,6 +827,13 @@ class DeterministicCommandMixin:
         def operation(service, owner):
             self._consume_summary_quota(service, owner)
             summary = service.summarize_nutrition(owner, local_date, local_date)
+            meals = service.list_nutrition_logs(
+                owner,
+                start_date=local_date,
+                end_date=local_date,
+                status="confirmed",
+                limit=50,
+            )
             target_lines = []
             if summary["calorie_target"] is not None:
                 target_lines.append(f"Calorie target: {summary['calorie_target']} kcal")
@@ -811,10 +842,21 @@ class DeterministicCommandMixin:
                     f"Protein target: " f"{summary['protein_target_grams']} g"
                 )
             targets = "\n" + "\n".join(target_lines) if target_lines else ""
+            meal_lines = (
+                "\n".join(
+                    f"• {escape((row.meal_name or row.original_text)[:120])}: "
+                    f"approximately {row.total_calories} kcal, "
+                    f"{row.total_protein_grams} g protein"
+                    for row in reversed(meals)
+                )
+                if meals
+                else "No confirmed meals."
+            )
             return (
                 f"<b>Nutrition for {local_date}</b>\n"
-                f"Approximately {summary['total_calories']} kcal\n"
-                f"Approximately {summary['total_protein_grams']} g protein\n"
+                f"{meal_lines}\n\n"
+                f"<b>Total:</b> approximately {summary['total_calories']} kcal, "
+                f"{summary['total_protein_grams']} g protein\n"
                 f"Confirmed meals: {summary['confirmed_meals']}\n"
                 f"Unestimated food notes: {summary['unestimated_meals']}"
                 f"{targets}"
@@ -930,12 +972,19 @@ class DeterministicCommandMixin:
     async def _v2_spending_summary(self, message: TelegramMessage) -> None:
         def operation(service, owner):
             self._consume_summary_quota(service, owner)
-            totals = service.summarize_ledger(owner)
+            today = datetime.now(ZoneInfo(settings.timezone)).date()
+            start = today.replace(day=1)
+            totals = service.summarize_ledger(
+                owner,
+                start_date=start,
+                end_date=today,
+            )
             if not totals:
-                return "No ledger entries yet."
-            return "<b>Ledger totals</b>\n" + "\n".join(
-                f"{row['currency']}: expense {row['expense_minor']}, "
-                f"income {row['income_minor']} minor units"
+                return "No ledger entries this month."
+            return f"<b>This month — {start} to {today}</b>\n" + "\n".join(
+                f"{row['currency']}: expenses "
+                f"{self._money_value(row['expense_minor'], row['currency'])}, "
+                f"income {self._money_value(row['income_minor'], row['currency'])}"
                 for row in totals
             )
 

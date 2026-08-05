@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from copy import deepcopy
 from typing import Any, Protocol
 
@@ -107,8 +108,9 @@ present in the JSON):
 
 Use create_ledger_entry with direction expense or income, a positive decimal
 amount, an explicit ISO-4217 currency, and a description. Never invent an
-amount, currency, food quantity, date, time, or timezone. Use clarification
-when a required value is missing or ambiguous. Reminder start_at_local must be
+amount, currency, food quantity, date, or time. Use the durable context's
+default_timezone when the user does not name a timezone. Use clarification
+when another required value is missing or ambiguous. Reminder start_at_local must be
 an ISO local datetime and timezone must be an IANA timezone. Query query_type
 must be today, week, spending, nutrition, or goals. Deletion only identifies
 record_type and record_id; the application enforces confirmation.
@@ -200,33 +202,42 @@ class GroqIntentProvider:
         if self.fallback_model_name:
             attempts.append((self.fallback_model_name, False))
         last_error: Exception | None = None
-        for attempt, (model_name, strict) in enumerate(attempts, start=1):
-            try:
-                result = self._completion(
-                    model_name=model_name,
-                    messages=messages,
-                    strict=strict,
-                )
-                if attempt > 1:
+        attempt_number = 0
+        for model_index, (model_name, strict) in enumerate(attempts):
+            for retry in range(2):
+                attempt_number += 1
+                try:
+                    result = self._completion(
+                        model_name=model_name,
+                        messages=messages,
+                        strict=strict,
+                    )
+                    if attempt_number > 1:
+                        logger.warning(
+                            "Intent provider recovery succeeded",
+                            extra={
+                                "attempt": attempt_number,
+                                "provider_model": model_name,
+                            },
+                        )
+                    return result
+                except Exception as exc:
+                    last_error = exc
+                    status_code = getattr(exc, "status_code", None)
                     logger.warning(
-                        "Intent provider fallback succeeded",
+                        "Intent provider attempt failed",
                         extra={
-                            "attempt": attempt,
+                            "attempt": attempt_number,
                             "provider_model": model_name,
+                            "provider_status_code": status_code,
+                            "provider_error_code": self._safe_error_code(exc),
                         },
                     )
-                return result
-            except Exception as exc:
-                last_error = exc
-                logger.warning(
-                    "Intent provider attempt failed",
-                    extra={
-                        "attempt": attempt,
-                        "provider_model": model_name,
-                        "provider_status_code": getattr(exc, "status_code", None),
-                        "provider_error_code": self._safe_error_code(exc),
-                    },
-                )
+                    transient = status_code in {408, 409, 429, 500, 502, 503, 504}
+                    if retry == 0 and transient:
+                        time.sleep(0.35 * (model_index + 1))
+                        continue
+                    break
         raise ProviderUnavailable("Intent provider attempts failed") from last_error
 
 

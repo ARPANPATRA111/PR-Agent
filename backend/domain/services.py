@@ -148,7 +148,21 @@ class DomainServices:
             .one_or_none()
         )
         if preference is None:
-            self.session.add(UserPreference(owner_id=owner.id, timezone="UTC"))
+            preference = UserPreference(
+                owner_id=owner.id,
+                timezone=settings.timezone,
+            )
+            self.session.add(preference)
+            self.session.flush()
+        elif (
+            preference.timezone == "UTC"
+            and preference.version == 1
+            and settings.timezone != "UTC"
+        ):
+            # Upgrade only untouched legacy defaults; never overwrite a timezone
+            # that the user has explicitly saved.
+            preference.timezone = settings.timezone
+            preference.version += 1
             self.session.flush()
         digest = (
             self.session.query(ScheduledDigest)
@@ -159,12 +173,22 @@ class DomainServices:
             self.session.add(
                 ScheduledDigest(
                     owner_id=owner.id,
-                    timezone=preference.timezone if preference else "UTC",
+                    timezone=(
+                        preference.timezone if preference else settings.timezone
+                    ),
                     weekday=6,
                     scheduled_local_time="20:00:00",
                     enabled=False,
                 )
             )
+            self.session.flush()
+        elif (
+            digest.timezone == "UTC"
+            and digest.version == 1
+            and settings.timezone != "UTC"
+        ):
+            digest.timezone = preference.timezone
+            digest.version += 1
             self.session.flush()
         return owner
 
@@ -864,7 +888,10 @@ class DomainServices:
             .one_or_none()
         )
         if preference is None:
-            preference = UserPreference(owner_id=owner_id, timezone="UTC")
+            preference = UserPreference(
+                owner_id=owner_id,
+                timezone=settings.timezone,
+            )
             self.session.add(preference)
             self.session.flush()
         digest = (
@@ -944,7 +971,9 @@ class DomainServices:
             .one_or_none()
         )
         if preference is None:
-            self.session.add(UserPreference(owner_id=owner_id, timezone="UTC"))
+            self.session.add(
+                UserPreference(owner_id=owner_id, timezone=settings.timezone)
+            )
             self.session.flush()
             preference = (
                 self.session.query(UserPreference)

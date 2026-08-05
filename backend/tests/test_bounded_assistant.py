@@ -15,12 +15,14 @@ from assistant.providers import (
 )
 from assistant.schemas import AgentProposal
 from nutrition.providers import get_nutrition_provider
+from domain.services import DomainServices
 from public_models import (
     AgentAction,
     AgentPendingAction,
     AgentRun,
     LedgerEntry,
     Note,
+    NutritionLog,
     PublicBase,
     PublicUser,
     Reminder,
@@ -442,6 +444,46 @@ def test_food_without_quantity_stays_a_safe_draft(assistant_db):
     reply = assistant.handle(ALICE, "I ate paneer and milk", update_id=22)
     assert reply.status == "completed"
     assert "quantity" in reply.text.lower()
+
+
+def test_nutrition_query_lists_each_meal_then_daily_total(assistant_db):
+    assistant = build_assistant(
+        assistant_db,
+        FakeProvider(
+            {
+                "confidence": 0.99,
+                "action": {
+                    "kind": "create_nutrition_log",
+                    "text": "50 g paneer",
+                    "meal_name": "Lunch",
+                    "timezone": "UTC",
+                },
+            },
+            {
+                "confidence": 0.99,
+                "action": {
+                    "kind": "query",
+                    "query_type": "nutrition",
+                    "timezone": "UTC",
+                },
+            },
+        ),
+    )
+    created = assistant.handle(ALICE, "I ate 50 g paneer", update_id=220)
+    with assistant_db() as session:
+        log = session.get(NutritionLog, created.record_id)
+        DomainServices(session).confirm_nutrition_log(
+            log.owner_id,
+            log.id,
+            log.version,
+        )
+        session.commit()
+
+    result = assistant.handle(ALICE, "How many calories today?", update_id=221)
+
+    assert "Lunch" in result.text
+    assert "approximately" in result.text
+    assert "Total:" in result.text
 
 
 @pytest.mark.parametrize(

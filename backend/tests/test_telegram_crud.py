@@ -40,6 +40,10 @@ class FakeTelegramClient:
         self.callback_answers.append((callback_query_id, text))
         return {"ok": True}
 
+    async def delete_message(self, chat_id, message_id):
+        self.deleted_message = (chat_id, message_id)
+        return {"ok": True, "result": True}
+
 
 class FakeMemory:
     def __init__(self, factory):
@@ -171,6 +175,7 @@ async def test_wrong_button_cancels_review_and_requests_new_voice(
 
     assert bot.telegram.callback_answers[-1] == ("callback-1", "Cancelled")
     assert "Send a new voice note" in bot.telegram.messages[-1]
+    assert bot.telegram.deleted_message == (9001, 55)
 
 
 @pytest.fixture()

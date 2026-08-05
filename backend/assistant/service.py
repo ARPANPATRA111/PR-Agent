@@ -736,7 +736,7 @@ class BoundedAssistant:
             )
             return AssistantReply(
                 f"{action.direction.title()} #{row.id} saved as "
-                f"{row.amount_minor} {row.currency} minor units.",
+                f"{action.amount} {row.currency}.",
                 "completed",
                 "ledger_entry",
                 row.id,
@@ -847,24 +847,44 @@ class BoundedAssistant:
                 + "; ".join(escape(row.original_text[:120]) for row in rows)
             )
         if action.query_type == "spending":
+            start = today.replace(day=1)
             totals = service.summarize_ledger(
                 owner_id,
-                start_date=today,
+                start_date=start,
                 end_date=today,
             )
             if not totals:
-                return "No ledger entries today."
-            return "Today: " + "; ".join(
-                f"{row['currency']} expense {row['expense_minor']}, "
-                f"income {row['income_minor']} minor units"
+                return "No ledger entries this month."
+            return "This month: " + "; ".join(
+                f"{row['currency']} expenses "
+                f"{self._major_amount(row['expense_minor'], row['currency'])}, "
+                f"income {self._major_amount(row['income_minor'], row['currency'])}"
                 for row in totals
             )
         if action.query_type == "nutrition":
             summary = service.summarize_nutrition(owner_id, today, today)
-            return (
-                f"Today: approximately {summary['total_calories']} kcal and "
+            meals = service.list_nutrition_logs(
+                owner_id,
+                start_date=today,
+                end_date=today,
+                status="confirmed",
+                limit=50,
+            )
+            if not meals:
+                return "No confirmed food logs today."
+            lines = ["Today's food:"]
+            for meal in reversed(meals):
+                label = meal.meal_name or meal.original_text
+                lines.append(
+                    f"• {escape(label[:160])}: approximately "
+                    f"{meal.total_calories} kcal, "
+                    f"{meal.total_protein_grams} g protein"
+                )
+            lines.append(
+                f"Total: approximately {summary['total_calories']} kcal, "
                 f"{summary['total_protein_grams']} g protein."
             )
+            return "\n".join(lines)
         goals = service.list_goals(owner_id, status="active", limit=20)
         return (
             "No active goals."
@@ -872,6 +892,19 @@ class BoundedAssistant:
             else "Active goals: "
             + "; ".join(f"#{row.id} {escape(row.title[:100])}" for row in goals)
         )
+
+    @staticmethod
+    def _major_amount(amount_minor: int, currency: str) -> str:
+        zero_decimal = {
+            "BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW",
+            "PYG", "RWF", "UGX", "UYI", "VND", "VUV", "XAF", "XOF",
+            "XPF",
+        }
+        three_decimal = {
+            "BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND",
+        }
+        digits = 0 if currency in zero_decimal else 3 if currency in three_decimal else 2
+        return f"{Decimal(amount_minor) / (Decimal(10) ** digits):f}"
 
     @staticmethod
     def _delete_record(

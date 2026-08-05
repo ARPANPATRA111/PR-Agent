@@ -7,7 +7,6 @@ import {
   Download,
   Flag,
   Home,
-  LogOut,
   NotebookPen,
   ReceiptIndianRupee,
   Settings,
@@ -47,12 +46,12 @@ export function MiniAppShell({
   onNavigate: (screen: ScreenName) => void;
   children: ReactNode;
 }) {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
 
   return (
     <div className="min-h-dvh bg-background pb-24 text-foreground">
       <header className="sticky top-0 z-20 border-b bg-background/95 px-4 py-3 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3">
+        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="flex items-center gap-2 text-sm font-semibold">
               <BookOpen className="h-4 w-4 text-primary" aria-hidden />
@@ -64,21 +63,15 @@ export function MiniAppShell({
                 : 'Private Telegram workspace'}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => void logout()}
-            className="inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label="Log out and clear this session"
-          >
-            <LogOut className="h-4 w-4" aria-hidden />
-            <span className="hidden sm:inline">Log out</span>
-          </button>
+          <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+            Private analytics
+          </span>
         </div>
       </header>
 
       <main
         id="main-content"
-        className="mx-auto w-full max-w-3xl px-4 py-5"
+        className="mx-auto w-full max-w-5xl px-4 py-6"
       >
         {children}
       </main>
@@ -87,7 +80,7 @@ export function MiniAppShell({
         aria-label="Mini App screens"
         className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/98 shadow-[0_-8px_24px_rgba(0,0,0,0.08)]"
       >
-        <div className="mx-auto flex max-w-3xl gap-1 overflow-x-auto px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
+        <div className="mx-auto flex max-w-5xl gap-1 overflow-x-auto px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
           {navigation.map(({ id, label, icon: Icon }) => {
             const selected = activeScreen === id;
             return (

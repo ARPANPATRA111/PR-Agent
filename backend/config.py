@@ -212,7 +212,7 @@ class Settings(BaseSettings):
     chroma_persist_dir: str = Field(
         default="./data/chroma", description="ChromaDB persistence directory"
     )
-    nutrition_provider: Literal["disabled", "reference"] = Field(
+    nutrition_provider: Literal["disabled", "reference", "groq"] = Field(
         default="reference",
         description="Validated nutrition estimation provider",
     )

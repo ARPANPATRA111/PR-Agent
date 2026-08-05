@@ -68,6 +68,7 @@ describe('important Mini App forms', () => {
     render(<WorkLogsScreen />);
 
     await screen.findByText('No work logs yet.');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
     await user.type(
       screen.getByLabelText('What did you complete?'),
       'Initial log',

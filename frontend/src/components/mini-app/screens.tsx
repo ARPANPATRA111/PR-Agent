@@ -23,6 +23,14 @@ import {
   useState,
 } from 'react';
 
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+
 import { API_URL, fetchAPI, formatDateTime } from '@/lib/utils';
 import { useApiResource } from '@/lib/use-api-resource';
 import type {
@@ -102,6 +110,7 @@ export function HomeScreen({
   onNavigate: (screen: ScreenName) => void;
 }) {
   const today = localDate();
+  const monthStart = `${today.slice(0, 7)}-01`;
   const resource = useApiResource(async () => {
     const [
       work,
@@ -117,7 +126,7 @@ export function HomeScreen({
         '/api/v2/reminders?enabled=true&limit=5',
       ),
       fetchAPI<LedgerSummary[]>(
-        `/api/v2/ledger/summary?start_date=${today}&end_date=${today}`,
+        `/api/v2/ledger/summary?start_date=${monthStart}&end_date=${today}`,
       ),
       fetchAPI<NutritionSummary>(
         `/api/v2/nutrition/summary?start_date=${today}&end_date=${today}`,
@@ -158,19 +167,19 @@ export function HomeScreen({
             />
           </div>
           <Card>
-            <h2 className="font-semibold">Money today</h2>
+            <h2 className="font-semibold">Money this month</h2>
             {resource.data.money.length ? (
               <ul className="mt-2 space-y-1 text-sm">
                 {resource.data.money.map((item) => (
                   <li key={item.currency}>
-                    {item.currency}: income {item.income_minor} / expense{' '}
-                    {item.expense_minor} minor units
+                    Income {moneyValue(item.income_minor, item.currency)} / spent{' '}
+                    {moneyValue(item.expense_minor, item.currency)}
                   </li>
                 ))}
               </ul>
             ) : (
               <p className="mt-2 text-sm text-muted-foreground">
-                No transactions today.
+                No transactions this month.
               </p>
             )}
           </Card>
@@ -228,6 +237,7 @@ export function WorkLogsScreen() {
   const [editing, setEditing] = useState<WorkLog | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -258,6 +268,7 @@ export function WorkLogsScreen() {
       setText('');
       setCategory('');
       setEditing(null);
+      setDialogOpen(false);
       await resource.reload();
     } catch (mutationError) {
       setError(
@@ -280,9 +291,13 @@ export function WorkLogsScreen() {
     <>
       <ScreenHeading
         title="Work logs"
-        description="Capture progress without an AI provider."
+        description="Review your progress history and activity patterns."
+        action={<button type="button" className={buttonClassName} onClick={() => { setEditing(null); setText(''); setCategory(''); setDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" aria-hidden />Add</button>}
       />
-      <form onSubmit={submit} className="mb-5 space-y-3 rounded-xl border bg-card p-4">
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader><DialogTitle>{editing ? 'Edit work log' : 'Add work log'}</DialogTitle><DialogDescription>Capture a completed task, learning, or blocker.</DialogDescription></DialogHeader>
+      <form onSubmit={submit} className="space-y-3">
         <FormField label="What did you complete?" htmlFor="work-text">
           <textarea
             id="work-text"
@@ -324,6 +339,8 @@ export function WorkLogsScreen() {
           ) : null}
         </div>
       </form>
+        </DialogContent>
+      </Dialog>
       <ResourceList resource={resource} emptyLabel="No work logs yet.">
         {(resource.data || []).map((record) => (
           <Card key={record.id}>
@@ -339,6 +356,7 @@ export function WorkLogsScreen() {
                 setEditing(record);
                 setText(record.original_text);
                 setCategory(record.category || '');
+                setDialogOpen(true);
               }}
               onDelete={() => void remove(record)}
             />
@@ -357,6 +375,7 @@ export function NotesScreen() {
   const [body, setBody] = useState('');
   const [editing, setEditing] = useState<Note | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -379,6 +398,7 @@ export function NotesScreen() {
       }
       setBody('');
       setEditing(null);
+      setDialogOpen(false);
       await resource.reload();
     } catch (mutationError) {
       setError(
@@ -405,8 +425,11 @@ export function NotesScreen() {
 
   return (
     <>
-      <ScreenHeading title="Notes" description="Private notes you control." />
-      <form onSubmit={submit} className="mb-5 space-y-3 rounded-xl border bg-card p-4">
+      <ScreenHeading title="Notes" description="Searchable private notes, with important items pinned first." action={<button type="button" className={buttonClassName} onClick={() => { setEditing(null); setBody(''); setDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" aria-hidden />Add</button>} />
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader><DialogTitle>{editing ? 'Edit note' : 'Add note'}</DialogTitle><DialogDescription>Keep a private thought, reference, or follow-up.</DialogDescription></DialogHeader>
+      <form onSubmit={submit} className="space-y-3">
         <FormField label="Note" htmlFor="note-body">
           <textarea
             id="note-body"
@@ -423,6 +446,8 @@ export function NotesScreen() {
           {editing ? 'Save edit' : 'Add note'}
         </button>
       </form>
+        </DialogContent>
+      </Dialog>
       <ResourceList resource={resource} emptyLabel="No notes yet.">
         {(resource.data || []).map((record) => (
           <Card key={record.id}>
@@ -451,6 +476,7 @@ export function NotesScreen() {
                 onEdit={() => {
                   setEditing(record);
                   setBody(record.body);
+                  setDialogOpen(true);
                 }}
                 onDelete={() => void remove(record)}
               />
@@ -473,6 +499,7 @@ export function RemindersScreen() {
   const [startAt, setStartAt] = useState('');
   const [editing, setEditing] = useState<Reminder | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -512,6 +539,7 @@ export function RemindersScreen() {
       setTitle('');
       setStartAt('');
       setEditing(null);
+      setDialogOpen(false);
       await resource.reload();
     } catch (mutationError) {
       setError(
@@ -543,9 +571,13 @@ export function RemindersScreen() {
     <>
       <ScreenHeading
         title="Reminders"
-        description="One-time, daily, and weekly schedules in your timezone."
+        description="Upcoming and recurring schedules in your timezone."
+        action={<button type="button" className={buttonClassName} onClick={() => { setEditing(null); setTitle(''); setStartAt(''); setScheduleType('once'); setDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" aria-hidden />Add</button>}
       />
-      <form onSubmit={submit} className="mb-5 space-y-3 rounded-xl border bg-card p-4">
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader><DialogTitle>{editing ? 'Edit reminder' : 'Add reminder'}</DialogTitle><DialogDescription>Schedule a one-time or recurring notification.</DialogDescription></DialogHeader>
+      <form onSubmit={submit} className="space-y-3">
         {editing ? (
           <p className="text-sm font-medium">Editing reminder</p>
         ) : null}
@@ -606,6 +638,8 @@ export function RemindersScreen() {
           </button>
         ) : null}
       </form>
+        </DialogContent>
+      </Dialog>
       <ResourceList resource={resource} emptyLabel="No reminders yet.">
         {(resource.data || []).map((record) => (
           <Card key={record.id}>
@@ -626,7 +660,7 @@ export function RemindersScreen() {
                   setTitle(record.title);
                   setScheduleType(record.schedule_type);
                   setStartAt(localDateTimeValue(record.next_run_at_utc));
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  setDialogOpen(true);
                 }}
               >
                 <Edit3 className="mr-2 h-4 w-4" aria-hidden />
@@ -673,13 +707,21 @@ function moneyValue(amountMinor: number, currency: string): string {
 }
 
 export function MoneyScreen() {
+  const [selectedMonth, setSelectedMonth] = useState(localDate().slice(0, 7));
+  const [year, month] = selectedMonth.split('-').map(Number);
+  const monthStart = `${selectedMonth}-01`;
+  const monthEnd = localDate(new Date(year, month, 0));
   const resource = useApiResource(async () => {
     const [entries, totals] = await Promise.all([
-      fetchAPI<LedgerEntry[]>('/api/v2/ledger?limit=100'),
-      fetchAPI<LedgerSummary[]>('/api/v2/ledger/summary'),
+      fetchAPI<LedgerEntry[]>(
+        `/api/v2/ledger?start_date=${monthStart}&end_date=${monthEnd}&limit=100`,
+      ),
+      fetchAPI<LedgerSummary[]>(
+        `/api/v2/ledger/summary?start_date=${monthStart}&end_date=${monthEnd}`,
+      ),
     ]);
     return { entries, totals };
-  }, '');
+  }, selectedMonth);
   const [direction, setDirection] =
     useState<LedgerEntry['direction']>('expense');
   const [amount, setAmount] = useState('');
@@ -687,6 +729,7 @@ export function MoneyScreen() {
   const [description, setDescription] = useState('');
   const [editing, setEditing] = useState<LedgerEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -719,6 +762,7 @@ export function MoneyScreen() {
       setAmount('');
       setDescription('');
       setEditing(null);
+      setDialogOpen(false);
       await resource.reload();
     } catch (mutationError) {
       setError(
@@ -739,90 +783,89 @@ export function MoneyScreen() {
     <>
       <ScreenHeading
         title="Money"
-        description="A private manual ledger. No bank or payment connection."
-      />
-      <form onSubmit={submit} className="mb-5 grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-2">
-        {editing ? (
-          <p className="text-sm font-medium sm:col-span-2">
-            Editing transaction
-          </p>
-        ) : null}
-        <FormField label="Type" htmlFor="money-direction">
-          <select
-            id="money-direction"
-            value={direction}
-            onChange={(event) =>
-              setDirection(event.target.value as LedgerEntry['direction'])
-            }
-            className={inputClassName}
-            disabled={Boolean(editing)}
+        description="Monthly income, spending, and cash-flow analytics."
+        action={
+          <button
+            type="button"
+            className={buttonClassName}
+            onClick={() => {
+              setEditing(null);
+              setAmount('');
+              setDescription('');
+              setDialogOpen(true);
+            }}
           >
-            <option value="expense">Expense</option>
-            <option value="income">Income</option>
-          </select>
-        </FormField>
-        <FormField label="Amount" htmlFor="money-amount">
-          <input
-            id="money-amount"
-            type="number"
-            min="0.001"
-            step="0.001"
-            required
-            value={amount}
-            onChange={(event) => setAmount(event.target.value)}
-            className={inputClassName}
-          />
-        </FormField>
-        <FormField label="Currency" htmlFor="money-currency">
-          <input
-            id="money-currency"
-            required
-            minLength={3}
-            maxLength={3}
-            value={currency}
-            onChange={(event) => setCurrency(event.target.value.toUpperCase())}
-            className={inputClassName}
-          />
-        </FormField>
-        <FormField label="Description" htmlFor="money-description">
-          <input
-            id="money-description"
-            required
-            maxLength={5_000}
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            className={inputClassName}
-          />
-        </FormField>
-        <div className="sm:col-span-2">
-          <MutationError message={error} />
-          <button type="submit" className={`${buttonClassName} mt-2`}>
-            {editing ? 'Save transaction' : 'Add transaction'}
+            <Plus className="mr-2 h-4 w-4" aria-hidden />
+            Add
           </button>
-          {editing ? (
-            <button
-              type="button"
-              className={`${secondaryButtonClassName} ml-2`}
-              onClick={() => {
-                setEditing(null);
-                setAmount('');
-                setDescription('');
-              }}
-            >
-              Cancel
-            </button>
-          ) : null}
+        }
+      />
+      <div className="mb-4 flex items-center justify-between rounded-xl border bg-card p-3">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Reporting month
+          </p>
+          <p className="font-semibold">{selectedMonth}</p>
         </div>
-      </form>
+        <input
+          type="month"
+          aria-label="Reporting month"
+          value={selectedMonth}
+          onChange={(event) => setSelectedMonth(event.target.value)}
+          className="min-h-11 rounded-lg border bg-background px-3 text-sm"
+        />
+      </div>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editing ? 'Edit transaction' : 'Add transaction'}</DialogTitle>
+            <DialogDescription>
+              Record a private income or expense entry. No bank is connected.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2">
+            <FormField label="Type" htmlFor="money-direction">
+              <select
+                id="money-direction"
+                value={direction}
+                onChange={(event) =>
+                  setDirection(event.target.value as LedgerEntry['direction'])
+                }
+                className={inputClassName}
+                disabled={Boolean(editing)}
+              >
+                <option value="expense">Expense</option>
+                <option value="income">Income</option>
+              </select>
+            </FormField>
+            <FormField label="Amount" htmlFor="money-amount">
+              <input id="money-amount" type="number" min="0.001" step="0.001" required value={amount} onChange={(event) => setAmount(event.target.value)} className={inputClassName} />
+            </FormField>
+            <FormField label="Currency" htmlFor="money-currency">
+              <input id="money-currency" required minLength={3} maxLength={3} value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase())} className={inputClassName} />
+            </FormField>
+            <FormField label="Description" htmlFor="money-description">
+              <input id="money-description" required maxLength={5_000} value={description} onChange={(event) => setDescription(event.target.value)} className={inputClassName} />
+            </FormField>
+            <div className="sm:col-span-2">
+              <MutationError message={error} />
+              <button type="submit" className={`${buttonClassName} mt-2 w-full`}>
+                {editing ? 'Save transaction' : 'Add transaction'}
+              </button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
       {resource.data?.totals.length ? (
-        <div className="mb-4 grid gap-2 sm:grid-cols-2">
+        <div className="mb-5 grid gap-3 sm:grid-cols-2">
           {resource.data.totals.map((total) => (
             <Card key={total.currency}>
-              <h2 className="font-semibold">{total.currency}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Income {total.income_minor} · Expense {total.expense_minor}{' '}
-                minor units
-              </p>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{total.currency} monthly flow</p>
+              <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                <div><p className="text-xs text-muted-foreground">Income</p><p className="font-semibold text-emerald-600">{moneyValue(total.income_minor, total.currency)}</p></div>
+                <div><p className="text-xs text-muted-foreground">Spent</p><p className="font-semibold text-destructive">{moneyValue(total.expense_minor, total.currency)}</p></div>
+                <div><p className="text-xs text-muted-foreground">Net</p><p className="font-semibold">{moneyValue(total.income_minor - total.expense_minor, total.currency)}</p></div>
+              </div>
             </Card>
           ))}
         </div>
@@ -866,7 +909,7 @@ export function MoneyScreen() {
                   );
                   setCurrency(record.currency);
                   setDescription(record.description);
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  setDialogOpen(true);
                 }}
               >
                 <Edit3 className="mr-2 h-4 w-4" aria-hidden />
@@ -900,6 +943,7 @@ export function GoalsScreen() {
   const [currentValue, setCurrentValue] = useState('0');
   const [editing, setEditing] = useState<Goal | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -932,6 +976,7 @@ export function GoalsScreen() {
       setUnit('');
       setCurrentValue('0');
       setEditing(null);
+      setDialogOpen(false);
       await resource.reload();
     } catch (mutationError) {
       setError(
@@ -960,9 +1005,13 @@ export function GoalsScreen() {
     <>
       <ScreenHeading
         title="Goals"
-        description="Progress changes only when you update them."
+        description="Active targets, progress, and completion status."
+        action={<button type="button" className={buttonClassName} onClick={() => { setEditing(null); setTitle(''); setTarget(''); setUnit(''); setCurrentValue('0'); setDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" aria-hidden />Add</button>}
       />
-      <form onSubmit={submit} className="mb-5 grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-2">
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader><DialogTitle>{editing ? 'Edit goal' : 'Add goal'}</DialogTitle><DialogDescription>Define a target and update its measurable progress.</DialogDescription></DialogHeader>
+      <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2">
         {editing ? (
           <p className="text-sm font-medium sm:col-span-2">Editing goal</p>
         ) : null}
@@ -1035,6 +1084,8 @@ export function GoalsScreen() {
           ) : null}
         </div>
       </form>
+        </DialogContent>
+      </Dialog>
       <ResourceList resource={resource} emptyLabel="No goals yet.">
         {(resource.data || []).map((record) => (
           <Card key={record.id}>
@@ -1054,7 +1105,7 @@ export function GoalsScreen() {
                   setTarget(record.target_value || '');
                   setCurrentValue(record.current_value);
                   setUnit(record.unit || '');
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  setDialogOpen(true);
                 }}
               >
                 <Edit3 className="mr-2 h-4 w-4" aria-hidden />
@@ -1126,6 +1177,7 @@ export function NutritionScreen() {
   const [calories, setCalories] = useState('');
   const [protein, setProtein] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   async function create(event: FormEvent) {
     event.preventDefault();
@@ -1142,6 +1194,7 @@ export function NutritionScreen() {
       });
       setDescription('');
       setMealName('');
+      setDialogOpen(false);
       await resource.reload();
     } catch (mutationError) {
       setError(
@@ -1230,7 +1283,13 @@ export function NutritionScreen() {
     <>
       <ScreenHeading
         title="Nutrition"
-        description="All values are approximate and editable—not medical advice."
+        description="Daily meal analytics with editable AI estimates—not medical advice."
+        action={
+          <button type="button" className={buttonClassName} onClick={() => setDialogOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" aria-hidden />
+            Add
+          </button>
+        }
       />
       <div className="mb-4 flex items-center justify-between rounded-xl border bg-card p-2">
         <button
@@ -1265,33 +1324,38 @@ export function NutritionScreen() {
           />
         </div>
       ) : null}
-      <form onSubmit={create} className="mb-5 space-y-3 rounded-xl border bg-card p-4">
-        <FormField label="Food description" htmlFor="food-description">
-          <textarea
-            id="food-description"
-            required
-            rows={3}
-            maxLength={10_000}
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            placeholder="50 g paneer, 2 medium rotis"
-            className={inputClassName}
-          />
-        </FormField>
-        <FormField label="Meal name (optional)" htmlFor="food-meal">
-          <input
-            id="food-meal"
-            maxLength={128}
-            value={mealName}
-            onChange={(event) => setMealName(event.target.value)}
-            className={inputClassName}
-          />
-        </FormField>
-        <MutationError message={error} />
-        <button type="submit" className={buttonClassName}>
-          Preview food
-        </button>
-      </form>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Add a meal</DialogTitle>
+            <DialogDescription>
+              Describe what you ate naturally. The assistant estimates servings,
+              calories, and protein and shows its assumptions for review.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={create} className="space-y-3">
+            <FormField label="Food description" htmlFor="food-description">
+              <textarea
+                id="food-description"
+                required
+                rows={4}
+                maxLength={10_000}
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                placeholder="I had two aloo parathas with curd and a cup of tea"
+                className={inputClassName}
+              />
+            </FormField>
+            <FormField label="Meal name (optional)" htmlFor="food-meal">
+              <input id="food-meal" maxLength={128} value={mealName} onChange={(event) => setMealName(event.target.value)} className={inputClassName} placeholder="Breakfast" />
+            </FormField>
+            <MutationError message={error} />
+            <button type="submit" className={`${buttonClassName} w-full`}>
+              Estimate meal
+            </button>
+          </form>
+        </DialogContent>
+      </Dialog>
       {editingItem ? (
         <form
           onSubmit={saveItem}
@@ -1954,7 +2018,7 @@ function ResourceList<T>({
   }
   if (!resource.data?.length) {
     return (
-      <EmptyState title={emptyLabel} description="Use the form above to add one." />
+      <EmptyState title={emptyLabel} description="Use Add to create your first entry." />
     );
   }
   return <div className="space-y-3">{children}</div>;

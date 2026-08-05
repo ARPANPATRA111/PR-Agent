@@ -1,5 +1,7 @@
 from datetime import date, datetime, timezone
 from decimal import Decimal
+import json
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
@@ -18,6 +20,7 @@ from domain.schemas import (
 )
 from domain.services import DomainServices
 from nutrition.providers import (
+    GroqNutritionProvider,
     NutritionEstimationProvider,
     NutritionProviderUnavailable,
     ReferenceNutritionProvider,
@@ -327,3 +330,53 @@ def test_invalid_provider_payload_rejects_hidden_or_missing_fields():
                 "hidden_chain_of_thought": "must never be stored",
             }
         )
+
+
+def test_groq_provider_validates_estimates_with_inferred_serving_assumptions():
+    payload = {
+        "items": [
+            {
+                "original_item_text": "aloo paratha",
+                "normalized_name": "aloo paratha",
+                "quantity_value": 1,
+                "quantity_unit": "piece",
+                "portion_description": "one medium paratha",
+                "estimated_grams": 120,
+                "calories": 280,
+                "protein_grams": 7,
+                "carbohydrate_grams": 42,
+                "fat_grams": 10,
+                "visible_assumptions": ["One medium homemade paratha."],
+                "confidence": 0.72,
+            }
+        ],
+        "visible_assumptions": ["One medium homemade paratha."],
+        "confidence": 0.72,
+        "clarification_required": False,
+        "clarification_question": None,
+    }
+    provider = GroqNutritionProvider("test-key", "primary", "fallback")
+    provider.client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(
+                create=lambda **_kwargs: SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            message=SimpleNamespace(content=json.dumps(payload))
+                        )
+                    ]
+                )
+            )
+        )
+    )
+
+    estimate = provider.estimate(
+        "I ate an aloo paratha",
+        default_milk_serving_ml=Decimal("250"),
+        measurement_system="metric",
+    )
+
+    assert estimate.items[0].calories == Decimal("280")
+    assert estimate.items[0].protein_grams == Decimal("7")
+    assert estimate.visible_assumptions
+    assert estimate.provider_name == "groq"
