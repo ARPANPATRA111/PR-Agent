@@ -96,7 +96,7 @@ class Settings(BaseSettings):
     )
     ai_provider: Literal["disabled", "groq"] = Field(
         default="disabled",
-        description="Provider used only for typed intent extraction",
+        description="Provider used for bounded natural-language intent extraction",
     )
     ai_agent_min_confidence: float = Field(
         default=0.80,

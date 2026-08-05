@@ -43,7 +43,9 @@ services:
       - key: WORKER_BATCH_SIZE
         value: "10"
       - key: MESSAGE_CLEANUP_ENABLED
-        value: "false"
+        value: "true"
+      - key: MESSAGE_CLEANUP_DELAY_SECONDS
+        value: "1800"
       - key: AI_AGENT_ENABLED
         value: "true"
       - key: AI_PROVIDER

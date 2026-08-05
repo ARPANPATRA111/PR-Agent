@@ -39,7 +39,8 @@ def test_free_blueprint_contains_only_free_api_and_static_site():
     assert environment["GROQ_MODEL"] == "openai/gpt-oss-120b"
     assert environment["WHISPER_MODEL"] == "whisper-large-v3-turbo"
     assert environment["NUTRITION_PROVIDER"] == "disabled"
-    assert environment["MESSAGE_CLEANUP_ENABLED"] == "false"
+    assert environment["MESSAGE_CLEANUP_ENABLED"] == "true"
+    assert environment["MESSAGE_CLEANUP_DELAY_SECONDS"] == "1800"
     secret_entries = {
         item["key"]: item
         for item in services[0]["envVars"]
