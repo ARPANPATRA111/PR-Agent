@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-EXPECTED_REVISION = "g2c4e6a8b0d1"
+EXPECTED_REVISION = "h3d5f7a9c1e2"
 RETIRED_HOSTS = {
     "pr-agent-staging-api.onrender.com",
     "pr-agent-staging-web.onrender.com",
