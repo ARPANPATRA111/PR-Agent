@@ -98,6 +98,7 @@ class BoundedAssistant:
         text: str,
         *,
         update_id: int,
+        review_required: bool = False,
     ) -> AssistantReply:
         text = text.strip()
         if not text or len(text) > self.max_input_length:
@@ -120,6 +121,7 @@ class BoundedAssistant:
         context = {
             "current_utc": self.clock().isoformat(),
             "default_timezone": default_timezone,
+            "review_required": review_required,
         }
         try:
             raw = self.provider.classify(text, context=context)
@@ -143,6 +145,7 @@ class BoundedAssistant:
             proposal,
             update_id=update_id,
             idempotency_key=idempotency_key,
+            review_required=review_required,
         )
 
     def answer_clarification(
@@ -254,6 +257,8 @@ class BoundedAssistant:
             )
         if self._expire_if_needed(pending):
             return AssistantReply("That confirmation has expired.", "expired")
+        if pending.proposed_arguments.get("kind") == "batch":
+            return self._confirm_batch(pending)
         try:
             proposal = AgentProposal.model_validate(
                 {
@@ -318,6 +323,85 @@ class BoundedAssistant:
             "completed",
             proposal.action.record_type,
             proposal.action.record_id,
+        )
+
+    def _confirm_batch(self, pending: AgentPendingAction) -> AssistantReply:
+        raw_actions = pending.proposed_arguments.get("actions")
+        if not isinstance(raw_actions, list) or not raw_actions:
+            return AssistantReply("The stored review is no longer valid.", "failed")
+        try:
+            actions = [
+                AgentProposal.model_validate(
+                    {"confidence": 1, "action": raw_action}
+                ).proposed_actions[0]
+                for raw_action in raw_actions
+            ]
+        except ValidationError:
+            return AssistantReply("The stored review is no longer valid.", "failed")
+        if any(
+            isinstance(action, (ClarificationAction, UnsupportedAction))
+            for action in actions
+        ):
+            return AssistantReply("The stored review cannot be executed.", "failed")
+
+        try:
+            with self.session_factory() as session:
+                current = (
+                    session.query(AgentPendingAction)
+                    .filter(
+                        AgentPendingAction.id == pending.id,
+                        AgentPendingAction.owner_id == pending.owner_id,
+                        AgentPendingAction.state == "confirmation",
+                    )
+                    .with_for_update()
+                    .one_or_none()
+                )
+                if current is None:
+                    return AssistantReply("That review is already closed.", "completed")
+                service = DomainServices(session)
+                results: list[str] = []
+                for index, action in enumerate(actions, start=1):
+                    if isinstance(action, DeleteRecordAction):
+                        try:
+                            self._delete_record(service, current.owner_id, action)
+                            results.append(
+                                f"{action.record_type.replace('_', ' ').title()} "
+                                f"#{action.record_id} deleted."
+                            )
+                        except RecordNotFound:
+                            results.append(
+                                f"{action.record_type.replace('_', ' ').title()} "
+                                f"#{action.record_id} was already absent."
+                            )
+                        continue
+                    reply = self._execute_tool(
+                        service,
+                        current.owner_id,
+                        f"{current.idempotency_key}:{index}",
+                        action,
+                    )
+                    results.append(reply.text)
+                current.state = "executed"
+                current.resolved_at_utc = self.clock()
+                self._update_action(
+                    session,
+                    current.owner_id,
+                    current.idempotency_key,
+                    status="executed",
+                )
+                run = session.get(AgentRun, current.run_id)
+                if run:
+                    run.status = "completed"
+                    run.completed_at_utc = self.clock()
+                session.commit()
+        except (DomainError, ValueError) as exc:
+            return AssistantReply(escape(str(exc)), "failed", pending_id=pending.id)
+        return AssistantReply(
+            "Confirmed and saved:\n"
+            + "\n".join(
+                f"{index}. {result}" for index, result in enumerate(results, start=1)
+            ),
+            "completed",
         )
 
     def cancel(self, actor: ActorContext, pending_id: int) -> AssistantReply:
@@ -396,42 +480,79 @@ class BoundedAssistant:
         update_id: int,
         idempotency_key: str,
         replace_existing: bool = False,
+        review_required: bool = False,
     ) -> AssistantReply:
-        action = proposal.action
-        if isinstance(action, UnsupportedAction):
+        actions = proposal.proposed_actions
+        unsupported = next(
+            (action for action in actions if isinstance(action, UnsupportedAction)),
+            None,
+        )
+        if unsupported is not None:
             return self._reject(
                 owner_id,
                 run_id,
                 idempotency_key,
-                action.kind,
-                action.reason,
+                unsupported.kind,
+                unsupported.reason,
             )
-        if isinstance(action, ClarificationAction):
+        clarification = next(
+            (action for action in actions if isinstance(action, ClarificationAction)),
+            None,
+        )
+        if clarification is not None:
             return self._pending(
                 owner_id,
                 run_id,
                 idempotency_key,
                 update_id,
                 state="clarification",
-                action_type=action.intended_kind,
-                arguments=action.known_arguments,
-                missing_fields=action.missing_fields,
-                prompt=action.question,
+                action_type=clarification.intended_kind,
+                arguments=clarification.known_arguments,
+                missing_fields=clarification.missing_fields,
+                prompt=clarification.question,
                 replace_existing=replace_existing,
             )
         if proposal.confidence < self.min_confidence:
+            arguments = (
+                actions[0].model_dump(mode="json")
+                if len(actions) == 1
+                else {
+                    "kind": "batch",
+                    "actions": [action.model_dump(mode="json") for action in actions],
+                }
+            )
             return self._pending(
                 owner_id,
                 run_id,
                 idempotency_key,
                 update_id,
                 state="clarification",
-                action_type=action.kind,
-                arguments=action.model_dump(mode="json"),
+                action_type=(actions[0].kind if len(actions) == 1 else "batch"),
+                arguments=arguments,
                 missing_fields=["intent_confirmation"],
-                prompt="I am not confident enough to act. What exactly should I do?",
+                prompt=(
+                    "I am not confident enough to act. Please restate the request "
+                    "with the exact details I should save."
+                ),
                 replace_existing=replace_existing,
             )
+        if review_required or len(actions) > 1:
+            return self._pending(
+                owner_id,
+                run_id,
+                idempotency_key,
+                update_id,
+                state="confirmation",
+                action_type="batch",
+                arguments={
+                    "kind": "batch",
+                    "actions": [action.model_dump(mode="json") for action in actions],
+                },
+                missing_fields=[],
+                prompt=self._review_prompt(actions),
+                replace_existing=replace_existing,
+            )
+        action = actions[0]
         if isinstance(action, DeleteRecordAction):
             return self._pending(
                 owner_id,
@@ -455,6 +576,49 @@ class BoundedAssistant:
             action,
             replace_existing=replace_existing,
         )
+
+    @staticmethod
+    def _review_prompt(actions) -> str:
+        def short(value, limit: int = 180) -> str:
+            normalized = " ".join(str(value).split())
+            return (
+                normalized
+                if len(normalized) <= limit
+                else normalized[: limit - 1] + "…"
+            )
+
+        lines = ["I understood the following. No changes have been made yet:"]
+        for index, action in enumerate(actions, start=1):
+            if isinstance(action, CreateWorkLogAction):
+                summary = f"Work log — {short(action.text)}"
+            elif isinstance(action, CreateNoteAction):
+                summary = f"Note — {short(action.body)}"
+            elif isinstance(action, CreateLedgerAction):
+                summary = (
+                    f"{action.direction.title()} — {action.amount} "
+                    f"{action.currency} for {short(action.description)}"
+                )
+            elif isinstance(action, CreateReminderAction):
+                summary = (
+                    f"Reminder — {short(action.title)} at "
+                    f"{action.start_at_local.isoformat()} ({action.timezone})"
+                )
+            elif isinstance(action, CreateNutritionAction):
+                summary = f"Food log — {short(action.text)}"
+            elif isinstance(action, CreateGoalAction):
+                summary = f"Goal — {short(action.title)}"
+            elif isinstance(action, QueryAction):
+                summary = f"Read {action.query_type} summary"
+            elif isinstance(action, DeleteRecordAction):
+                summary = (
+                    f"Delete {action.record_type.replace('_', ' ')} "
+                    f"#{action.record_id}"
+                )
+            else:
+                summary = "Unsupported action"
+            lines.append(f"{index}. {summary}")
+        lines.append("Is this correct?")
+        return "\n".join(lines)[:1000]
 
     def _execute(
         self,

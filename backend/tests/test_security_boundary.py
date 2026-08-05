@@ -135,9 +135,15 @@ def test_mini_app_auth_issues_http_only_session(secure_app):
 
     assert response.status_code == 200
     assert response.json()["user"]["telegram_id"] == 101
+    assert response.json()["access_token"]
     assert settings.session_cookie_name in response.cookies
     assert "HttpOnly" in response.headers["set-cookie"]
     assert response.headers["cache-control"] == "no-store"
+    bearer = TestClient(app).get(
+        "/api/v2/notes?limit=1",
+        headers={"Authorization": f"Bearer {response.json()['access_token']}"},
+    )
+    assert bearer.status_code == 200
 
     valid = signed_init_data(102)
     forged = valid[:-1] + ("0" if valid[-1] != "0" else "1")

@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class StrictAction(BaseModel):
@@ -136,4 +136,26 @@ AgentActionProposal = Annotated[
 
 class AgentProposal(StrictAction):
     confidence: float = Field(ge=0, le=1)
-    action: AgentActionProposal
+    action: AgentActionProposal | None = None
+    actions: list[AgentActionProposal] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=5,
+    )
+
+    @model_validator(mode="after")
+    def exactly_one_action_shape(self):
+        if (self.action is None) == (self.actions is None):
+            raise ValueError("Provide exactly one of action or actions")
+        return self
+
+    @property
+    def proposed_actions(self) -> list[AgentActionProposal]:
+        return self.actions or [self.action]  # type: ignore[list-item]
+
+
+class AgentBatchProposal(StrictAction):
+    """Provider-facing envelope; one shape makes strict decoding reliable."""
+
+    confidence: float = Field(ge=0, le=1)
+    actions: list[AgentActionProposal] = Field(min_length=1, max_length=5)

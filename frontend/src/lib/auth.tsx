@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { fetchAPI, setCsrfToken } from '@/lib/utils';
+import { fetchAPI, setAccessToken, setCsrfToken } from '@/lib/utils';
 
 interface TelegramWebApp {
   initData: string;
@@ -37,6 +37,7 @@ export interface AuthenticatedUser {
 
 interface TelegramAuthResponse {
   success: boolean;
+  access_token: string;
   csrf_token: string;
   expires_in: number;
   user: AuthenticatedUser;
@@ -61,6 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const authenticate = useCallback(async () => {
     setIsLoading(true);
     setError(null);
+    setAccessToken(null);
 
     try {
       const webApp = window.Telegram?.WebApp;
@@ -85,9 +87,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           body: JSON.stringify({ init_data: initData }),
         },
       );
+      setAccessToken(result.access_token);
       setCsrfToken(result.csrf_token);
       setUser(result.user);
     } catch (authError) {
+      setAccessToken(null);
       setCsrfToken(null);
       setUser(null);
       setError(
@@ -106,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const handleSessionExpiry = () => {
+      setAccessToken(null);
       setCsrfToken(null);
       setUser(null);
       setError('Your session expired. Reopen or retry the Mini App.');
@@ -123,6 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await fetchAPI('/api/auth/logout', { method: 'POST' });
     } finally {
+      setAccessToken(null);
       setCsrfToken(null);
       setUser(null);
       setError('Open the Mini App from the bot to sign in again.');

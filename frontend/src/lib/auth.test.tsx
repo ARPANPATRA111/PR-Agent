@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthProvider, useAuth } from './auth';
+import { fetchAPI, setAccessToken } from './utils';
 
 function AuthState() {
   const { isAuthenticated, error, user, logout } = useAuth();
@@ -29,6 +30,7 @@ function setTelegram(initData: string) {
 
 describe('Telegram Mini App authentication', () => {
   afterEach(() => {
+    setAccessToken(null);
     vi.unstubAllGlobals();
     delete window.Telegram;
     document.documentElement.classList.remove('dark');
@@ -36,21 +38,30 @@ describe('Telegram Mini App authentication', () => {
 
   it('submits validated initData and enters the authenticated state', async () => {
     setTelegram('signed-init-data');
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          success: true,
-          csrf_token: 'csrf-token',
-          expires_in: 900,
-          user: {
-            id: 1,
-            telegram_id: 101,
-            first_name: 'Alice',
-          },
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            success: true,
+            access_token: 'session-token',
+            csrf_token: 'csrf-token',
+            expires_in: 900,
+            user: {
+              id: 1,
+              telegram_id: 101,
+              first_name: 'Alice',
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
         }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      ),
-    );
+      );
     vi.stubGlobal('fetch', fetchMock);
 
     render(
@@ -68,6 +79,12 @@ describe('Telegram Mini App authentication', () => {
       }),
     );
     expect(document.documentElement).toHaveClass('dark');
+
+    await fetchAPI('/api/v2/notes?limit=1');
+    const request = fetchMock.mock.calls.at(-1)?.[1] as RequestInit;
+    expect(new Headers(request.headers).get('Authorization')).toBe(
+      'Bearer session-token',
+    );
   });
 
   it('shows a safe error for invalid authentication', async () => {
@@ -101,6 +118,7 @@ describe('Telegram Mini App authentication', () => {
         new Response(
           JSON.stringify({
             success: true,
+            access_token: 'session-token',
             csrf_token: 'csrf-token',
             expires_in: 900,
             user: {

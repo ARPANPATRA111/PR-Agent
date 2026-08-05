@@ -45,9 +45,15 @@ services:
       - key: MESSAGE_CLEANUP_ENABLED
         value: "false"
       - key: AI_AGENT_ENABLED
-        value: "false"
+        value: "true"
       - key: AI_PROVIDER
-        value: disabled
+        value: groq
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-120b
+      - key: WHISPER_MODEL
+        value: whisper-large-v3-turbo
       - key: NUTRITION_PROVIDER
         value: disabled
       - key: TELEGRAM_WEBHOOK_URL

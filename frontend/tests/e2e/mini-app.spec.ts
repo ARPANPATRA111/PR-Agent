@@ -89,6 +89,7 @@ async function mockApi(
       }
       await json({
         success: true,
+        access_token: 'session-token',
         csrf_token: 'csrf-token',
         expires_in: 900,
         user: {

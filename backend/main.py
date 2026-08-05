@@ -441,6 +441,9 @@ async def telegram_webhook(
         if update.message and update.message.from_user:
             request.state.telegram_user_id = update.message.from_user.id
             subject = f"telegram:{update.message.from_user.id}"
+        elif update.callback_query:
+            request.state.telegram_user_id = update.callback_query.from_user.id
+            subject = f"telegram:{update.callback_query.from_user.id}"
         else:
             subject = "telegram:unknown"
 
@@ -618,6 +621,7 @@ def authenticate_telegram_mini_app(
     return AuthResponse(
         success=True,
         message="Authentication successful",
+        access_token=session_token,
         csrf_token=csrf_token,
         expires_in=settings.session_max_age_seconds,
         user=auth_user,

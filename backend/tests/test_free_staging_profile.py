@@ -33,8 +33,11 @@ def test_free_blueprint_contains_only_free_api_and_static_site():
     assert environment["TELEGRAM_INTEGRATION_ENABLED"] == "true"
     assert environment["INLINE_STAGING_WORKER_ENABLED"] == "true"
     assert environment["REMINDER_WORKER_ENABLED"] == "false"
-    assert environment["AI_AGENT_ENABLED"] == "false"
-    assert environment["AI_PROVIDER"] == "disabled"
+    assert environment["AI_AGENT_ENABLED"] == "true"
+    assert environment["AI_PROVIDER"] == "groq"
+    assert environment["GROQ_API_KEY"] is None
+    assert environment["GROQ_MODEL"] == "openai/gpt-oss-120b"
+    assert environment["WHISPER_MODEL"] == "whisper-large-v3-turbo"
     assert environment["NUTRITION_PROVIDER"] == "disabled"
     assert environment["MESSAGE_CLEANUP_ENABLED"] == "false"
     secret_entries = {

@@ -312,15 +312,15 @@ class TestLLMAgent:
     @patch('llm_agent.Groq')
     def test_llm_agent_init(self, mock_groq):
         """Test LLM agent initialization."""
-        with patch('config.settings') as mock_settings:
+        with patch('llm_agent.settings') as mock_settings:
             mock_settings.groq_api_key = "test_key"
-            mock_settings.groq_model = "llama-3.3-70b-versatile"
+            mock_settings.groq_model = "openai/gpt-oss-120b"
             mock_settings.llm_temperature = 0.7
             
             from llm_agent import LLMAgent
             agent = LLMAgent()
             
-            assert agent.model == "llama-3.3-70b-versatile"
+            assert agent.model == "openai/gpt-oss-120b"
 
 class TestUtils:
     """Tests for utility functions."""

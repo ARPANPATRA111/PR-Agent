@@ -47,6 +47,7 @@ class TokenData(BaseModel):
 class AuthResponse(BaseModel):
     success: bool
     message: str
+    access_token: str
     csrf_token: str
     expires_in: int
     user: Dict[str, Any]
@@ -346,7 +347,10 @@ def authenticate_request(request: Request) -> TokenData:
         if authorization.lower().startswith("bearer ")
         else None
     )
-    token = cookie_token or bearer_token
+    # Prefer the explicit in-memory bearer token. Telegram WebViews differ in
+    # third-party cookie support when the static app and API use separate
+    # hosts, while the signed short-lived bearer session is deterministic.
+    token = bearer_token or cookie_token
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -354,7 +358,7 @@ def authenticate_request(request: Request) -> TokenData:
         )
 
     user = verify_token(token)
-    user.auth_source = "cookie" if cookie_token else "bearer"
+    user.auth_source = "bearer" if bearer_token else "cookie"
     if settings.public_v2_enabled and not _application_session_is_active(
         token,
         user,
@@ -364,7 +368,7 @@ def authenticate_request(request: Request) -> TokenData:
             detail="Session expired or revoked",
         )
 
-    if request.method.upper() not in SAFE_HTTP_METHODS and cookie_token:
+    if request.method.upper() not in SAFE_HTTP_METHODS and user.auth_source == "cookie":
         csrf_header = request.headers.get("X-CSRF-Token", "")
         if not csrf_header or not hmac.compare_digest(
             csrf_header,

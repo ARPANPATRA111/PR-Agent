@@ -51,7 +51,17 @@ class TelegramMessage(BaseModel):
     from_user: Optional[TelegramUser] = Field(None, alias="from")
     text: Optional[str] = None
     voice: Optional[TelegramVoice] = None
-    
+
+    class Config:
+        populate_by_name = True
+
+
+class TelegramCallbackQuery(BaseModel):
+    id: str
+    from_user: TelegramUser = Field(alias="from")
+    message: Optional[TelegramMessage] = None
+    data: Optional[str] = None
+
     class Config:
         populate_by_name = True
 
@@ -59,6 +69,7 @@ class TelegramMessage(BaseModel):
 class TelegramUpdate(BaseModel):
     update_id: int
     message: Optional[TelegramMessage] = None
+    callback_query: Optional[TelegramCallbackQuery] = None
 
 
 class RawEntry(BaseModel):
@@ -69,7 +80,7 @@ class RawEntry(BaseModel):
     audio_file_id: str
     audio_duration: int
     transcript: str
-    
+
     class Config:
         from_attributes = True
 
@@ -85,7 +96,7 @@ class StructuredEntry(BaseModel):
     summary: str
     keywords: List[str] = []
     sentiment: Optional[str] = None
-    
+
     class Config:
         from_attributes = True
 
@@ -115,7 +126,7 @@ class DailySummary(BaseModel):
     reflection: str
     themes: List[str] = []
     productivity_score: Optional[float] = None
-    
+
     class Config:
         from_attributes = True
 
@@ -132,16 +143,14 @@ class WeeklySummary(BaseModel):
     learnings: List[str]
     trends: Dict[str, Any]
     comparison_with_previous: Optional[str] = None
-    
+
     class Config:
         from_attributes = True
 
 
 class LinkedInPost(BaseModel):
     id: Optional[int] = None
-    telegram_id: int = Field(
-        validation_alias=AliasChoices("telegram_id", "user_id")
-    )
+    telegram_id: int = Field(validation_alias=AliasChoices("telegram_id", "user_id"))
     weekly_summary_id: Optional[int] = None
     tone: PostTone
     content: str
@@ -153,7 +162,7 @@ class LinkedInPost(BaseModel):
     week_number: Optional[int] = None
     version: int = 1
     hashtags: List[str] = []
-    
+
     class Config:
         from_attributes = True
 
@@ -161,7 +170,11 @@ class LinkedInPost(BaseModel):
 class PostGenerationRequest(BaseModel):
     telegram_id: int
     custom_instructions: Optional[str] = None
-    tones: List[PostTone] = [PostTone.FRIENDLY, PostTone.PROFESSIONAL, PostTone.TECHNICAL]
+    tones: List[PostTone] = [
+        PostTone.FRIENDLY,
+        PostTone.PROFESSIONAL,
+        PostTone.TECHNICAL,
+    ]
 
 
 class PostUpdateRequest(BaseModel):
@@ -208,11 +221,11 @@ class User(BaseModel):
     streak: int = 0
     total_entries: int = 0
     preferences: Dict[str, Any] = {}
-    
+
     @property
     def timezone(self) -> str:
         return self.preferences.get("timezone", "UTC")
-    
+
     class Config:
         from_attributes = True
 
@@ -259,6 +272,7 @@ class ThemeCluster(BaseModel):
     sample_entries: List[str]
     trend: str
 
+
 class GoalStatus(str, Enum):
     ACTIVE = "active"
     COMPLETED = "completed"
@@ -277,7 +291,7 @@ class Goal(BaseModel):
     sub_tasks: List[str] = []
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    
+
     class Config:
         from_attributes = True
 
@@ -290,6 +304,6 @@ class ReportFeedback(BaseModel):
     suggestions: List[str] = []
     applied_improvements: List[str] = []
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    
+
     class Config:
         from_attributes = True

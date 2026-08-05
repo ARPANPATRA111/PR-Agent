@@ -190,7 +190,7 @@ class Settings(BaseSettings):
 
     groq_api_key: str = Field(default="", description="Groq API key")
     groq_model: str = Field(
-        default="llama-3.3-70b-versatile",
+        default="openai/gpt-oss-120b",
         description="Groq model used for bounded provider calls",
     )
     llm_temperature: float = Field(
@@ -244,8 +244,8 @@ class Settings(BaseSettings):
     )
 
     whisper_model: str = Field(
-        default="base",
-        description="Whisper model size (tiny, base, small, medium, large)",
+        default="whisper-large-v3-turbo",
+        description="Groq transcription model identifier",
     )
     whisper_language: str = Field(
         default="auto",

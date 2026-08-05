@@ -24,14 +24,21 @@ from public_models import (
 class FakeTelegramClient:
     def __init__(self):
         self.messages: list[str] = []
+        self.message_options: list[dict] = []
+        self.callback_answers: list[tuple[str, str | None]] = []
 
     async def send_message(self, chat_id, text, **kwargs):
-        del chat_id, kwargs
+        del chat_id
         self.messages.append(text)
+        self.message_options.append(kwargs)
         return {"ok": True}
 
     async def send_typing_action(self, chat_id):
         del chat_id
+
+    async def answer_callback_query(self, callback_query_id, text=None):
+        self.callback_answers.append((callback_query_id, text))
+        return {"ok": True}
 
 
 class FakeMemory:
@@ -104,6 +111,66 @@ async def test_public_invite_gate_uses_public_owner_table(
     )
 
     assert "Beta access is required" in bot.telegram.messages[-1]
+
+
+@pytest.mark.asyncio
+async def test_voice_review_reply_uses_correct_and_wrong_buttons(bot_and_factory):
+    bot, _ = bot_and_factory
+    await bot._send_assistant_reply(
+        9001,
+        AssistantReply(
+            "Review this action",
+            "confirmation",
+            pending_id=77,
+        ),
+    )
+
+    keyboard = bot.telegram.message_options[-1]["reply_markup"]["inline_keyboard"]
+    assert keyboard[0][0]["callback_data"] == "agent:confirm:77"
+    assert keyboard[0][1]["callback_data"] == "agent:cancel:77"
+
+
+@pytest.mark.asyncio
+async def test_wrong_button_cancels_review_and_requests_new_voice(
+    bot_and_factory,
+    monkeypatch,
+):
+    bot, _ = bot_and_factory
+    monkeypatch.setattr(settings, "public_v2_enabled", True)
+    monkeypatch.setattr(settings, "invite_only", False)
+
+    class FakeAssistant:
+        def cancel(self, actor, pending_id):
+            assert actor.telegram_id == 1001
+            assert pending_id == 77
+            return AssistantReply("Pending action cancelled.", "cancelled")
+
+    bot.bounded_assistant = FakeAssistant()
+    update = TelegramUpdate.model_validate(
+        {
+            "update_id": 9100,
+            "callback_query": {
+                "id": "callback-1",
+                "from": {
+                    "id": 1001,
+                    "first_name": "Public",
+                    "username": "public_user",
+                },
+                "message": {
+                    "message_id": 55,
+                    "date": int(datetime.now(timezone.utc).timestamp()),
+                    "chat": {"id": 9001, "type": "private"},
+                    "text": "Review",
+                },
+                "data": "agent:cancel:77",
+            },
+        }
+    )
+
+    await bot.handle_update(update)
+
+    assert bot.telegram.callback_answers[-1] == ("callback-1", "Cancelled")
+    assert "Send a new voice note" in bot.telegram.messages[-1]
 
 
 @pytest.fixture()

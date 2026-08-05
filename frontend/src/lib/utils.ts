@@ -8,9 +8,14 @@ export function cn(...inputs: ClassValue[]) {
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 let csrfToken: string | null = null;
+let accessToken: string | null = null;
 
 export function setCsrfToken(token: string | null): void {
   csrfToken = token;
+}
+
+export function setAccessToken(token: string | null): void {
+  accessToken = token;
 }
 
 function isMutation(method?: string): boolean {
@@ -27,6 +32,9 @@ export async function fetchAPI<T = unknown>(
   }
   if (isMutation(options?.method) && csrfToken) {
     headers.set('X-CSRF-Token', csrfToken);
+  }
+  if (accessToken) {
+    headers.set('Authorization', `Bearer ${accessToken}`);
   }
 
   const response = await fetch(`${API_URL}${endpoint}`, {

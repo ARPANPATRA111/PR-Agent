@@ -6,7 +6,7 @@ from typing import Optional, Dict, List
 
 import httpx
 
-from assistant import ActorContext, BoundedAssistant
+from assistant import ActorContext, AssistantReply, BoundedAssistant
 from assistant.providers import ProviderUnavailable, get_intent_provider
 from abuse_controls import (
     BetaAccessRequired,
@@ -107,11 +107,14 @@ class TelegramClient:
         text: str,
         parse_mode: str = "HTML",
         reply_to_message_id: Optional[int] = None,
+        reply_markup: Optional[dict] = None,
     ) -> dict:
         payload = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
 
         if reply_to_message_id:
             payload["reply_to_message_id"] = reply_to_message_id
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
 
         result = await self._request_with_retry(
             "POST",
@@ -157,6 +160,20 @@ class TelegramClient:
             json={"chat_id": chat_id, "message_id": message_id},
         )
 
+    async def answer_callback_query(
+        self,
+        callback_query_id: str,
+        text: str | None = None,
+    ) -> dict:
+        payload = {"callback_query_id": callback_query_id}
+        if text:
+            payload["text"] = text[:200]
+        return await self._request_with_retry(
+            "POST",
+            "answerCallbackQuery",
+            json=payload,
+        )
+
     async def send_typing_action(self, chat_id: int) -> None:
         try:
             await self._request_with_retry(
@@ -174,7 +191,7 @@ class TelegramClient:
             json={
                 "url": url,
                 "secret_token": secret_token,
-                "allowed_updates": ["message"],
+                "allowed_updates": ["message", "callback_query"],
             },
         )
 
@@ -193,6 +210,9 @@ class BotHandler(DeterministicCommandMixin):
         self.bounded_assistant: BoundedAssistant | None = None
 
     async def handle_update(self, update: TelegramUpdate) -> None:
+        if update.callback_query:
+            await self._handle_callback_update(update)
+            return
         if not update.message:
             logger.debug("Update has no message, skipping")
             return
@@ -247,6 +267,73 @@ class BotHandler(DeterministicCommandMixin):
             logger.exception("Telegram update handler failed")
             await self.telegram.send_message(
                 chat_id, "❌ Sorry, something went wrong. Please try again."
+            )
+
+    async def _handle_callback_update(self, update: TelegramUpdate) -> None:
+        callback = update.callback_query
+        if callback is None or callback.message is None:
+            return
+        actor_message = TelegramMessage(
+            message_id=callback.message.message_id,
+            date=callback.message.date,
+            chat=callback.message.chat,
+            from_user=callback.from_user,
+            text=callback.data,
+        )
+        chat_id = actor_message.chat.get("id")
+        try:
+            if settings.public_v2_enabled and settings.invite_only:
+                await asyncio.to_thread(self._require_beta_access, actor_message)
+            parts = (callback.data or "").split(":")
+            if len(parts) != 3 or parts[0] != "agent" or not parts[2].isdigit():
+                await self.telegram.answer_callback_query(
+                    callback.id,
+                    "This action is no longer available.",
+                )
+                return
+            pending_id = int(parts[2])
+            assistant = self._get_bounded_assistant()
+            if parts[1] == "confirm":
+                reply = await asyncio.to_thread(
+                    assistant.confirm,
+                    self._actor(actor_message),
+                    pending_id,
+                )
+                callback_text = "Saved" if reply.status == "completed" else "Not saved"
+            elif parts[1] == "cancel":
+                cancelled = await asyncio.to_thread(
+                    assistant.cancel,
+                    self._actor(actor_message),
+                    pending_id,
+                )
+                callback_text = "Cancelled"
+                reply = AssistantReply(
+                    "Nothing was saved. Send a new voice note and I will try again.",
+                    cancelled.status,
+                )
+            else:
+                await self.telegram.answer_callback_query(
+                    callback.id,
+                    "Unsupported action.",
+                )
+                return
+            await self.telegram.answer_callback_query(callback.id, callback_text)
+            await self._send_assistant_reply(chat_id, reply)
+        except BetaAccessRequired:
+            await self.telegram.answer_callback_query(
+                callback.id,
+                "Beta access is required.",
+            )
+        except ProviderUnavailable:
+            await self.telegram.answer_callback_query(
+                callback.id,
+                "The assistant is unavailable.",
+            )
+        except Exception:
+            logger.exception("Telegram callback handling failed")
+            await self.telegram.answer_callback_query(
+                callback.id,
+                "Please try again.",
             )
 
     def _require_beta_access(self, message: TelegramMessage) -> None:
@@ -526,6 +613,33 @@ class BotHandler(DeterministicCommandMixin):
             username=message.from_user.username,
         )
 
+    async def _send_assistant_reply(
+        self,
+        chat_id: int,
+        reply: AssistantReply,
+    ) -> None:
+        reply_markup = None
+        if reply.status == "confirmation" and reply.pending_id is not None:
+            reply_markup = {
+                "inline_keyboard": [
+                    [
+                        {
+                            "text": "✅ Correct",
+                            "callback_data": f"agent:confirm:{reply.pending_id}",
+                        },
+                        {
+                            "text": "❌ Wrong",
+                            "callback_data": f"agent:cancel:{reply.pending_id}",
+                        },
+                    ]
+                ]
+            }
+        await self.telegram.send_message(
+            chat_id,
+            reply.text,
+            reply_markup=reply_markup,
+        )
+
     async def _handle_bounded_text(
         self,
         message: TelegramMessage,
@@ -551,7 +665,7 @@ class BotHandler(DeterministicCommandMixin):
                 message.text or "",
                 update_id=update_id,
             )
-            await self.telegram.send_message(message.chat.get("id"), reply.text)
+            await self._send_assistant_reply(message.chat.get("id"), reply)
         except ProviderUnavailable:
             await self.telegram.send_message(
                 message.chat.get("id"),
@@ -601,8 +715,9 @@ class BotHandler(DeterministicCommandMixin):
                 self._actor(message),
                 transcript,
                 update_id=update_id,
+                review_required=True,
             )
-            await self.telegram.send_message(message.chat.get("id"), reply.text)
+            await self._send_assistant_reply(message.chat.get("id"), reply)
         except ProviderUnavailable:
             await self.telegram.send_message(
                 message.chat.get("id"),

@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from assistant import ActorContext, BoundedAssistant
+from assistant.providers import _strict_proposal_schema
 from assistant.schemas import AgentProposal
 from nutrition.providers import get_nutrition_provider
 from public_models import (
@@ -92,6 +93,24 @@ def test_strict_schema_rejects_identity_and_hidden_reasoning():
                 "reasoning": "hidden chain of thought",
             }
         )
+
+
+def test_provider_schema_is_fully_inlined_and_strict():
+    schema = _strict_proposal_schema()
+    assert "$defs" not in schema
+
+    def assert_objects_are_closed(node):
+        if isinstance(node, dict):
+            assert "$ref" not in node
+            if node.get("type") == "object" or "properties" in node:
+                assert node.get("additionalProperties") is False
+            for value in node.values():
+                assert_objects_are_closed(value)
+        elif isinstance(node, list):
+            for value in node:
+                assert_objects_are_closed(value)
+
+    assert_objects_are_closed(schema)
     with pytest.raises(ValueError):
         AgentProposal.model_validate(
             {
@@ -457,6 +476,103 @@ def test_multi_intent_and_malformed_provider_output_fail_closed(assistant_db):
     with assistant_db() as session:
         assert session.query(WorkLog).count() == 0
         assert session.query(Note).count() == 0
+
+
+def test_voice_review_stages_single_action_until_confirmed(assistant_db):
+    assistant = build_assistant(
+        assistant_db,
+        FakeProvider(
+            {
+                "confidence": 0.99,
+                "action": {
+                    "kind": "create_note",
+                    "body": "Ask HR about relocation",
+                },
+            }
+        ),
+    )
+
+    review = assistant.handle(
+        ALICE,
+        "Remember to ask HR about relocation",
+        update_id=40,
+        review_required=True,
+    )
+    assert review.status == "confirmation"
+    assert review.pending_id is not None
+    assert "No changes have been made yet" in review.text
+    with assistant_db() as session:
+        assert session.query(Note).count() == 0
+
+    confirmed = assistant.confirm(ALICE, review.pending_id)
+    assert confirmed.status == "completed"
+    with assistant_db() as session:
+        assert session.query(Note).one().body == "Ask HR about relocation"
+
+
+def test_multi_intent_review_confirms_all_actions_together(assistant_db):
+    assistant = build_assistant(
+        assistant_db,
+        FakeProvider(
+            {
+                "confidence": 0.98,
+                "actions": [
+                    {
+                        "kind": "create_note",
+                        "body": "Buy a birthday card",
+                    },
+                    {
+                        "kind": "create_ledger_entry",
+                        "direction": "expense",
+                        "amount": "450",
+                        "currency": "INR",
+                        "description": "birthday gift",
+                    },
+                ],
+            }
+        ),
+    )
+
+    review = assistant.handle(
+        ALICE,
+        "Note that I need a card and log 450 INR for the gift",
+        update_id=41,
+        review_required=True,
+    )
+    assert review.status == "confirmation"
+    assert "1. Note" in review.text
+    assert "2. Expense" in review.text
+    with assistant_db() as session:
+        assert session.query(Note).count() == 0
+        assert session.query(LedgerEntry).count() == 0
+
+    confirmed = assistant.confirm(ALICE, review.pending_id)
+    assert confirmed.status == "completed"
+    with assistant_db() as session:
+        assert session.query(Note).count() == 1
+        assert session.query(LedgerEntry).count() == 1
+
+
+def test_wrong_voice_review_cancels_without_writes(assistant_db):
+    assistant = build_assistant(
+        assistant_db,
+        FakeProvider(
+            {
+                "confidence": 0.99,
+                "action": {"kind": "create_work_log", "text": "Wrong text"},
+            }
+        ),
+    )
+    review = assistant.handle(
+        ALICE,
+        "misheard audio",
+        update_id=42,
+        review_required=True,
+    )
+    cancelled = assistant.cancel(ALICE, review.pending_id)
+    assert cancelled.status == "cancelled"
+    with assistant_db() as session:
+        assert session.query(WorkLog).count() == 0
 
 
 def test_versioned_evaluation_corpus_covers_security_and_ambiguity():

@@ -31,6 +31,12 @@
   },
   {
     "name": "multi_intent",
+    "input": "Create a note that I need to buy a birthday card, and record an expense of 450 INR for the gift",
+    "expected_kind": "batch",
+    "expected_actions": ["create_note", "create_ledger_entry"]
+  },
+  {
+    "name": "unsafe_bulk_delete",
     "input": "Log my work and delete every old note",
     "expected_kind": "clarification"
   },
