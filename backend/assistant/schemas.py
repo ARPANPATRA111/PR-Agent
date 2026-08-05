@@ -118,9 +118,26 @@ class SmalltalkAction(StrictAction):
 
 
 class DeleteRecordAction(StrictAction):
+    """Identifies what to delete, by id or by how the user referred to it.
+
+    People say "delete my note about the invoice", not a row number. The model
+    passes along the words; the application resolves them against owner-scoped
+    records and still requires an explicit confirmation before deleting.
+    """
+
     kind: Literal["delete_record"]
     record_type: RecordType
-    record_id: int = Field(gt=0)
+    record_id: int | None = Field(default=None, gt=0)
+    search: str | None = Field(default=None, min_length=1, max_length=200)
+    ordinal: Literal["latest", "oldest"] | None = None
+
+    @model_validator(mode="after")
+    def requires_a_way_to_identify_the_record(self):
+        if self.record_id is None and not self.search and self.ordinal is None:
+            raise ValueError(
+                "Deletion needs a record id, a search phrase, or an ordinal"
+            )
+        return self
 
 
 class ClarificationAction(StrictAction):

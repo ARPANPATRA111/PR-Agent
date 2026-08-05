@@ -950,7 +950,7 @@ class AgentRun(PublicBase):
     __table_args__ = (
         CheckConstraint(
             "status IN ('processing', 'completed', 'clarification', "
-            "'confirmation', 'rejected', 'failed')",
+            "'confirmation', 'disambiguation', 'rejected', 'failed')",
             name="status_supported",
         ),
         Index(
@@ -1038,8 +1038,8 @@ class AgentPendingAction(PublicBase, TimestampMixin):
 
     __table_args__ = (
         CheckConstraint(
-            "state IN ('clarification', 'confirmation', 'executed', "
-            "'cancelled', 'expired')",
+            "state IN ('clarification', 'confirmation', 'disambiguation', "
+            "'executed', 'cancelled', 'expired')",
             name="state_supported",
         ),
         UniqueConstraint(

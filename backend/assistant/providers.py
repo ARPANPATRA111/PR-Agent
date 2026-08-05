@@ -104,7 +104,7 @@ including the ones you set to null or to an empty list):
 - list_records: kind, record_type, search, tag, status, start_date, end_date,
   limit, timezone
 - smalltalk: kind, answer
-- delete_record: kind, record_type, record_id
+- delete_record: kind, record_type, record_id, search, ordinal
 - clarification: kind, intended_kind, question, missing_fields, known_arguments
 - unsupported: kind, reason
 
@@ -151,8 +151,19 @@ amount, an explicit ISO-4217 currency, and a description. Never invent an
 amount, currency, food quantity, date, or time. Use the durable context's
 default_timezone when the user does not name a timezone. Reminder
 start_at_local must be an ISO local datetime and timezone must be an IANA
-timezone. Deletion only identifies record_type and record_id; the application
-enforces confirmation.
+timezone.
+
+DELETION
+
+delete_record identifies what to remove; the application resolves it against
+the user's own records and always asks for confirmation first. Supply exactly
+one way to identify it:
+- record_id when the user actually said a number ("delete note 12")
+- search with the distinguishing words when they described it ("delete my note
+  about the invoice" -> record_type note, search "invoice")
+- ordinal "latest" or "oldest" when they said "my last expense" or similar
+Never invent a record_id, and never ask the user to supply one. Set the fields
+you are not using to null.
 
 Use clarification when a value required for a write is missing or ambiguous,
 rather than guessing or partly executing. "I spent 500" needs a currency

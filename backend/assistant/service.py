@@ -52,6 +52,9 @@ from public_models import (
 
 UTC = timezone.utc
 
+# Pending states that are still awaiting the user. Anything else is resolved.
+OPEN_PENDING_STATES = ("clarification", "confirmation", "disambiguation")
+
 
 @dataclass(frozen=True)
 class ActorContext:
@@ -68,6 +71,9 @@ class AssistantReply:
     record_type: str | None = None
     record_id: int | None = None
     pending_id: int | None = None
+    # Candidate (record_id, label) pairs the caller should render as choices
+    # when a spoken reference matched more than one record.
+    options: tuple[tuple[int, str], ...] = ()
 
 
 class BoundedAssistant:
@@ -418,7 +424,7 @@ class BoundedAssistant:
                 .filter(
                     AgentPendingAction.id == pending_id,
                     AgentPendingAction.owner_id == pending.owner_id,
-                    AgentPendingAction.state.in_(["clarification", "confirmation"]),
+                    AgentPendingAction.state.in_(OPEN_PENDING_STATES),
                 )
                 .one_or_none()
             )
@@ -516,6 +522,20 @@ class BoundedAssistant:
                 prompt=clarification.question,
                 replace_existing=replace_existing,
             )
+        # A spoken deletion names a record the way a person would. Resolve that
+        # to a concrete row before anything is reviewed or stored, so every
+        # later stage works with an unambiguous, owner-verified target.
+        actions, early_reply = self._resolve_deletions(
+            owner_id,
+            run_id,
+            idempotency_key,
+            update_id,
+            actions,
+            replace_existing=replace_existing,
+        )
+        if early_reply is not None:
+            return early_reply
+
         # Reading owned records or answering conversationally cannot change
         # anything, so neither the review step nor the confidence floor applies.
         # Both exist to protect writes, and applying them here only forces a
@@ -586,10 +606,7 @@ class BoundedAssistant:
                 action_type=action.kind,
                 arguments=action.model_dump(mode="json"),
                 missing_fields=[],
-                prompt=(
-                    f"Confirm deletion of {action.record_type.replace('_', ' ')} "
-                    f"#{action.record_id}."
-                ),
+                prompt=self._delete_prompt(owner_id, action),
                 replace_existing=replace_existing,
             )
         return self._execute(
@@ -599,6 +616,229 @@ class BoundedAssistant:
             action,
             replace_existing=replace_existing,
         )
+
+    MAX_DELETE_CHOICES = 5
+
+    def _resolve_deletions(
+        self,
+        owner_id: int,
+        run_id: int,
+        idempotency_key: str,
+        update_id: int,
+        actions: list,
+        *,
+        replace_existing: bool,
+    ) -> tuple[list, AssistantReply | None]:
+        """Replace spoken record references with concrete owned record ids."""
+        resolved = []
+        for action in actions:
+            if not isinstance(action, DeleteRecordAction) or action.record_id:
+                resolved.append(action)
+                continue
+            with self.session_factory() as session:
+                candidates = self._delete_candidates(
+                    DomainServices(session),
+                    owner_id,
+                    action,
+                )
+            noun = action.record_type.replace("_", " ")
+            if not candidates:
+                return actions, self._reject(
+                    owner_id,
+                    run_id,
+                    idempotency_key,
+                    action.kind,
+                    f"I could not find a {noun} matching that. "
+                    f"Ask me to list your {noun} records and try again.",
+                )
+            if len(candidates) == 1 or action.ordinal is not None:
+                record_id, _ = candidates[0]
+                resolved.append(action.model_copy(update={"record_id": record_id}))
+                continue
+            choices = candidates[: self.MAX_DELETE_CHOICES]
+            if len(actions) > 1:
+                # Disambiguating one item inside a multi-intent request would
+                # leave the rest of the batch in limbo, so ask instead.
+                return actions, self._pending(
+                    owner_id,
+                    run_id,
+                    idempotency_key,
+                    update_id,
+                    state="clarification",
+                    action_type=action.kind,
+                    arguments={},
+                    missing_fields=["record_reference"],
+                    prompt=(
+                        f"Several {noun} records match that. Please send the "
+                        f"deletion on its own so I can show you the choices."
+                    ),
+                    replace_existing=replace_existing,
+                )
+            return actions, self._pending(
+                owner_id,
+                run_id,
+                idempotency_key,
+                update_id,
+                state="disambiguation",
+                action_type=action.kind,
+                arguments={
+                    "kind": "delete_choice",
+                    "record_type": action.record_type,
+                    "candidates": [
+                        {"record_id": record_id, "label": label}
+                        for record_id, label in choices
+                    ],
+                },
+                missing_fields=["record_reference"],
+                prompt=f"Which {noun} should I delete?",
+                replace_existing=replace_existing,
+                options=tuple(choices),
+            )
+        return resolved, None
+
+    def _delete_candidates(
+        self,
+        service: DomainServices,
+        owner_id: int,
+        action: DeleteRecordAction,
+    ) -> list[tuple[int, str]]:
+        """Return owner-scoped deletion candidates, newest match first."""
+        search = (action.search or "").strip().lower()
+        scan_limit = 100
+
+        if action.record_type == "work_log":
+            rows = service.list_work_logs(
+                owner_id, search=action.search, limit=scan_limit
+            )
+            labels = [(row.id, row.original_text) for row in rows]
+        elif action.record_type == "note":
+            rows = service.list_notes(owner_id, search=action.search, limit=scan_limit)
+            labels = [(row.id, row.title or row.body) for row in rows]
+        elif action.record_type == "ledger_entry":
+            rows = service.list_ledger_entries(
+                owner_id, search=action.search, limit=scan_limit
+            )
+            labels = [
+                (
+                    row.id,
+                    f"{row.direction} {row.currency} "
+                    f"{self._major_amount(row.amount_minor, row.currency)} — "
+                    f"{row.description}",
+                )
+                for row in rows
+            ]
+        elif action.record_type == "reminder":
+            rows = service.list_reminders(owner_id, limit=scan_limit)
+            labels = [(row.id, row.title) for row in rows]
+        elif action.record_type == "goal":
+            rows = service.list_goals(owner_id, limit=scan_limit)
+            labels = [(row.id, row.title) for row in rows]
+        else:
+            rows = service.list_nutrition_logs(owner_id, limit=scan_limit)
+            labels = [(row.id, row.meal_name or row.original_text) for row in rows]
+
+        # The domain layer filters what it can in SQL; the rest is matched here
+        # so every record type accepts the same spoken reference.
+        if search and action.record_type in {"reminder", "goal", "nutrition_log"}:
+            labels = [
+                (record_id, label)
+                for record_id, label in labels
+                if search in (label or "").lower()
+            ]
+        if action.ordinal == "oldest":
+            labels = list(reversed(labels))
+        return [(record_id, " ".join((label or "").split())) for record_id, label in labels]
+
+    def _delete_prompt(self, owner_id: int, action: DeleteRecordAction) -> str:
+        """Describe the target in the user's own words rather than by number."""
+        noun = action.record_type.replace("_", " ")
+        with self.session_factory() as session:
+            service = DomainServices(session)
+            getters = {
+                "work_log": (service.get_work_log, lambda row: row.original_text),
+                "note": (service.get_note, lambda row: row.title or row.body),
+                "reminder": (service.get_reminder, lambda row: row.title),
+                "ledger_entry": (
+                    service.get_ledger_entry,
+                    lambda row: f"{row.direction} {row.currency} "
+                    f"{self._major_amount(row.amount_minor, row.currency)} — "
+                    f"{row.description}",
+                ),
+                "nutrition_log": (
+                    service.get_nutrition_log,
+                    lambda row: row.meal_name or row.original_text,
+                ),
+                "goal": (service.get_goal, lambda row: row.title),
+            }
+            getter, describe = getters[action.record_type]
+            try:
+                label = describe(getter(owner_id, action.record_id))
+            except (RecordNotFound, DomainError):
+                return f"Confirm deletion of {noun} #{action.record_id}."
+        return f"Delete this {noun}? {self._clip(label, 160)}"
+
+    def choose(
+        self,
+        actor: ActorContext,
+        pending_id: int,
+        record_id: int,
+    ) -> AssistantReply:
+        """Accept one of the offered deletion candidates, then ask to confirm."""
+        pending = self._load_pending(actor.telegram_id, pending_id)
+        if pending is None:
+            return AssistantReply("Pending action not found.", "rejected")
+        if pending.state != "disambiguation":
+            return AssistantReply(
+                "That action is not waiting for a choice.",
+                "rejected",
+            )
+        if self._expire_if_needed(pending):
+            return AssistantReply("That choice has expired.", "expired")
+        stored = pending.proposed_arguments or {}
+        candidates = stored.get("candidates") or []
+        # The tapped value arrives from the client, so it is only honoured when
+        # it matches a candidate this server offered for this pending action.
+        chosen = next(
+            (
+                candidate
+                for candidate in candidates
+                if int(candidate.get("record_id", 0)) == record_id
+            ),
+            None,
+        )
+        if chosen is None:
+            return AssistantReply("That choice is no longer available.", "rejected")
+        record_type = stored.get("record_type")
+        noun = str(record_type).replace("_", " ")
+        with self.session_factory() as session:
+            current = (
+                session.query(AgentPendingAction)
+                .filter(
+                    AgentPendingAction.id == pending_id,
+                    AgentPendingAction.owner_id == pending.owner_id,
+                    AgentPendingAction.state == "disambiguation",
+                )
+                .one_or_none()
+            )
+            if current is None:
+                return AssistantReply("That action is already closed.", "completed")
+            current.state = "confirmation"
+            current.action_type = "delete_record"
+            current.proposed_arguments = {
+                "kind": "delete_record",
+                "record_type": record_type,
+                "record_id": record_id,
+                "search": None,
+                "ordinal": None,
+            }
+            current.missing_fields = []
+            current.prompt = (
+                f"Delete this {noun}? {self._clip(chosen.get('label'), 160)}"
+            )
+            current.version += 1
+            session.commit()
+            prompt = current.prompt
+        return AssistantReply(prompt, "confirmation", pending_id=pending_id)
 
     @staticmethod
     def _review_prompt(actions, *, uncertain: bool = False) -> str:
@@ -1175,6 +1415,7 @@ class BoundedAssistant:
         missing_fields: list[str],
         prompt: str,
         replace_existing: bool,
+        options: tuple[tuple[int, str], ...] = (),
     ) -> AssistantReply:
         with self.session_factory() as session:
             action = (
@@ -1248,15 +1489,14 @@ class BoundedAssistant:
                 run.completed_at_utc = self.clock()
             session.commit()
             pending_id = pending.id
-        instruction = (
-            f" Reply with /confirmagent {pending_id} or " f"/cancelagent {pending_id}."
-            if state == "confirmation"
-            else f" Reply with /answeragent {pending_id} your answer."
-        )
+        # Every pending state is resolved by tapping a button or by simply
+        # replying, so the prompt no longer quotes a command and an id back at
+        # the user. The slash commands still work as a deterministic fallback.
         return AssistantReply(
-            escape(prompt) + instruction,
+            escape(prompt),
             state,
             pending_id=pending_id,
+            options=options,
         )
 
     def _reject(
@@ -1330,7 +1570,7 @@ class BoundedAssistant:
                 .filter(
                     AgentPendingAction.owner_id == action.owner_id,
                     AgentPendingAction.idempotency_key == idempotency_key,
-                    AgentPendingAction.state.in_(["clarification", "confirmation"]),
+                    AgentPendingAction.state.in_(OPEN_PENDING_STATES),
                 )
                 .one_or_none()
             )
@@ -1339,6 +1579,7 @@ class BoundedAssistant:
                     escape(pending.prompt),
                     pending.state,
                     pending_id=pending.id,
+                    options=self._stored_options(pending),
                 )
             return AssistantReply(
                 "That Telegram update was already processed.",
@@ -1377,11 +1618,23 @@ class BoundedAssistant:
             return False
         with self.session_factory() as session:
             current = session.get(AgentPendingAction, pending.id)
-            if current and current.state in {"clarification", "confirmation"}:
+            if current and current.state in OPEN_PENDING_STATES:
                 current.state = "expired"
                 current.resolved_at_utc = self.clock()
                 session.commit()
         return True
+
+    @staticmethod
+    def _stored_options(pending: AgentPendingAction) -> tuple[tuple[int, str], ...]:
+        """Rebuild the offered choices when a pending action is replayed."""
+        if pending.state != "disambiguation":
+            return ()
+        candidates = (pending.proposed_arguments or {}).get("candidates") or []
+        return tuple(
+            (int(candidate["record_id"]), str(candidate.get("label", "")))
+            for candidate in candidates
+            if candidate.get("record_id")
+        )
 
     @staticmethod
     def _update_action(

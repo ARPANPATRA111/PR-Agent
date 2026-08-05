@@ -294,7 +294,12 @@ class BotHandler(DeterministicCommandMixin):
             if settings.public_v2_enabled and settings.invite_only:
                 await asyncio.to_thread(self._require_beta_access, actor_message)
             parts = (callback.data or "").split(":")
-            if len(parts) != 3 or parts[0] != "agent" or not parts[2].isdigit():
+            if (
+                len(parts) not in {3, 4}
+                or parts[0] != "agent"
+                or not parts[2].isdigit()
+                or (len(parts) == 4 and not parts[3].isdigit())
+            ):
                 await self.telegram.answer_callback_query(
                     callback.id,
                     "This action is no longer available.",
@@ -302,7 +307,17 @@ class BotHandler(DeterministicCommandMixin):
                 return
             pending_id = int(parts[2])
             assistant = self._get_bounded_assistant()
-            if parts[1] == "confirm":
+            if parts[1] == "pick" and len(parts) == 4:
+                reply = await asyncio.to_thread(
+                    assistant.choose,
+                    self._actor(actor_message),
+                    pending_id,
+                    int(parts[3]),
+                )
+                callback_text = (
+                    "Selected" if reply.status == "confirmation" else "Unavailable"
+                )
+            elif parts[1] == "confirm":
                 reply = await asyncio.to_thread(
                     assistant.confirm,
                     self._actor(actor_message),
@@ -634,6 +649,12 @@ class BotHandler(DeterministicCommandMixin):
         return self.bounded_assistant
 
     @staticmethod
+    def _choice_label(label: str, limit: int = 60) -> str:
+        """Telegram button text is short, so keep the recognisable part."""
+        normalized = " ".join((label or "").split()) or "Untitled"
+        return normalized if len(normalized) <= limit else normalized[: limit - 1] + "…"
+
+    @staticmethod
     def _actor(message: TelegramMessage) -> ActorContext:
         if message.from_user is None:
             raise ValueError("Telegram user identity is required")
@@ -665,6 +686,29 @@ class BotHandler(DeterministicCommandMixin):
                     ]
                 ]
             }
+        elif reply.status == "disambiguation" and reply.pending_id is not None:
+            # One row per candidate keeps the record id in callback data, so
+            # the user picks by reading the record instead of quoting a number.
+            rows = [
+                [
+                    {
+                        "text": self._choice_label(label),
+                        "callback_data": (
+                            f"agent:pick:{reply.pending_id}:{record_id}"
+                        ),
+                    }
+                ]
+                for record_id, label in reply.options
+            ]
+            rows.append(
+                [
+                    {
+                        "text": "❌ Cancel",
+                        "callback_data": f"agent:cancel:{reply.pending_id}",
+                    }
+                ]
+            )
+            reply_markup = {"inline_keyboard": rows}
         await self.telegram.send_message(
             chat_id,
             reply.text,
