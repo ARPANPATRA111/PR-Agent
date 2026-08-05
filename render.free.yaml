@@ -36,8 +36,16 @@ services:
         sync: false
       - key: INLINE_STAGING_WORKER_ENABLED
         value: "true"
+      # Raised from 15s: the service now stays awake continuously, so a tighter
+      # poll only adds constant database load without improving punctuality.
       - key: INLINE_STAGING_POLL_INTERVAL_SECONDS
-        value: "15"
+        value: "30"
+      # Keeps the running process from idling out. Render suspends a free web
+      # service after ~15 minutes without inbound HTTP traffic.
+      - key: KEEP_ALIVE_ENABLED
+        value: "true"
+      - key: KEEP_ALIVE_INTERVAL_SECONDS
+        value: "600"
       - key: REMINDER_WORKER_ENABLED
         value: "false"
       - key: WORKER_BATCH_SIZE

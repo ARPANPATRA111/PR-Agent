@@ -62,6 +62,25 @@ class Settings(BaseSettings):
         le=300.0,
         description="Polling interval for the free staging inline worker",
     )
+    keep_alive_enabled: bool = Field(
+        default=False,
+        description=(
+            "Self-ping the public health endpoint so a free web service does "
+            "not idle out while the process is running"
+        ),
+    )
+    keep_alive_interval_seconds: float = Field(
+        default=600.0,
+        ge=60.0,
+        le=3600.0,
+        description="Interval between keep-alive self-pings",
+    )
+    keep_alive_timeout_seconds: float = Field(
+        default=10.0,
+        ge=1.0,
+        le=60.0,
+        description="Timeout for a single keep-alive self-ping",
+    )
     message_cleanup_enabled: bool = Field(
         default=False,
         description="Queue processed Telegram messages for best-effort deletion",

@@ -75,8 +75,11 @@ async def lifespan(app: FastAPI):
     legacy_scheduler = None
     inline_staging_loop = None
     inline_staging_task = None
+    keep_alive_loop = None
+    keep_alive_task = None
     app.state.inline_staging_loop = None
     app.state.telegram_delivery_status = "disabled"
+    app.state.keep_alive_status = "disabled"
     try:
         memory = get_memory_manager()
         logger.info("Memory manager initialized")
@@ -114,6 +117,21 @@ async def lifespan(app: FastAPI):
             legacy_scheduler.start()
             logger.info("Legacy scheduler started")
 
+        if settings.keep_alive_enabled:
+            from keep_alive import KeepAliveUnavailable, build_keep_alive_loop
+
+            try:
+                keep_alive_loop = build_keep_alive_loop()
+            except KeepAliveUnavailable as exc:
+                app.state.keep_alive_status = "misconfigured"
+                logger.warning("Keep-alive self-ping unavailable: %s", exc)
+            else:
+                keep_alive_task = asyncio.create_task(
+                    keep_alive_loop.run_forever(),
+                    name="keep-alive-self-ping",
+                )
+                app.state.keep_alive_status = "running"
+
         logger.info(
             f"Bot token configured: {'Yes' if settings.telegram_bot_token else 'No'}"
         )
@@ -141,6 +159,11 @@ async def lifespan(app: FastAPI):
             await inline_staging_loop.stop()
             await inline_staging_task
             app.state.inline_staging_loop = None
+
+        if keep_alive_loop is not None and keep_alive_task is not None:
+            await keep_alive_loop.stop()
+            await keep_alive_task
+            app.state.keep_alive_status = "stopped"
 
         logger.info("Shutdown complete")
 
@@ -367,6 +390,7 @@ async def readiness_check():
             "message_cleanup": (
                 "enabled" if settings.message_cleanup_enabled else "disabled"
             ),
+            "keep_alive": getattr(app.state, "keep_alive_status", "disabled"),
         },
     }
 
