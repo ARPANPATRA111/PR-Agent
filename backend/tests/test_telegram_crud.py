@@ -72,7 +72,7 @@ def telegram_message(text: str, message_id: int = 1) -> TelegramMessage:
         {
             "message_id": message_id,
             "date": int(datetime.now(timezone.utc).timestamp()),
-            "chat": {"id": 9001},
+            "chat": {"id": 9001, "type": "private"},
             "from": {
                 "id": 1001,
                 "first_name": "Public",
@@ -97,7 +97,10 @@ async def test_public_update_does_not_require_legacy_user_table(
         TelegramUpdate(update_id=9001, message=message),
     )
 
-    assert "Welcome" in bot.telegram.messages[-1]
+    greeting = bot.telegram.messages[-1]
+    assert "Hi Public" in greeting
+    # Onboarding must lead with the voice-first gesture, not a command list.
+    assert "microphone" in greeting.lower()
 
 
 @pytest.mark.asyncio

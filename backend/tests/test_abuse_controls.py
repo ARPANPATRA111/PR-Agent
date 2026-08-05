@@ -158,3 +158,32 @@ async def test_voice_temp_file_is_deleted_after_provider_failure(
     with pytest.raises(RuntimeError):
         await transcribe_telegram_voice("file", "token")
     assert list(tmp_path.iterdir()) == []
+
+
+def test_global_ceiling_is_shared_across_owners(session_factory):
+    """One provider key means one shared budget, regardless of who spends it."""
+    from abuse_controls import GlobalQuotaExceeded
+
+    with session_factory.begin() as session:
+        service = QuotaService(session)
+        service.require_global("ai_classifications", limit=2)
+        service.require_global("ai_classifications", limit=2)
+
+        with pytest.raises(GlobalQuotaExceeded):
+            service.require_global("ai_classifications", limit=2)
+
+
+def test_global_ceiling_is_separate_from_per_owner_quota(session_factory):
+    with session_factory.begin() as session:
+        service = QuotaService(session)
+        service.require(1, "ai_classifications", limit=1)
+        service.require(2, "ai_classifications", limit=1)
+        remaining = service.require_global("ai_classifications", limit=10)
+
+    assert remaining == 9
+
+
+def test_a_global_refusal_is_still_a_quota_error():
+    from abuse_controls import GlobalQuotaExceeded
+
+    assert issubclass(GlobalQuotaExceeded, QuotaExceeded)

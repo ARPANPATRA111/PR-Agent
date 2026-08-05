@@ -152,6 +152,16 @@ class Settings(BaseSettings):
     per_user_daily_summary_limit: int = Field(default=30, ge=1, le=1000)
     per_user_daily_export_limit: int = Field(default=5, ge=1, le=100)
     per_user_daily_voice_minutes: int = Field(default=30, ge=1, le=1440)
+    global_daily_ai_limit: int = Field(
+        default=0,
+        ge=0,
+        le=1_000_000,
+        description=(
+            "Deployment-wide daily ceiling on assistant classifications. One "
+            "provider key is shared by every user, so a public deployment "
+            "needs a total cap as well as per-user quotas. Zero disables it."
+        ),
+    )
     max_reminders_per_user: int = Field(default=100, ge=1, le=5000)
     max_voice_file_size: int = Field(
         default=20 * 1024 * 1024,

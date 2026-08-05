@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from abuse_controls import QuotaExceeded, QuotaService
+from abuse_controls import GlobalQuotaExceeded, QuotaExceeded, QuotaService
 from assistant.providers import IntentProvider
 from assistant.schemas import (
     READ_ONLY_ACTIONS,
@@ -90,6 +90,7 @@ class BoundedAssistant:
         max_input_length: int = 4000,
         daily_ai_limit: int = 50,
         daily_summary_limit: int = 30,
+        global_daily_ai_limit: int = 0,
         clock: Callable[[], datetime] | None = None,
     ):
         self.session_factory = session_factory
@@ -100,6 +101,9 @@ class BoundedAssistant:
         self.max_input_length = max_input_length
         self.daily_ai_limit = daily_ai_limit
         self.daily_summary_limit = daily_summary_limit
+        # Zero disables the deployment-wide ceiling; a private deployment does
+        # not need one, a public one does.
+        self.global_daily_ai_limit = global_daily_ai_limit
         self.clock = clock or (lambda: datetime.now(UTC))
 
     def handle(
@@ -122,6 +126,13 @@ class BoundedAssistant:
             return existing
         try:
             owner_id, run_id, default_timezone = self._start_run(actor, text, update_id)
+        except GlobalQuotaExceeded:
+            return AssistantReply(
+                "I am at capacity right now and cannot interpret new requests "
+                "today. Slash commands still work, and this resets at midnight "
+                "UTC.",
+                "rejected",
+            )
         except QuotaExceeded:
             return AssistantReply(
                 "Your daily assistant limit has been reached. "
@@ -479,11 +490,17 @@ class BoundedAssistant:
                 last_name=actor.last_name,
                 username=actor.username,
             )
-            QuotaService(session).require(
+            quotas = QuotaService(session)
+            quotas.require(
                 owner.id,
                 "ai_classifications",
                 limit=self.daily_ai_limit,
             )
+            if self.global_daily_ai_limit > 0:
+                quotas.require_global(
+                    "ai_classifications",
+                    limit=self.global_daily_ai_limit,
+                )
             default_timezone = service.get_schedule_preferences(owner.id)["timezone"]
             run = AgentRun(
                 owner_id=owner.id,

@@ -30,6 +30,12 @@ class QuotaExceeded(DomainError):
     public_message = "This usage limit has been reached. Try again later."
 
 
+class GlobalQuotaExceeded(QuotaExceeded):
+    """The whole deployment, not one user, has hit a provider spend ceiling."""
+
+    public_message = "The service is at capacity right now. Try again later."
+
+
 class InviteService:
     def __init__(self, session: Session):
         self.session = session
@@ -120,6 +126,52 @@ class QuotaService:
         period: str = "day",
         now: datetime | None = None,
     ) -> int:
+        return self._consume(
+            f"owner:{owner_id}",
+            scope,
+            limit=limit,
+            units=units,
+            period=period,
+            now=now,
+            failure=QuotaExceeded,
+        )
+
+    def require_global(
+        self,
+        scope: str,
+        *,
+        limit: int,
+        units: int = 1,
+        period: str = "day",
+        now: datetime | None = None,
+    ) -> int:
+        """Cap deployment-wide provider usage shared by every tenant.
+
+        Per-owner quotas bound one person's spend. A single API key serving a
+        public bot also needs a ceiling on the total, or one busy day can
+        exhaust the provider allowance for everybody.
+        """
+        return self._consume(
+            "global",
+            scope,
+            limit=limit,
+            units=units,
+            period=period,
+            now=now,
+            failure=GlobalQuotaExceeded,
+        )
+
+    def _consume(
+        self,
+        subject_key: str,
+        scope: str,
+        *,
+        limit: int,
+        units: int,
+        period: str,
+        now: datetime | None,
+        failure: type[QuotaExceeded],
+    ) -> int:
         if limit <= 0 or units <= 0:
             raise ValueError("Quota limit and units must be positive")
         current = now or datetime.now(UTC)
@@ -128,7 +180,6 @@ class QuotaService:
             if period == "minute"
             else current.replace(hour=0, minute=0, second=0, microsecond=0)
         )
-        subject_key = f"owner:{owner_id}"
         record = (
             self.session.query(RateLimitBucket)
             .filter(
@@ -141,7 +192,7 @@ class QuotaService:
         )
         if record is None:
             if units > limit:
-                raise QuotaExceeded()
+                raise failure()
             record = RateLimitBucket(
                 subject_key=subject_key,
                 scope=scope,
@@ -166,7 +217,7 @@ class QuotaService:
                     .one()
                 )
         if record.request_count + units > limit:
-            raise QuotaExceeded()
+            raise failure()
         record.request_count += units
         record.updated_at = current
         return limit - record.request_count

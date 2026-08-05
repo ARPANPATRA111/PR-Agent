@@ -36,6 +36,38 @@ ALLOWED_VOICE_MIME_TYPES = {
 }
 
 
+# Spoken input for this bot is mostly Indian English and Hinglish about money,
+# food, work, and reminders. Priming the decoder with that vocabulary reduces
+# mistranscribed amounts and dish names, which are exactly the words the intent
+# extractor cannot recover from once they are wrong.
+TRANSCRIPTION_VOCABULARY_PROMPT = (
+    "Personal tracking notes in Indian English and Hinglish. "
+    "Money: rupees, INR, paisa, lakh, crore, EMI, UPI, salary, expense, income. "
+    "Food: roti, paratha, dal, sabzi, paneer, curd, dahi, idli, dosa, chai, "
+    "calories, protein. "
+    "Work: standup, sprint, deploy, review, blocker, meeting, log. "
+    "Reminders: today, tomorrow, morning, evening, daily, weekly, remind me."
+)
+
+# Voice is billed in short blocks rather than whole minutes. Rounding a
+# five-second "note: call mum" up to a full minute exhausted the daily
+# allowance after about thirty ordinary notes.
+VOICE_QUOTA_UNIT_SECONDS = 15
+VOICE_UNITS_PER_MINUTE = 60 // VOICE_QUOTA_UNIT_SECONDS
+
+
+def voice_quota_units(duration_seconds: int) -> int:
+    """Convert a clip length into billable units, always charging at least one."""
+    from math import ceil
+
+    return max(1, ceil(max(0, duration_seconds) / VOICE_QUOTA_UNIT_SECONDS))
+
+
+def daily_voice_unit_limit() -> int:
+    """Express the configured per-day voice minutes in billable units."""
+    return settings.per_user_daily_voice_minutes * VOICE_UNITS_PER_MINUTE
+
+
 def validate_voice_metadata(
     *,
     duration_seconds: int,
@@ -168,6 +200,12 @@ async def transcribe_audio_groq(audio_path: str) -> str:
                                 content_type,
                             ),
                             "model": (None, settings.whisper_model),
+                            # Whisper uses the prompt as a decoding prior. Naming
+                            # the vocabulary this bot actually hears markedly
+                            # improves currency words, food names, and
+                            # code-switched Hinglish over an unprimed decode.
+                            "prompt": (None, TRANSCRIPTION_VOCABULARY_PROMPT),
+                            "temperature": (None, "0"),
                         },
                     ),
                     timeout=settings.transcription_timeout_seconds,

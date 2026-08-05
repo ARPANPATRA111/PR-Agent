@@ -36,16 +36,38 @@ class DeterministicCommandMixin:
     """CRUD commands that remain available when every AI provider is down."""
 
     async def _cmd_start(self, message: TelegramMessage) -> None:
+        # First contact decides whether someone ever sends a second message, so
+        # this leads with the one thing to try rather than a list of commands.
         first_name = (
             escape(message.from_user.first_name) if message.from_user else "there"
         )
+        mini_app_url = settings.telegram_mini_app_url
+        reply_markup = (
+            {
+                "inline_keyboard": [
+                    [{"text": "📊 Open my dashboard", "web_app": {"url": mini_app_url}}]
+                ]
+            }
+            if mini_app_url.startswith("https://")
+            else None
+        )
         await self.telegram.send_message(
             message.chat.get("id"),
-            f"👋 <b>Welcome, {first_name}.</b>\n\n"
-            "Track work, notes, reminders, goals, income, and expenses. "
-            "Your records are private to your Telegram account and can be "
-            "viewed, edited, or deleted.\n\n"
-            "Use /help to see the deterministic commands.",
+            f"👋 <b>Hi {first_name}!</b>\n\n"
+            "I keep track of your day so you do not have to. Just talk to me — "
+            "hold the microphone button and say what happened.\n\n"
+            "<b>Try saying:</b>\n"
+            "🎙️ <i>\"Spent 200 rupees on lunch\"</i>\n"
+            "🎙️ <i>\"Remind me to call Ravi tomorrow at 6 pm\"</i>\n"
+            "🎙️ <i>\"I had two parathas and a cup of tea\"</i>\n"
+            "🎙️ <i>\"Show me all my notes\"</i>\n\n"
+            "I track work, notes, reminders, goals, money, and meals. "
+            "I will always show you what I understood and wait for you to tap "
+            "✅ before saving anything.\n\n"
+            "🔒 Your records are private to your Telegram account. Nobody else "
+            "can see them, and you can export or delete everything at any time.\n\n"
+            "Typing works too. /help lists every command.",
+            reply_markup=reply_markup,
         )
 
     async def _cmd_help(self, message: TelegramMessage) -> None:
@@ -59,9 +81,11 @@ class DeterministicCommandMixin:
         )
         await self.telegram.send_message(
             message.chat.get("id"),
-            "<b>PR-Agent commands</b>\n\n"
-            "Send text or a voice note naturally. Voice requests are shown back "
-            "for confirmation before anything is saved.\n\n"
+            "<b>Commands</b>\n\n"
+            "You rarely need these. Just speak or type naturally — ask me to "
+            "show, find, add, or delete anything, and I will confirm before "
+            "saving. Commands are the fallback when the assistant is "
+            "unavailable.\n\n"
             "<b>Work:</b> /log, /logs, /editlog, /deletelog\n"
             "<b>Notes:</b> /note, /notes, /editnote, /pin, /deletenote\n"
             "<b>Money:</b> /expense, /income, /ledger, /editledger, "

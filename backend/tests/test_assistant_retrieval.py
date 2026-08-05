@@ -612,3 +612,35 @@ def test_an_expired_question_is_not_continued(assistant_db):
     assistant.clock = lambda: datetime.now(UTC) + timedelta(minutes=10)
 
     assert assistant.open_clarification_id(ALICE.telegram_id) is None
+
+
+def test_the_global_ceiling_degrades_gracefully_for_everyone(assistant_db):
+    """At capacity the bot says so plainly instead of failing obscurely."""
+    seed_owner(assistant_db, ALICE)
+    seed_owner(assistant_db, BOB)
+    assistant = build_assistant(
+        assistant_db,
+        FakeProvider(list_proposal("note"), list_proposal("note")),
+        global_daily_ai_limit=1,
+    )
+
+    first = assistant.handle(ALICE, "show my notes", update_id=40)
+    second = assistant.handle(BOB, "show my notes", update_id=41)
+
+    assert first.status == "completed"
+    assert second.status == "rejected"
+    assert "at capacity" in second.text
+
+
+def test_no_global_ceiling_by_default(assistant_db):
+    seed_owner(assistant_db, ALICE)
+    assistant = build_assistant(
+        assistant_db,
+        FakeProvider(list_proposal("note"), list_proposal("note")),
+    )
+
+    first = assistant.handle(ALICE, "show my notes", update_id=42)
+    second = assistant.handle(ALICE, "show my notes", update_id=43)
+
+    assert first.status == "completed"
+    assert second.status == "completed"

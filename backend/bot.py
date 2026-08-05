@@ -31,8 +31,10 @@ from llm_agent import get_llm_agent
 from nutrition.providers import get_nutrition_provider
 from telegram_commands import DeterministicCommandMixin
 from utils import (
+    daily_voice_unit_limit,
     transcribe_telegram_voice,
     validate_voice_metadata,
+    voice_quota_units,
     format_streak,
     format_duration,
     extract_keywords,
@@ -222,6 +224,13 @@ class BotHandler(DeterministicCommandMixin):
         chat_id = message.chat.get("id")
         user_id = message.from_user.id if message.from_user else None
 
+        # Everything this bot stores is one person's private record. In a group
+        # the reply, and every listing inside it, would be readable by every
+        # member, so refuse before any record is read or written.
+        if not self._is_private_chat(message.chat):
+            await self._decline_group_chat(chat_id)
+            return
+
         if message.pinned_message is not None:
             await asyncio.to_thread(
                 self._protect_pinned_message,
@@ -254,13 +263,15 @@ class BotHandler(DeterministicCommandMixin):
                     username=message.from_user.username,
                 )
 
-            if message.voice:
+            spoken = message.spoken_audio
+            if spoken is not None:
                 if settings.public_v2_enabled:
                     await self._handle_bounded_voice(message, update.update_id)
                 else:
                     await self._handle_voice(message)
-            elif message.text:
-                if message.text.startswith("/"):
+            elif message.text or message.caption:
+                body = message.text or message.caption or ""
+                if body.startswith("/"):
                     await self._handle_command(message)
                 elif settings.public_v2_enabled:
                     await self._handle_bounded_text(message, update.update_id)
@@ -269,7 +280,8 @@ class BotHandler(DeterministicCommandMixin):
             else:
                 await self.telegram.send_message(
                     chat_id,
-                    "📢 I work best with voice notes! Send me a voice message about your progress.",
+                    "🎙️ Send me a voice note, or type what you want to record. "
+                    "I can also read forwarded voice messages and audio files.",
                 )
 
         except Exception:
@@ -291,6 +303,12 @@ class BotHandler(DeterministicCommandMixin):
         )
         chat_id = actor_message.chat.get("id")
         try:
+            if not self._is_private_chat(actor_message.chat):
+                await self.telegram.answer_callback_query(
+                    callback.id,
+                    "This only works in a direct message.",
+                )
+                return
             if settings.public_v2_enabled and settings.invite_only:
                 await asyncio.to_thread(self._require_beta_access, actor_message)
             parts = (callback.data or "").split(":")
@@ -369,6 +387,24 @@ class BotHandler(DeterministicCommandMixin):
                 callback.id,
                 "Please try again.",
             )
+
+    @staticmethod
+    def _is_private_chat(chat: dict) -> bool:
+        """Treat anything that is not a one-to-one chat as unsafe to answer.
+
+        An unknown or missing chat type is refused rather than assumed private,
+        because the cost of guessing wrong is publishing someone's records.
+        """
+        return str((chat or {}).get("type", "")).lower() == "private"
+
+    async def _decline_group_chat(self, chat_id: int) -> None:
+        await self.telegram.send_message(
+            chat_id,
+            "🔒 I only work in a direct message, because everything I store is "
+            "private to one account. Open a private chat with me and send your "
+            "voice note there.",
+            queue_cleanup=False,
+        )
 
     def _require_beta_access(self, message: TelegramMessage) -> None:
         if message.from_user is None:
@@ -645,6 +681,7 @@ class BotHandler(DeterministicCommandMixin):
                 max_input_length=settings.max_agent_input_length,
                 daily_ai_limit=settings.per_user_daily_ai_limit,
                 daily_summary_limit=settings.per_user_daily_summary_limit,
+                global_daily_ai_limit=settings.global_daily_ai_limit,
             )
         return self.bounded_assistant
 
@@ -781,11 +818,14 @@ class BotHandler(DeterministicCommandMixin):
         message: TelegramMessage,
         update_id: int,
     ) -> None:
+        spoken = message.spoken_audio
+        if spoken is None:
+            return
         try:
             validate_voice_metadata(
-                duration_seconds=message.voice.duration,
-                file_size=message.voice.file_size,
-                mime_type=message.voice.mime_type,
+                duration_seconds=spoken.duration,
+                file_size=spoken.file_size,
+                mime_type=spoken.mime_type,
             )
             await asyncio.to_thread(
                 self._consume_voice_quota,
@@ -814,7 +854,7 @@ class BotHandler(DeterministicCommandMixin):
         try:
             try:
                 transcript = await transcribe_telegram_voice(
-                    message.voice.file_id,
+                    spoken.file_id,
                     settings.telegram_bot_token,
                 )
             except Exception:
@@ -863,7 +903,8 @@ class BotHandler(DeterministicCommandMixin):
                     )
 
     def _consume_voice_quota(self, message: TelegramMessage) -> None:
-        if message.from_user is None or message.voice is None:
+        spoken = message.spoken_audio
+        if message.from_user is None or spoken is None:
             raise ValueError("Voice identity is missing.")
         with self.memory.get_session() as session:
             owner = DomainServices(session).ensure_owner(
@@ -874,9 +915,9 @@ class BotHandler(DeterministicCommandMixin):
             )
             QuotaService(session).require(
                 owner.id,
-                "voice_minutes",
-                limit=settings.per_user_daily_voice_minutes,
-                units=max(1, ceil(message.voice.duration / 60)),
+                "voice_units",
+                limit=daily_voice_unit_limit(),
+                units=voice_quota_units(spoken.duration),
             )
 
     async def _v2_answer_agent(self, message: TelegramMessage) -> None:

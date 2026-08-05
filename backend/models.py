@@ -44,14 +44,57 @@ class TelegramVoice(BaseModel):
     file_size: Optional[int] = None
 
 
+class TelegramAudio(BaseModel):
+    """An uploaded or forwarded audio file, or a round video note.
+
+    Telegram only sets ``voice`` for a note recorded with the microphone
+    button. A forwarded recording, a shared audio file, and a video note all
+    arrive under different keys while being, to the user, the same act of
+    speaking. They share the fields transcription needs.
+    """
+
+    file_id: str
+    file_unique_id: str
+    duration: int = 0
+    mime_type: Optional[str] = None
+    file_size: Optional[int] = None
+
+
 class TelegramMessage(BaseModel):
     message_id: int
     date: int
     chat: Dict[str, Any]
     from_user: Optional[TelegramUser] = Field(None, alias="from")
     text: Optional[str] = None
+    caption: Optional[str] = None
     voice: Optional[TelegramVoice] = None
+    audio: Optional[TelegramAudio] = None
+    video_note: Optional[TelegramAudio] = None
+    document: Optional[TelegramAudio] = None
     pinned_message: Optional["TelegramMessage"] = None
+
+    @property
+    def spoken_audio(self) -> Optional[TelegramVoice]:
+        """Return whichever attachment should be treated as a voice note."""
+        if self.voice is not None:
+            return self.voice
+        for candidate in (self.audio, self.video_note, self.document):
+            if candidate is None:
+                continue
+            mime_type = (candidate.mime_type or "").lower()
+            is_audio_document = candidate is self.document and not (
+                mime_type.startswith("audio/") or mime_type.startswith("video/")
+            )
+            if is_audio_document:
+                continue
+            return TelegramVoice(
+                file_id=candidate.file_id,
+                file_unique_id=candidate.file_unique_id,
+                duration=candidate.duration,
+                mime_type=candidate.mime_type,
+                file_size=candidate.file_size,
+            )
+        return None
 
     class Config:
         populate_by_name = True
