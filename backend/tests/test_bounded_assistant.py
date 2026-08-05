@@ -8,7 +8,11 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from assistant import ActorContext, BoundedAssistant
-from assistant.providers import _strict_proposal_schema
+from assistant.providers import (
+    GroqIntentProvider,
+    ProviderUnavailable,
+    _strict_proposal_schema,
+)
 from assistant.schemas import AgentProposal
 from nutrition.providers import get_nutrition_provider
 from public_models import (
@@ -124,6 +128,39 @@ def test_provider_schema_is_fully_inlined_and_strict():
                 },
             }
         )
+
+
+def test_provider_uses_validated_json_fallback_after_strict_failure(monkeypatch):
+    provider = GroqIntentProvider("test-key", "primary-model", "fallback-model")
+    calls = []
+
+    def fake_completion(*, model_name, messages, strict):
+        del messages
+        calls.append((model_name, strict))
+        if strict:
+            raise RuntimeError("strict generation failed")
+        return {
+            "confidence": 0.95,
+            "actions": [{"kind": "create_note", "body": "Buy milk"}],
+        }
+
+    monkeypatch.setattr(provider, "_completion", fake_completion)
+    result = provider.classify("Remember to buy milk")
+
+    assert calls == [("primary-model", True), ("fallback-model", False)]
+    assert result["actions"][0]["kind"] == "create_note"
+
+
+def test_provider_fails_closed_when_primary_and_fallback_fail(monkeypatch):
+    provider = GroqIntentProvider("test-key", "primary-model", "fallback-model")
+
+    def fail_completion(**kwargs):
+        del kwargs
+        raise RuntimeError("provider failed")
+
+    monkeypatch.setattr(provider, "_completion", fail_completion)
+    with pytest.raises(ProviderUnavailable):
+        provider.classify("Remember to buy milk")
 
 
 @pytest.mark.parametrize(

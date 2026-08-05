@@ -433,6 +433,12 @@ def setup_logging():
             "owner_id",
             "error_category",
             "transcript_length",
+            "attempt",
+            "provider_error_code",
+            "provider_model",
+            "provider_status_code",
+            "upload_suffix",
+            "voice_stage",
         }
 
         def format(self, record):

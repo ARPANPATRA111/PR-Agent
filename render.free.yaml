@@ -54,6 +54,8 @@ services:
         sync: false
       - key: GROQ_MODEL
         value: openai/gpt-oss-120b
+      - key: GROQ_FALLBACK_MODEL
+        value: openai/gpt-oss-20b
       - key: WHISPER_MODEL
         value: whisper-large-v3-turbo
       - key: NUTRITION_PROVIDER

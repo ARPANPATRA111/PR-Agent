@@ -193,6 +193,10 @@ class Settings(BaseSettings):
         default="openai/gpt-oss-120b",
         description="Groq model used for bounded provider calls",
     )
+    groq_fallback_model: str = Field(
+        default="openai/gpt-oss-20b",
+        description="Fallback Groq model used after a strict generation failure",
+    )
     llm_temperature: float = Field(
         default=0.7, ge=0.0, le=1.0, description="Temperature for LLM generation"
     )
