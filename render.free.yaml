@@ -81,6 +81,18 @@ services:
         value: groq
       - key: GROQ_API_KEY
         sync: false
+      # Optional extra Groq credentials, comma separated, no spaces needed.
+      # Requests rotate across every key configured here, which raises the
+      # shared provider ceiling rather than limiting users when one key is
+      # rate limited. Leave blank until keys are generated, then paste them
+      # into the Render dashboard as a masked value.
+      - key: GROQ_API_KEYS
+        sync: false
+      # Public URL of the hosted privacy policy. The bot links it from /start
+      # and /privacy. Leave blank until the policy is hosted; the bot then
+      # omits the link rather than showing a broken one.
+      - key: PRIVACY_POLICY_URL
+        sync: false
       - key: GROQ_MODEL
         value: openai/gpt-oss-120b
       - key: GROQ_FALLBACK_MODEL

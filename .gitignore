@@ -139,6 +139,7 @@ docs/*
 !docs/REMAINING_WORK_AUDIT.md
 !docs/KEEP_ALIVE.md
 !docs/PUBLIC_LAUNCH.md
+!docs/PRIVACY_POLICY_BRIEF.md
 changelog.md
 docker-compose.override.yml
 docker-compose.prod.yml

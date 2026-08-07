@@ -5,6 +5,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import json
 import logging
 import re
+from threading import Lock
 from typing import Any
 
 from groq import Groq
@@ -58,10 +59,19 @@ def get_nutrition_provider(name: str) -> NutritionEstimationProvider:
     if name == "reference":
         return ReferenceNutritionProvider()
     if name == "groq":
+        from groq_keys import get_groq_key_pool
+
+        try:
+            pool = get_groq_key_pool()
+        except ValueError as exc:
+            raise NutritionProviderUnavailable(
+                "Groq credential is not configured"
+            ) from exc
         return GroqNutritionProvider(
             settings.groq_api_key,
             settings.groq_model,
             settings.groq_fallback_model,
+            pool=pool,
         )
     return UnavailableNutritionProvider()
 
@@ -126,12 +136,25 @@ class GroqNutritionProvider(NutritionEstimationProvider):
         api_key: str,
         model_name: str,
         fallback_model_name: str | None = None,
+        pool=None,
     ):
-        if not api_key:
+        if not api_key and pool is None:
             raise NutritionProviderUnavailable("Groq credential is not configured")
-        self.client = Groq(api_key=api_key)
+        from groq_keys import GroqKeyPool
+
+        self.pool = pool or GroqKeyPool([api_key])
+        self._clients: dict[str, Groq] = {}
+        self._client_lock = Lock()
         self.model_name = model_name
         self.fallback_model_name = fallback_model_name
+
+    def _client(self, api_key: str) -> Groq:
+        with self._client_lock:
+            client = self._clients.get(api_key)
+            if client is None:
+                client = Groq(api_key=api_key)
+                self._clients[api_key] = client
+            return client
 
     def estimate(
         self,
@@ -156,8 +179,9 @@ class GroqNutritionProvider(NutritionEstimationProvider):
             models.append(self.fallback_model_name)
         last_error: Exception | None = None
         for attempt, model_name in enumerate(models, start=1):
+            api_key = self.pool.acquire()
             try:
-                response = self.client.chat.completions.create(
+                response = self._client(api_key).chat.completions.create(
                     model=model_name,
                     messages=messages,
                     temperature=0,
@@ -178,6 +202,10 @@ class GroqNutritionProvider(NutritionEstimationProvider):
                 return estimate
             except Exception as exc:
                 last_error = exc
+                from groq_keys import is_rate_limited
+
+                if is_rate_limited(exc):
+                    self.pool.penalise(api_key)
                 logger.warning(
                     "Nutrition provider attempt failed",
                     extra={

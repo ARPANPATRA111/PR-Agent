@@ -6,12 +6,14 @@ import json
 import logging
 import time
 from copy import deepcopy
+from threading import Lock
 from typing import Any, Protocol
 
 from groq import Groq
 
 from config import settings
 from assistant.schemas import AgentBatchProposal
+from groq_keys import GroqKeyPool, get_groq_key_pool, is_rate_limited
 
 logger = logging.getLogger(__name__)
 
@@ -244,12 +246,24 @@ class GroqIntentProvider:
         api_key: str,
         model_name: str,
         fallback_model_name: str | None = None,
+        pool: GroqKeyPool | None = None,
     ):
-        if not api_key:
+        if not api_key and pool is None:
             raise ProviderUnavailable("Groq credential is not configured")
-        self.client = Groq(api_key=api_key)
+        self.pool = pool or GroqKeyPool([api_key])
+        self._clients: dict[str, Groq] = {}
+        self._client_lock = Lock()
         self.model_name = model_name
         self.fallback_model_name = fallback_model_name or settings.groq_fallback_model
+
+    def _client(self, api_key: str) -> Groq:
+        """Reuse one client per credential; constructing them is not free."""
+        with self._client_lock:
+            client = self._clients.get(api_key)
+            if client is None:
+                client = Groq(api_key=api_key)
+                self._clients[api_key] = client
+            return client
 
     @staticmethod
     def _safe_error_code(exc: Exception) -> str:
@@ -265,6 +279,7 @@ class GroqIntentProvider:
     def _completion(
         self,
         *,
+        api_key: str,
         model_name: str,
         messages: list[dict[str, str]],
         strict: bool,
@@ -281,7 +296,7 @@ class GroqIntentProvider:
             }
         else:
             response_format = {"type": "json_object"}
-        response = self.client.chat.completions.create(
+        response = self._client(api_key).chat.completions.create(
             model=model_name,
             messages=messages,
             temperature=0,
@@ -318,10 +333,16 @@ class GroqIntentProvider:
         last_error: Exception | None = None
         attempt_number = 0
         for model_index, (model_name, strict) in enumerate(attempts):
+            api_key = self.pool.acquire()
+            # A rate-limited key is a capacity problem, not a bad request, so
+            # try the other credentials before giving up on this model.
+            candidate_keys = [api_key, *self.pool.alternatives(api_key)]
+            key_index = 0
             for retry in range(2):
                 attempt_number += 1
                 try:
                     result = self._completion(
+                        api_key=candidate_keys[key_index],
                         model_name=model_name,
                         messages=messages,
                         strict=strict,
@@ -347,6 +368,12 @@ class GroqIntentProvider:
                             "provider_error_code": self._safe_error_code(exc),
                         },
                     )
+                    rate_limited = is_rate_limited(exc)
+                    if rate_limited:
+                        self.pool.penalise(candidate_keys[key_index])
+                        if key_index + 1 < len(candidate_keys):
+                            key_index += 1
+                            continue
                     transient = status_code in {408, 409, 429, 500, 502, 503, 504}
                     if retry == 0 and transient:
                         time.sleep(0.35 * (model_index + 1))
@@ -359,9 +386,14 @@ def get_intent_provider() -> IntentProvider:
     if not settings.ai_agent_enabled or settings.ai_provider == "disabled":
         raise ProviderUnavailable("The bounded assistant is disabled")
     if settings.ai_provider == "groq":
+        try:
+            pool = get_groq_key_pool()
+        except ValueError as exc:
+            raise ProviderUnavailable("Groq credential is not configured") from exc
         return GroqIntentProvider(
             settings.groq_api_key,
             settings.groq_model,
             settings.groq_fallback_model,
+            pool=pool,
         )
     raise ProviderUnavailable("No supported intent provider is configured")

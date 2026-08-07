@@ -184,7 +184,13 @@ async def transcribe_audio_groq(audio_path: str) -> str:
         raise ValueError("That voice note is larger than the supported limit.")
     upload_name, content_type = groq_audio_upload_descriptor(audio_path)
     last_error: Exception | None = None
+    from groq_keys import get_groq_key_pool
+
+    pool = get_groq_key_pool()
     for attempt in range(settings.voice_provider_max_attempts):
+        # Rotate per attempt so a rate-limited credential does not fail the
+        # whole note when another one is free.
+        api_key = pool.acquire()
         try:
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(settings.transcription_timeout_seconds)
@@ -192,7 +198,7 @@ async def transcribe_audio_groq(audio_path: str) -> str:
                 response = await asyncio.wait_for(
                     client.post(
                         "https://api.groq.com/openai/v1/audio/transcriptions",
-                        headers={"Authorization": f"Bearer {settings.groq_api_key}"},
+                        headers={"Authorization": f"Bearer {api_key}"},
                         files={
                             "file": (
                                 upload_name,
@@ -226,6 +232,8 @@ async def transcribe_audio_groq(audio_path: str) -> str:
                 if isinstance(exc, httpx.HTTPStatusError)
                 else None
             )
+            if provider_status == 429:
+                pool.penalise(api_key)
             logger.warning(
                 "Voice transcription attempt failed",
                 extra={

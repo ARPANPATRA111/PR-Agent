@@ -218,6 +218,7 @@ class TelegramClient:
                     {"command": "reminders", "description": "My reminders"},
                     {"command": "goals", "description": "My goals"},
                     {"command": "settings", "description": "Preferences"},
+                    {"command": "privacy", "description": "How your data is used"},
                     {"command": "help", "description": "All commands"},
                 ]
             },
@@ -673,6 +674,7 @@ class BotHandler(DeterministicCommandMixin):
                     "/settings": self._v2_settings_link,
                     "/export": self._v2_export_link,
                     "/deleteaccount": self._v2_delete_account_link,
+                    "/privacy": self._cmd_privacy,
                 }
             )
         else:

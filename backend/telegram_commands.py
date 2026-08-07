@@ -65,9 +65,39 @@ class DeterministicCommandMixin:
             "I will always show you what I understood and wait for you to tap "
             "✅ before saving anything.\n\n"
             "🔒 Your records are private to your Telegram account. Nobody else "
-            "can see them, and you can export or delete everything at any time.\n\n"
+            "can see them, and you can export or delete everything at any time."
+            f"{self._privacy_sentence()}\n\n"
             "Typing works too. /help lists every command.",
             reply_markup=reply_markup,
+        )
+
+    @staticmethod
+    def _privacy_sentence() -> str:
+        """Link the policy only once it is actually hosted."""
+        url = settings.privacy_policy_url.strip()
+        if not url.startswith("https://"):
+            return ""
+        return f' <a href="{escape(url, quote=True)}">Privacy policy</a>.'
+
+    async def _cmd_privacy(self, message: TelegramMessage) -> None:
+        url = settings.privacy_policy_url.strip()
+        link = (
+            f'\n\n<a href="{escape(url, quote=True)}">Read the full privacy policy</a>'
+            if url.startswith("https://")
+            else "\n\nThe full written policy is being published; ask the "
+            "operator if you need it before then."
+        )
+        await self.telegram.send_message(
+            message.chat.get("id"),
+            "🔒 <b>Your data</b>\n\n"
+            "• Everything you record is private to your Telegram account. No "
+            "other user can read it.\n"
+            "• Voice notes are transcribed by a third-party provider and the "
+            "audio is not kept afterwards.\n"
+            "• Processed chat messages are removed after an hour unless you "
+            "pin them.\n"
+            "• /export downloads everything held about you.\n"
+            "• /deleteaccount permanently erases it." + link,
         )
 
     async def _cmd_help(self, message: TelegramMessage) -> None:

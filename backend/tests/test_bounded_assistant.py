@@ -151,8 +151,8 @@ def test_provider_uses_validated_json_fallback_after_strict_failure(monkeypatch)
     provider = GroqIntentProvider("test-key", "primary-model", "fallback-model")
     calls = []
 
-    def fake_completion(*, model_name, messages, strict):
-        del messages
+    def fake_completion(*, api_key, model_name, messages, strict):
+        del messages, api_key
         calls.append((model_name, strict))
         if strict:
             raise RuntimeError("strict generation failed")

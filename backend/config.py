@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     frontend_base_url: str = Field(
         default="http://localhost:3000", description="Telegram Mini App frontend URL"
     )
+    privacy_policy_url: str = Field(
+        default="",
+        description=(
+            "Public URL of the hosted privacy policy. When blank the bot omits "
+            "the link entirely rather than showing a broken one."
+        ),
+    )
     public_v2_enabled: bool = Field(
         default=False, description="Enable public-v2 application behavior"
     )
@@ -227,6 +234,14 @@ class Settings(BaseSettings):
     )
 
     groq_api_key: str = Field(default="", description="Groq API key")
+    groq_api_keys: str = Field(
+        default="",
+        description=(
+            "Additional Groq API keys, comma separated. Requests rotate across "
+            "every configured key, which raises the shared provider ceiling "
+            "instead of restricting users when one key is rate limited."
+        ),
+    )
     groq_model: str = Field(
         default="openai/gpt-oss-120b",
         description="Groq model used for bounded provider calls",

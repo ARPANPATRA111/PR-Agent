@@ -356,7 +356,7 @@ def test_groq_provider_validates_estimates_with_inferred_serving_assumptions():
         "clarification_question": None,
     }
     provider = GroqNutritionProvider("test-key", "primary", "fallback")
-    provider.client = SimpleNamespace(
+    stub = SimpleNamespace(
         chat=SimpleNamespace(
             completions=SimpleNamespace(
                 create=lambda **_kwargs: SimpleNamespace(
@@ -369,6 +369,7 @@ def test_groq_provider_validates_estimates_with_inferred_serving_assumptions():
             )
         )
     )
+    provider._client = lambda _api_key: stub
 
     estimate = provider.estimate(
         "I ate an aloo paratha",
