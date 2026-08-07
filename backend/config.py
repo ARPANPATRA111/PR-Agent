@@ -152,6 +152,15 @@ class Settings(BaseSettings):
     per_user_daily_summary_limit: int = Field(default=30, ge=1, le=1000)
     per_user_daily_export_limit: int = Field(default=5, ge=1, le=100)
     per_user_daily_voice_minutes: int = Field(default=30, ge=1, le=1440)
+    quotas_enabled: bool = Field(
+        default=True,
+        description=(
+            "Enforce per-user and deployment-wide daily quotas. Set false for "
+            "an early-stage deployment where refusing a real user costs more "
+            "than the provider spend. The per-minute request rate limit is "
+            "unaffected and always applies."
+        ),
+    )
     global_daily_ai_limit: int = Field(
         default=0,
         ge=0,

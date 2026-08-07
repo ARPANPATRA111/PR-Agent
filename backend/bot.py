@@ -198,6 +198,31 @@ class TelegramClient:
             },
         )
 
+    async def set_my_commands(self) -> dict:
+        """Publish a short command menu so nobody has to type /help.
+
+        Telegram renders these behind the chat's menu button. The full command
+        surface keeps working when typed; showing forty entries to a new user
+        only obscures that the bot is meant to be spoken to.
+        """
+        return await self._request_with_retry(
+            "POST",
+            "setMyCommands",
+            json={
+                "commands": [
+                    {"command": "start", "description": "What I can do"},
+                    {"command": "today", "description": "What I did today"},
+                    {"command": "week", "description": "This week so far"},
+                    {"command": "spending", "description": "Money in and out"},
+                    {"command": "notes", "description": "My notes"},
+                    {"command": "reminders", "description": "My reminders"},
+                    {"command": "goals", "description": "My goals"},
+                    {"command": "settings", "description": "Preferences"},
+                    {"command": "help", "description": "All commands"},
+                ]
+            },
+        )
+
     async def delete_webhook(self) -> dict:
         return await self._request_with_retry("POST", "deleteWebhook")
 

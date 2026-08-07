@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
 from hashlib import sha256
 from html import escape
@@ -18,6 +18,7 @@ from abuse_controls import GlobalQuotaExceeded, QuotaExceeded, QuotaService
 from assistant.providers import IntentProvider
 from assistant.schemas import (
     READ_ONLY_ACTIONS,
+    SELECTOR_ACTIONS,
     AgentProposal,
     ClarificationAction,
     CreateGoalAction,
@@ -29,17 +30,27 @@ from assistant.schemas import (
     DeleteRecordAction,
     ListRecordsAction,
     QueryAction,
+    RecordGoalProgressAction,
+    SetRecordStatusAction,
     SmalltalkAction,
     UnsupportedAction,
+    UpdateRecordAction,
+    UpdateSettingsAction,
 )
 from domain.errors import DomainError, RecordNotFound
 from domain.schemas import (
     GoalCreate,
+    GoalUpdate,
     LedgerCreate,
+    LedgerUpdate,
     NoteCreate,
+    NoteUpdate,
     NutritionDraftCreate,
     ReminderCreate,
+    ReminderUpdate,
+    SchedulePreferenceUpdate,
     WorkLogCreate,
+    WorkLogUpdate,
 )
 from domain.services import DomainServices
 from nutrition.providers import NutritionEstimationProvider
@@ -54,6 +65,17 @@ UTC = timezone.utc
 
 # Pending states that are still awaiting the user. Anything else is resolved.
 OPEN_PENDING_STATES = ("clarification", "confirmation", "disambiguation")
+
+# Shown whenever a request falls outside the assistant, so the capability
+# surface is learned in context rather than from a command list.
+CAPABILITY_HINT = (
+    "I can track work, notes, money, reminders, goals and meals. Try:\n"
+    "• \"spent 200 rupees on lunch\"\n"
+    "• \"remind me to call Ravi tomorrow at 6 pm\"\n"
+    "• \"show me all my notes\"\n"
+    "• \"pause my water reminder\"\n"
+    "• \"delete my note about the invoice\""
+)
 
 
 @dataclass(frozen=True)
@@ -169,6 +191,25 @@ class BoundedAssistant:
             review_required=review_required,
         )
 
+    # Two questions is generous for a bounded tracker. Anything beyond that is
+    # a provider that cannot converge, not a user who is being unclear.
+    MAX_CLARIFICATION_ROUNDS = 2
+
+    def _abandon_clarification(self, pending: AgentPendingAction) -> AssistantReply:
+        """Close a question loop and hand the user a concrete way forward."""
+        with self.session_factory() as session:
+            current = session.get(AgentPendingAction, pending.id)
+            if current is not None and current.state == "clarification":
+                current.state = "cancelled"
+                current.resolved_at_utc = self.clock()
+                session.commit()
+        return AssistantReply(
+            "I could not work that one out, so I have stopped asking and saved "
+            "nothing. Try saying it as one complete sentence — for example "
+            "\"add an expense of 200 rupees for lunch\" or \"show my notes\".",
+            "cancelled",
+        )
+
     def open_clarification_id(self, telegram_id: int) -> int | None:
         """Return the caller's newest unanswered question, if one is waiting.
 
@@ -209,10 +250,17 @@ class BoundedAssistant:
             )
         if self._expire_if_needed(pending):
             return AssistantReply("That clarification has expired.", "expired")
+        # Each unanswered round increments the version. Past the cap the
+        # assistant is not converging, and asking again would loop forever
+        # while burning provider calls on every turn.
+        if pending.version > self.MAX_CLARIFICATION_ROUNDS:
+            return self._abandon_clarification(pending)
         context = {
             "intended_kind": pending.action_type,
             "known_arguments": pending.proposed_arguments,
             "missing_fields": pending.missing_fields,
+            "clarification_round": pending.version,
+            "final_round": pending.version >= self.MAX_CLARIFICATION_ROUNDS,
         }
         try:
             self._consume_ai_quota(pending.owner_id)
@@ -250,15 +298,28 @@ class BoundedAssistant:
             )
             if current is None:
                 return AssistantReply("Pending action not found.", "rejected")
-            if isinstance(proposal.action, ClarificationAction):
-                current.action_type = proposal.action.intended_kind
-                current.proposed_arguments = proposal.action.known_arguments
-                current.missing_fields = proposal.action.missing_fields
-                current.prompt = proposal.action.question
+            # The provider returns the batch shape, so the single-action field
+            # is empty here. Read through the accessor that handles both.
+            follow_up = next(
+                (
+                    action
+                    for action in proposal.proposed_actions
+                    if isinstance(action, ClarificationAction)
+                ),
+                None,
+            )
+            if follow_up is not None:
+                if current.version >= self.MAX_CLARIFICATION_ROUNDS:
+                    session.expunge(current)
+                    return self._abandon_clarification(current)
+                current.action_type = follow_up.intended_kind
+                current.proposed_arguments = follow_up.known_arguments
+                current.missing_fields = follow_up.missing_fields
+                current.prompt = follow_up.question
                 current.version += 1
                 session.commit()
                 return AssistantReply(
-                    proposal.action.question,
+                    escape(follow_up.question),
                     "clarification",
                     pending_id=current.id,
                 )
@@ -539,12 +600,15 @@ class BoundedAssistant:
             None,
         )
         if unsupported is not None:
+            # Teach the capability surface at the moment of failure. This is
+            # where a user actually wonders what the bot can do, and it means
+            # discovering features never requires reading a command list.
             return self._reject(
                 owner_id,
                 run_id,
                 idempotency_key,
                 unsupported.kind,
-                unsupported.reason,
+                f"{unsupported.reason}\n\n{CAPABILITY_HINT}",
             )
         clarification = next(
             (action for action in actions if isinstance(action, ClarificationAction)),
@@ -660,6 +724,36 @@ class BoundedAssistant:
 
     MAX_DELETE_CHOICES = 5
 
+    @staticmethod
+    def _reference_of(action) -> tuple[str, int | None, str | None, str | None] | None:
+        """Extract (record_type, id, search, ordinal) from any record action."""
+        if isinstance(action, DeleteRecordAction):
+            return action.record_type, action.record_id, action.search, action.ordinal
+        if isinstance(action, RecordGoalProgressAction):
+            selector = action.selector
+            return "goal", selector.record_id, selector.search, selector.ordinal
+        if isinstance(action, SELECTOR_ACTIONS):
+            selector = action.selector
+            return (
+                action.record_type,
+                selector.record_id,
+                selector.search,
+                selector.ordinal,
+            )
+        return None
+
+    @staticmethod
+    def _with_resolved_id(action, record_id: int):
+        if isinstance(action, DeleteRecordAction):
+            return action.model_copy(update={"record_id": record_id})
+        return action.model_copy(
+            update={
+                "selector": action.selector.model_copy(
+                    update={"record_id": record_id}
+                )
+            }
+        )
+
     def _resolve_deletions(
         self,
         owner_id: int,
@@ -673,16 +767,23 @@ class BoundedAssistant:
         """Replace spoken record references with concrete owned record ids."""
         resolved = []
         for action in actions:
-            if not isinstance(action, DeleteRecordAction) or action.record_id:
+            reference = self._reference_of(action)
+            if reference is None:
+                resolved.append(action)
+                continue
+            record_type, record_id, search, ordinal = reference
+            if record_id:
                 resolved.append(action)
                 continue
             with self.session_factory() as session:
-                candidates = self._delete_candidates(
+                candidates = self._reference_candidates(
                     DomainServices(session),
                     owner_id,
-                    action,
+                    record_type=record_type,
+                    search=search,
+                    ordinal=ordinal,
                 )
-            noun = action.record_type.replace("_", " ")
+            noun = record_type.replace("_", " ")
             if not candidates:
                 return actions, self._reject(
                     owner_id,
@@ -692,11 +793,12 @@ class BoundedAssistant:
                     f"I could not find a {noun} matching that. "
                     f"Ask me to list your {noun} records and try again.",
                 )
-            if len(candidates) == 1 or action.ordinal is not None:
+            if len(candidates) == 1 or ordinal is not None:
                 record_id, _ = candidates[0]
-                resolved.append(action.model_copy(update={"record_id": record_id}))
+                resolved.append(self._with_resolved_id(action, record_id))
                 continue
             choices = candidates[: self.MAX_DELETE_CHOICES]
+            verb = self._reference_verb(action)
             if len(actions) > 1:
                 # Disambiguating one item inside a multi-intent request would
                 # leave the rest of the batch in limbo, so ask instead.
@@ -710,8 +812,8 @@ class BoundedAssistant:
                     arguments={},
                     missing_fields=["record_reference"],
                     prompt=(
-                        f"Several {noun} records match that. Please send the "
-                        f"deletion on its own so I can show you the choices."
+                        f"Several {noun} records match that. Please send that "
+                        f"one request on its own so I can show you the choices."
                     ),
                     replace_existing=replace_existing,
                 )
@@ -723,41 +825,58 @@ class BoundedAssistant:
                 state="disambiguation",
                 action_type=action.kind,
                 arguments={
-                    "kind": "delete_choice",
-                    "record_type": action.record_type,
+                    "kind": "record_choice",
+                    "record_type": record_type,
+                    # The chosen id is merged back into this stored action, so
+                    # the choice resumes the original intent rather than
+                    # assuming the user was deleting something.
+                    "pending_action": action.model_dump(mode="json"),
                     "candidates": [
                         {"record_id": record_id, "label": label}
                         for record_id, label in choices
                     ],
                 },
                 missing_fields=["record_reference"],
-                prompt=f"Which {noun} should I delete?",
+                prompt=f"Which {noun} should I {verb}?",
                 replace_existing=replace_existing,
                 options=tuple(choices),
             )
         return resolved, None
 
-    def _delete_candidates(
+    @staticmethod
+    def _reference_verb(action) -> str:
+        if isinstance(action, DeleteRecordAction):
+            return "delete"
+        if isinstance(action, SetRecordStatusAction):
+            return "update"
+        if isinstance(action, RecordGoalProgressAction):
+            return "record progress against"
+        return "change"
+
+    def _reference_candidates(
         self,
         service: DomainServices,
         owner_id: int,
-        action: DeleteRecordAction,
+        *,
+        record_type: str,
+        search: str | None,
+        ordinal: str | None,
     ) -> list[tuple[int, str]]:
-        """Return owner-scoped deletion candidates, newest match first."""
-        search = (action.search or "").strip().lower()
+        """Return owner-scoped candidates for a spoken reference, newest first."""
+        needle = (search or "").strip().lower()
         scan_limit = 100
 
-        if action.record_type == "work_log":
+        if record_type == "work_log":
             rows = service.list_work_logs(
-                owner_id, search=action.search, limit=scan_limit
+                owner_id, search=search, limit=scan_limit
             )
             labels = [(row.id, row.original_text) for row in rows]
-        elif action.record_type == "note":
-            rows = service.list_notes(owner_id, search=action.search, limit=scan_limit)
+        elif record_type == "note":
+            rows = service.list_notes(owner_id, search=search, limit=scan_limit)
             labels = [(row.id, row.title or row.body) for row in rows]
-        elif action.record_type == "ledger_entry":
+        elif record_type == "ledger_entry":
             rows = service.list_ledger_entries(
-                owner_id, search=action.search, limit=scan_limit
+                owner_id, search=search, limit=scan_limit
             )
             labels = [
                 (
@@ -768,10 +887,10 @@ class BoundedAssistant:
                 )
                 for row in rows
             ]
-        elif action.record_type == "reminder":
+        elif record_type == "reminder":
             rows = service.list_reminders(owner_id, limit=scan_limit)
             labels = [(row.id, row.title) for row in rows]
-        elif action.record_type == "goal":
+        elif record_type == "goal":
             rows = service.list_goals(owner_id, limit=scan_limit)
             labels = [(row.id, row.title) for row in rows]
         else:
@@ -780,13 +899,13 @@ class BoundedAssistant:
 
         # The domain layer filters what it can in SQL; the rest is matched here
         # so every record type accepts the same spoken reference.
-        if search and action.record_type in {"reminder", "goal", "nutrition_log"}:
+        if needle and record_type in {"reminder", "goal", "nutrition_log"}:
             labels = [
                 (record_id, label)
                 for record_id, label in labels
-                if search in (label or "").lower()
+                if needle in (label or "").lower()
             ]
-        if action.ordinal == "oldest":
+        if ordinal == "oldest":
             labels = list(reversed(labels))
         return [(record_id, " ".join((label or "").split())) for record_id, label in labels]
 
@@ -849,8 +968,14 @@ class BoundedAssistant:
         )
         if chosen is None:
             return AssistantReply("That choice is no longer available.", "rejected")
-        record_type = stored.get("record_type")
-        noun = str(record_type).replace("_", " ")
+        try:
+            original = AgentProposal.model_validate(
+                {"confidence": 1, "action": stored.get("pending_action")}
+            ).proposed_actions[0]
+        except ValidationError:
+            return AssistantReply("That choice is no longer valid.", "failed")
+        resolved = self._with_resolved_id(original, record_id)
+        label = self._clip(chosen.get("label"), 160)
         with self.session_factory() as session:
             current = (
                 session.query(AgentPendingAction)
@@ -864,22 +989,19 @@ class BoundedAssistant:
             if current is None:
                 return AssistantReply("That action is already closed.", "completed")
             current.state = "confirmation"
-            current.action_type = "delete_record"
+            current.action_type = resolved.kind
+            # Stored in the batch shape so confirmation runs the same execution
+            # path as every other reviewed action.
             current.proposed_arguments = {
-                "kind": "delete_record",
-                "record_type": record_type,
-                "record_id": record_id,
-                "search": None,
-                "ordinal": None,
+                "kind": "batch",
+                "actions": [resolved.model_dump(mode="json")],
             }
             current.missing_fields = []
-            current.prompt = (
-                f"Delete this {noun}? {self._clip(chosen.get('label'), 160)}"
-            )
+            current.prompt = f"{self._review_prompt([resolved])}\n\nSelected: {label}"
             current.version += 1
             session.commit()
             prompt = current.prompt
-        return AssistantReply(prompt, "confirmation", pending_id=pending_id)
+        return AssistantReply(escape(prompt), "confirmation", pending_id=pending_id)
 
     @staticmethod
     def _review_prompt(actions, *, uncertain: bool = False) -> str:
@@ -924,6 +1046,43 @@ class BoundedAssistant:
                 summary = f"List {action.record_type.replace('_', ' ')} records"
             elif isinstance(action, SmalltalkAction):
                 summary = f"Reply — {short(action.answer)}"
+            elif isinstance(action, UpdateRecordAction):
+                changed = ", ".join(
+                    name
+                    for name, value in (
+                        ("title", action.title),
+                        ("text", action.text),
+                        ("category", action.category),
+                        ("tags", action.tags),
+                        ("amount", action.amount),
+                        ("currency", action.currency),
+                        ("target", action.target_value),
+                        ("unit", action.unit),
+                        ("time", action.start_at_local),
+                    )
+                    if value is not None
+                )
+                summary = (
+                    f"Update {action.record_type.replace('_', ' ')} — {changed}"
+                )
+            elif isinstance(action, SetRecordStatusAction):
+                summary = (
+                    f"Mark {action.record_type.replace('_', ' ')} as "
+                    f"{action.status}"
+                )
+            elif isinstance(action, RecordGoalProgressAction):
+                verb = "Set" if action.mode == "set" else "Add"
+                summary = f"{verb} goal progress — {action.value}"
+            elif isinstance(action, UpdateSettingsAction):
+                summary = "Change settings — " + ", ".join(
+                    name
+                    for name, value in (
+                        ("timezone", action.timezone),
+                        ("Sunday summary", action.sunday_digest_enabled),
+                        ("summary time", action.sunday_digest_time),
+                    )
+                    if value is not None
+                )
             elif isinstance(action, DeleteRecordAction):
                 summary = (
                     f"Delete {action.record_type.replace('_', ' ')} "
@@ -1189,7 +1348,254 @@ class BoundedAssistant:
             )
         if isinstance(action, SmalltalkAction):
             return AssistantReply(escape(action.answer), "completed")
+        if isinstance(action, UpdateRecordAction):
+            return self._update_record(service, owner_id, action)
+        if isinstance(action, SetRecordStatusAction):
+            return self._set_record_status(service, owner_id, action)
+        if isinstance(action, RecordGoalProgressAction):
+            return self._record_goal_progress(service, owner_id, action)
+        if isinstance(action, UpdateSettingsAction):
+            return self._update_settings(service, owner_id, action)
         raise DomainError("The proposed action is not an allowed tool.")
+
+    def _update_record(
+        self,
+        service: DomainServices,
+        owner_id: int,
+        action: UpdateRecordAction,
+    ) -> AssistantReply:
+        """Map the shared update fields onto the right versioned domain update."""
+        record_id = action.selector.record_id
+        if action.record_type == "work_log":
+            current = service.get_work_log(owner_id, record_id)
+            row = service.update_work_log(
+                owner_id,
+                record_id,
+                WorkLogUpdate(
+                    version=current.version,
+                    **self._present(
+                        original_text=action.text,
+                        category=action.category,
+                        tags=action.tags,
+                    ),
+                ),
+            )
+            summary = self._clip(row.original_text)
+        elif action.record_type == "note":
+            current = service.get_note(owner_id, record_id)
+            row = service.update_note(
+                owner_id,
+                record_id,
+                NoteUpdate(
+                    version=current.version,
+                    **self._present(
+                        title=action.title,
+                        body=action.text,
+                        tags=action.tags,
+                    ),
+                ),
+            )
+            summary = self._clip(row.title or row.body)
+        elif action.record_type == "ledger_entry":
+            current = service.get_ledger_entry(owner_id, record_id)
+            row = service.update_ledger_entry(
+                owner_id,
+                record_id,
+                LedgerUpdate(
+                    version=current.version,
+                    **self._present(
+                        amount=action.amount,
+                        currency=action.currency,
+                        description=action.text,
+                        category=action.category,
+                    ),
+                ),
+            )
+            summary = (
+                f"{row.direction} {row.currency} "
+                f"{self._major_amount(row.amount_minor, row.currency)} — "
+                f"{self._clip(row.description, 90)}"
+            )
+        elif action.record_type == "reminder":
+            current = service.get_reminder(owner_id, record_id)
+            row = service.update_reminder(
+                owner_id,
+                record_id,
+                ReminderUpdate(
+                    version=current.version,
+                    **self._present(
+                        title=action.title,
+                        description=action.text,
+                        start_at_local=action.start_at_local,
+                        timezone=action.timezone,
+                    ),
+                ),
+            )
+            summary = self._clip(row.title)
+        elif action.record_type == "goal":
+            current = service.get_goal(owner_id, record_id)
+            row = service.update_goal(
+                owner_id,
+                record_id,
+                GoalUpdate(
+                    version=current.version,
+                    **self._present(
+                        title=action.title,
+                        description=action.text,
+                        target_value=action.target_value,
+                        unit=action.unit,
+                    ),
+                ),
+            )
+            summary = self._clip(row.title)
+        else:
+            raise DomainError(
+                "A food log's estimate is edited item by item in the Mini App."
+            )
+        return AssistantReply(
+            f"Updated: {summary}",
+            "completed",
+            action.record_type,
+            record_id,
+        )
+
+    @staticmethod
+    def _present(**values) -> dict:
+        """Drop unset fields so a versioned update only touches what changed."""
+        return {key: value for key, value in values.items() if value is not None}
+
+    def _set_record_status(
+        self,
+        service: DomainServices,
+        owner_id: int,
+        action: SetRecordStatusAction,
+    ) -> AssistantReply:
+        record_id = action.selector.record_id
+        status = action.status
+        if action.record_type == "goal":
+            if status not in {"active", "paused", "completed"}:
+                raise DomainError("A goal can be active, paused, or completed.")
+            current = service.get_goal(owner_id, record_id)
+            row = service.update_goal(
+                owner_id,
+                record_id,
+                GoalUpdate(version=current.version, status=status),
+            )
+            return AssistantReply(
+                f"Goal \"{self._clip(row.title, 80)}\" is now {status}.",
+                "completed",
+                "goal",
+                record_id,
+            )
+        if action.record_type == "reminder":
+            if status not in {"enabled", "active", "disabled", "paused"}:
+                raise DomainError("A reminder can be paused or resumed.")
+            enabled = status in {"enabled", "active"}
+            current = service.get_reminder(owner_id, record_id)
+            row = service.update_reminder(
+                owner_id,
+                record_id,
+                ReminderUpdate(version=current.version, enabled=enabled),
+            )
+            return AssistantReply(
+                f"Reminder \"{self._clip(row.title, 80)}\" is now "
+                f"{'active' if enabled else 'paused'}.",
+                "completed",
+                "reminder",
+                record_id,
+            )
+        if action.record_type == "note":
+            if status not in {"pinned", "unpinned"}:
+                raise DomainError("A note can be pinned or unpinned.")
+            current = service.get_note(owner_id, record_id)
+            row = service.update_note(
+                owner_id,
+                record_id,
+                NoteUpdate(version=current.version, pinned=status == "pinned"),
+            )
+            return AssistantReply(
+                f"Note \"{self._clip(row.title or row.body, 80)}\" is now {status}.",
+                "completed",
+                "note",
+                record_id,
+            )
+        if status != "confirmed":
+            raise DomainError("A food draft can only be confirmed.")
+        current = service.get_nutrition_log(owner_id, record_id)
+        row = service.confirm_nutrition_log(owner_id, record_id, current.version)
+        return AssistantReply(
+            f"Confirmed {self._clip(row.meal_name or row.original_text, 80)}: "
+            f"approximately {row.total_calories} kcal, "
+            f"{row.total_protein_grams} g protein.",
+            "completed",
+            "nutrition_log",
+            record_id,
+        )
+
+    def _record_goal_progress(
+        self,
+        service: DomainServices,
+        owner_id: int,
+        action: RecordGoalProgressAction,
+    ) -> AssistantReply:
+        record_id = action.selector.record_id
+        current = service.get_goal(owner_id, record_id)
+        updated_value = (
+            action.value
+            if action.mode == "set"
+            else Decimal(current.current_value) + action.value
+        )
+        row = service.update_goal(
+            owner_id,
+            record_id,
+            GoalUpdate(version=current.version, current_value=updated_value),
+        )
+        target = (
+            f" of {row.target_value} {row.unit or ''}".rstrip()
+            if row.target_value is not None
+            else ""
+        )
+        return AssistantReply(
+            f"\"{self._clip(row.title, 80)}\" is now at "
+            f"{row.current_value}{target}.",
+            "completed",
+            "goal",
+            record_id,
+        )
+
+    def _update_settings(
+        self,
+        service: DomainServices,
+        owner_id: int,
+        action: UpdateSettingsAction,
+    ) -> AssistantReply:
+        current = service.get_schedule_preferences(owner_id)
+        digest_time = current["sunday_digest_time"]
+        if isinstance(digest_time, str):
+            digest_time = time.fromisoformat(digest_time)
+        if action.sunday_digest_time is not None:
+            digest_time = time.fromisoformat(f"{action.sunday_digest_time}:00")
+        updated = service.update_schedule_preferences(
+            owner_id,
+            SchedulePreferenceUpdate(
+                preference_version=current["preference_version"],
+                digest_version=current["digest_version"],
+                timezone=action.timezone or current["timezone"],
+                sunday_digest_enabled=(
+                    current["sunday_digest_enabled"]
+                    if action.sunday_digest_enabled is None
+                    else action.sunday_digest_enabled
+                ),
+                sunday_digest_time=digest_time,
+            ),
+        )
+        return AssistantReply(
+            f"Settings updated. Timezone {escape(updated['timezone'])}, "
+            f"Sunday summary "
+            f"{'on' if updated['sunday_digest_enabled'] else 'off'} at "
+            f"{updated['sunday_digest_time']}.",
+            "completed",
+        )
 
     def _list_records(
         self,

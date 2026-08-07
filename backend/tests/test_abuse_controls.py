@@ -187,3 +187,37 @@ def test_a_global_refusal_is_still_a_quota_error():
     from abuse_controls import GlobalQuotaExceeded
 
     assert issubclass(GlobalQuotaExceeded, QuotaExceeded)
+
+
+def test_quotas_can_be_switched_off_entirely(session_factory, monkeypatch):
+    """Early-stage deployments run without daily caps by design."""
+    monkeypatch.setattr(settings, "quotas_enabled", False)
+
+    with session_factory.begin() as session:
+        service = QuotaService(session)
+        for _ in range(50):
+            remaining = service.require(1, "ai_classifications", limit=1)
+        service.require_global("ai_classifications", limit=1)
+
+    assert remaining == 1
+
+
+def test_disabled_quotas_write_no_buckets(session_factory, monkeypatch):
+    """Re-enabling later must start from a clean window, not a backlog."""
+    monkeypatch.setattr(settings, "quotas_enabled", False)
+
+    with session_factory.begin() as session:
+        QuotaService(session).require(1, "ai_classifications", limit=5)
+
+    with session_factory() as session:
+        assert session.query(RateLimitBucket).count() == 0
+
+
+def test_quotas_still_apply_when_enabled(session_factory, monkeypatch):
+    monkeypatch.setattr(settings, "quotas_enabled", True)
+
+    with session_factory.begin() as session:
+        service = QuotaService(session)
+        service.require(1, "ai_classifications", limit=1)
+        with pytest.raises(QuotaExceeded):
+            service.require(1, "ai_classifications", limit=1)

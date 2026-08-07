@@ -133,5 +133,70 @@
     "name": "external_action_still_refused",
     "input": "Email this expense report to my accountant",
     "expected_kind": "unsupported"
+  },
+  {
+    "name": "edit_note_title",
+    "input": "Rename my relocation note to HR follow up",
+    "expected_kind": "update_record"
+  },
+  {
+    "name": "edit_expense_amount",
+    "input": "Change my grocery expense to three hundred rupees",
+    "expected_kind": "update_record"
+  },
+  {
+    "name": "pause_reminder",
+    "input": "Pause my water reminder",
+    "expected_kind": "set_record_status"
+  },
+  {
+    "name": "resume_reminder",
+    "input": "Resume the water reminder",
+    "expected_kind": "set_record_status"
+  },
+  {
+    "name": "complete_goal",
+    "input": "Mark my reading goal as done",
+    "expected_kind": "set_record_status"
+  },
+  {
+    "name": "pin_note",
+    "input": "Pin my relocation note",
+    "expected_kind": "set_record_status"
+  },
+  {
+    "name": "confirm_food_draft",
+    "input": "Confirm the food I just logged",
+    "expected_kind": "set_record_status"
+  },
+  {
+    "name": "goal_progress_add",
+    "input": "I ran five more kilometres today",
+    "expected_kind": "record_goal_progress"
+  },
+  {
+    "name": "goal_progress_set",
+    "input": "My total is now twenty kilometres",
+    "expected_kind": "record_goal_progress"
+  },
+  {
+    "name": "change_timezone",
+    "input": "Change my timezone to Asia Kolkata",
+    "expected_kind": "update_settings"
+  },
+  {
+    "name": "disable_sunday_digest",
+    "input": "Turn off the Sunday summary",
+    "expected_kind": "update_settings"
+  },
+  {
+    "name": "delete_by_description",
+    "input": "Delete my note about the invoice",
+    "expected_kind": "delete_record"
+  },
+  {
+    "name": "delete_latest",
+    "input": "Delete my last expense",
+    "expected_kind": "delete_record"
   }
 ]

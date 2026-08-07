@@ -106,6 +106,121 @@ class ListRecordsAction(StrictAction):
     timezone: str = Field(default="UTC", min_length=1, max_length=64)
 
 
+class RecordSelector(StrictAction):
+    """How the user referred to an existing record.
+
+    Shared by every action that operates on something already stored. The
+    application resolves this against owner-scoped records; the model never
+    sees an id unless the user actually said one.
+    """
+
+    record_id: int | None = Field(default=None, gt=0)
+    search: str | None = Field(default=None, min_length=1, max_length=200)
+    ordinal: Literal["latest", "oldest"] | None = None
+
+    @model_validator(mode="after")
+    def requires_a_way_to_identify_the_record(self):
+        if self.record_id is None and not self.search and self.ordinal is None:
+            raise ValueError("A record reference, search phrase, or ordinal is required")
+        return self
+
+
+class UpdateRecordAction(StrictAction):
+    """Change fields on an existing record.
+
+    One action covers every record type rather than six near-identical ones,
+    because strict decoding requires the model to emit every property of every
+    action it could choose. A smaller schema measurably reduces malformed
+    output. The application maps the supplied fields onto the correct
+    versioned domain update and ignores those that do not apply.
+    """
+
+    kind: Literal["update_record"]
+    record_type: RecordType
+    selector: RecordSelector
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    text: str | None = Field(default=None, min_length=1, max_length=10_000)
+    category: str | None = Field(default=None, min_length=1, max_length=64)
+    tags: list[str] | None = Field(default=None, max_length=20)
+    amount: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=3)
+    currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
+    target_value: Decimal | None = Field(default=None, ge=0, max_digits=18)
+    unit: str | None = Field(default=None, min_length=1, max_length=64)
+    start_at_local: datetime | None = None
+    timezone: str | None = Field(default=None, min_length=1, max_length=64)
+
+    @model_validator(mode="after")
+    def requires_at_least_one_change(self):
+        changes = (
+            self.title,
+            self.text,
+            self.category,
+            self.tags,
+            self.amount,
+            self.currency,
+            self.target_value,
+            self.unit,
+            self.start_at_local,
+        )
+        if all(change is None for change in changes):
+            raise ValueError("An update must change at least one field")
+        return self
+
+
+class SetRecordStatusAction(StrictAction):
+    """Pause, resume, complete, pin, or confirm an existing record.
+
+    These were five separate gaps. They are one action because they are the
+    same operation from the user's point of view: change the state of a thing
+    that already exists.
+    """
+
+    kind: Literal["set_record_status"]
+    record_type: Literal["goal", "reminder", "note", "nutrition_log"]
+    selector: RecordSelector
+    status: Literal[
+        "active",
+        "paused",
+        "completed",
+        "enabled",
+        "disabled",
+        "pinned",
+        "unpinned",
+        "confirmed",
+    ]
+
+
+class RecordGoalProgressAction(StrictAction):
+    """Add to, or set, a goal's current value."""
+
+    kind: Literal["record_goal_progress"]
+    selector: RecordSelector
+    value: Decimal = Field(ge=0, max_digits=18, decimal_places=4)
+    mode: Literal["add", "set"] = "add"
+
+
+class UpdateSettingsAction(StrictAction):
+    """Change the owner's own schedule preferences."""
+
+    kind: Literal["update_settings"]
+    timezone: str | None = Field(default=None, min_length=1, max_length=64)
+    sunday_digest_enabled: bool | None = None
+    sunday_digest_time: str | None = Field(
+        default=None,
+        pattern=r"^([01]\d|2[0-3]):[0-5]\d$",
+    )
+
+    @model_validator(mode="after")
+    def requires_at_least_one_change(self):
+        if (
+            self.timezone is None
+            and self.sunday_digest_enabled is None
+            and self.sunday_digest_time is None
+        ):
+            raise ValueError("A settings update must change at least one field")
+        return self
+
+
 class SmalltalkAction(StrictAction):
     """A brief conversational or general-knowledge reply with no side effects.
 
@@ -191,11 +306,23 @@ AgentActionProposal = Annotated[
     | QueryAction
     | ListRecordsAction
     | SmalltalkAction
+    | UpdateRecordAction
+    | SetRecordStatusAction
+    | RecordGoalProgressAction
+    | UpdateSettingsAction
     | DeleteRecordAction
     | ClarificationAction
     | UnsupportedAction,
     Field(discriminator="kind"),
 ]
+
+# Actions that operate on a record the user referred to in their own words.
+# Each needs its reference resolved to a concrete owned row before review.
+SELECTOR_ACTIONS = (
+    UpdateRecordAction,
+    SetRecordStatusAction,
+    RecordGoalProgressAction,
+)
 
 # Actions that only read owner-scoped data or reply conversationally. They
 # never mutate state, so they skip the Correct/Wrong review that exists to

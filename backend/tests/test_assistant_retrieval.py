@@ -644,3 +644,106 @@ def test_no_global_ceiling_by_default(assistant_db):
 
     assert first.status == "completed"
     assert second.status == "completed"
+
+
+def clarification_proposal(question: str, kind: str = "create_ledger_entry") -> dict:
+    return {
+        "confidence": 0.95,
+        "actions": [
+            {
+                "kind": "clarification",
+                "intended_kind": kind,
+                "question": question,
+                "missing_fields": ["currency"],
+                "known_arguments": {},
+            }
+        ],
+    }
+
+
+def test_a_question_loop_is_cut_off_instead_of_repeating(assistant_db):
+    """The screenshot failure: ask, answer, ask again, forever."""
+    seed_owner(assistant_db, ALICE)
+    assistant = build_assistant(
+        assistant_db,
+        FakeProvider(
+            clarification_proposal("Which currency?"),
+            clarification_proposal("Which currency exactly?"),
+            clarification_proposal("Sorry, which currency?"),
+            clarification_proposal("Please state the currency."),
+        ),
+    )
+
+    first = assistant.handle(ALICE, "I spent 500", update_id=50)
+    pending_id = first.pending_id
+    second = assistant.answer_clarification(ALICE, pending_id, "rupees")
+    third = assistant.answer_clarification(ALICE, pending_id, "rupees again")
+
+    assert first.status == "clarification"
+    assert second.status == "clarification"
+    # The third round must stop rather than ask a fourth time.
+    assert third.status == "cancelled"
+    assert "stopped asking" in third.text
+
+
+def test_an_abandoned_question_does_not_stay_open(assistant_db):
+    seed_owner(assistant_db, ALICE)
+    assistant = build_assistant(
+        assistant_db,
+        FakeProvider(
+            clarification_proposal("Which currency?"),
+            clarification_proposal("Which currency exactly?"),
+            clarification_proposal("Sorry, which currency?"),
+        ),
+    )
+
+    first = assistant.handle(ALICE, "I spent 500", update_id=51)
+    assistant.answer_clarification(ALICE, first.pending_id, "rupees")
+    assistant.answer_clarification(ALICE, first.pending_id, "rupees again")
+
+    # A dead question must not capture the user's next unrelated request.
+    assert assistant.open_clarification_id(ALICE.telegram_id) is None
+
+
+def test_the_provider_is_told_when_it_is_the_final_round(assistant_db):
+    seed_owner(assistant_db, ALICE)
+    provider = FakeProvider(
+        clarification_proposal("Which currency?"),
+        clarification_proposal("Which currency exactly?"),
+    )
+    assistant = build_assistant(assistant_db, provider)
+
+    first = assistant.handle(ALICE, "I spent 500", update_id=52)
+    assistant.answer_clarification(ALICE, first.pending_id, "rupees")
+
+    _, context = provider.contexts[-1]
+    assert context["clarification_round"] == 1
+    assert context["final_round"] is False
+
+
+def test_a_successful_answer_still_completes_normally(assistant_db):
+    seed_owner(assistant_db, ALICE)
+    assistant = build_assistant(
+        assistant_db,
+        FakeProvider(
+            clarification_proposal("Which currency?"),
+            {
+                "confidence": 0.95,
+                "actions": [
+                    {
+                        "kind": "create_ledger_entry",
+                        "direction": "expense",
+                        "amount": "500",
+                        "currency": "INR",
+                        "description": "Transport",
+                        "category": None,
+                    }
+                ],
+            },
+        ),
+    )
+
+    first = assistant.handle(ALICE, "I spent 500", update_id=53)
+    answered = assistant.answer_clarification(ALICE, first.pending_id, "rupees")
+
+    assert answered.status == "completed"

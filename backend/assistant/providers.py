@@ -58,6 +58,11 @@ def _strict_proposal_schema() -> dict[str, Any]:
     def normalize(node: Any) -> None:
         if isinstance(node, dict):
             node.pop("default", None)
+            # `discriminator` is an OpenAPI extension, not JSON Schema, and its
+            # mapping still points at the `$defs` block that inlining removed.
+            # Strict decoders reject the dangling pointers; the `kind` const in
+            # each `oneOf` branch already makes the union unambiguous.
+            node.pop("discriminator", None)
             properties = node.get("properties")
             if isinstance(properties, dict):
                 node["required"] = list(properties)
@@ -104,7 +109,16 @@ including the ones you set to null or to an empty list):
 - list_records: kind, record_type, search, tag, status, start_date, end_date,
   limit, timezone
 - smalltalk: kind, answer
+- update_record: kind, record_type, selector, title, text, category, tags,
+  amount, currency, target_value, unit, start_at_local, timezone
+- set_record_status: kind, record_type, selector, status
+- record_goal_progress: kind, selector, value, mode
+- update_settings: kind, timezone, sunday_digest_enabled, sunday_digest_time
 - delete_record: kind, record_type, record_id, search, ordinal
+
+A selector is an object with exactly these fields: record_id, search, ordinal.
+Fill in whichever one the user gave you and set the others to null, using the
+same rules as deletion below.
 - clarification: kind, intended_kind, question, missing_fields, known_arguments
 - unsupported: kind, reason
 
@@ -153,6 +167,36 @@ default_timezone when the user does not name a timezone. Reminder
 start_at_local must be an ISO local datetime and timezone must be an IANA
 timezone.
 
+CHANGING SOMETHING THAT ALREADY EXISTS
+
+update_record edits fields. Send only the fields the user wants changed and set
+the rest to null. Map the spoken wording onto the shared fields:
+- note -> title, text (the body), tags
+- work log -> text, category, tags
+- expense or income -> amount, currency, text (the description), category
+- reminder -> title, text, start_at_local, timezone
+- goal -> title, text (the description), target_value, unit
+Examples: "change my grocery expense to three hundred rupees" -> update_record
+on ledger_entry, selector.search "grocery", amount 300, currency INR.
+"rename my relocation note to HR follow up" -> update_record on note,
+selector.search "relocation", title "HR follow up".
+
+set_record_status changes state. Use it for all of these:
+- "pause my water reminder" -> reminder, status disabled
+- "resume the water reminder" -> reminder, status enabled
+- "mark my reading goal as done" -> goal, status completed
+- "pause my marathon goal" -> goal, status paused
+- "pin my relocation note" -> note, status pinned
+- "confirm the food I just logged" -> nutrition_log, status confirmed,
+  selector.ordinal latest
+
+record_goal_progress moves a goal's number. mode "add" for "I ran five more
+kilometres", mode "set" for "my total is now twenty kilometres".
+
+update_settings changes the user's own preferences. "Change my timezone to
+Asia/Kolkata", "turn off the Sunday summary", "send the Sunday summary at nine
+in the evening". Use IANA timezone names and a 24-hour HH:MM time.
+
 DELETION
 
 delete_record identifies what to remove; the application resolves it against
@@ -167,10 +211,24 @@ you are not using to null.
 
 Use clarification when a value required for a write is missing or ambiguous,
 rather than guessing or partly executing. "I spent 500" needs a currency
-clarification. Do not ask for clarification on a retrieval or a smalltalk
-answer; retrieval with no filters is a valid request. For clarification include
-intended_kind, a short question, missing_fields, and set known_arguments to an
-empty object. Put any already-known detail in the question.
+clarification. For clarification include intended_kind, a short question,
+missing_fields, and set known_arguments to an empty object. Put any
+already-known detail in the question.
+
+NEVER ask a clarification for:
+- a retrieval. "Show my notes", "what notes do I have", and "list everything I
+  saved" are complete requests. Listing with no filter is valid; do not ask
+  whether the user means today, this week, or all.
+- a smalltalk answer.
+- a deletion where the user described the record. Pass the words through as
+  delete_record.search and let the application resolve and confirm it. Do not
+  ask the user for an ID; the application never shows the user an ID to quote.
+
+Ask at most one question about any single request. The durable context carries
+clarification_round and final_round. When final_round is true you must not ask
+again: either act on the best reading of what the user has now said, or return
+unsupported with a short reason. Repeating a question the user has already
+answered, or asking a narrower version of it, is always wrong.
 
 The speech is often transcribed and may contain Indian English or Hinglish,
 transcription noise, and self-corrections. Take the user's final stated

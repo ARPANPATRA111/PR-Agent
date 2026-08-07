@@ -101,6 +101,21 @@ def test_strict_schema_rejects_identity_and_hidden_reasoning():
         )
 
 
+def test_provider_schema_carries_no_dangling_pointers():
+    """A strict decoder rejects a schema that references a removed block.
+
+    Inlining deletes `$defs`, but Pydantic also emits an OpenAPI
+    `discriminator.mapping` full of `#/$defs/...` pointers. Those survived the
+    inliner and had to be dropped, or the provider sees broken references and
+    the request fails as a generic "assistant unavailable".
+    """
+    serialized = json.dumps(_strict_proposal_schema())
+
+    assert "$defs" not in serialized
+    assert "$ref" not in serialized
+    assert "discriminator" not in serialized
+
+
 def test_provider_schema_is_fully_inlined_and_strict():
     schema = _strict_proposal_schema()
     assert "$defs" not in schema

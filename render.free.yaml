@@ -54,24 +54,27 @@ services:
         value: "true"
       - key: MESSAGE_CLEANUP_DELAY_SECONDS
         value: "3600"
-      # Per-user quotas were sized for a single-account deployment. One Groq
-      # key now serves every user, so these are tightened for public scale and
-      # backed by a deployment-wide ceiling.
+      # Daily quotas are intentionally OFF while the user base is small: a
+      # refusal costs more than the provider spend it saves. The values below
+      # stay configured so that flipping QUOTAS_ENABLED back to true is the
+      # only change needed once usage grows.
+      #
+      # The per-minute request rate limit is separate and still applies, so a
+      # runaway client or retry loop is still contained.
+      - key: QUOTAS_ENABLED
+        value: "false"
       - key: PER_USER_DAILY_AI_LIMIT
-        value: "25"
+        value: "200"
       - key: PER_USER_DAILY_NUTRITION_LIMIT
-        value: "20"
+        value: "100"
       - key: PER_USER_DAILY_SUMMARY_LIMIT
-        value: "40"
+        value: "200"
       - key: PER_USER_DAILY_TEXT_LIMIT
-        value: "150"
+        value: "500"
       - key: PER_USER_DAILY_VOICE_MINUTES
-        value: "15"
-      # Circuit breaker: when the whole deployment reaches this many
-      # classifications in a UTC day, the assistant degrades to slash commands
-      # instead of exhausting the provider allowance.
+        value: "120"
       - key: GLOBAL_DAILY_AI_LIMIT
-        value: "2000"
+        value: "20000"
       - key: AI_AGENT_ENABLED
         value: "true"
       - key: AI_PROVIDER

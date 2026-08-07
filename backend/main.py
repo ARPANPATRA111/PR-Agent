@@ -117,6 +117,16 @@ async def lifespan(app: FastAPI):
             legacy_scheduler.start()
             logger.info("Legacy scheduler started")
 
+        if settings.public_v2_enabled and settings.telegram_integration_enabled:
+            # Best effort: a failure here must never stop the API from serving.
+            try:
+                from bot import get_bot_handler
+
+                await get_bot_handler().telegram.set_my_commands()
+                logger.info("Telegram command menu published")
+            except Exception:
+                logger.warning("Could not publish the Telegram command menu")
+
         if settings.keep_alive_enabled:
             from keep_alive import KeepAliveUnavailable, build_keep_alive_loop
 

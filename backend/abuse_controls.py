@@ -111,10 +111,23 @@ class InviteService:
 
 
 class QuotaService:
-    """Consume integer units in UTC minute/day windows."""
+    """Consume integer units in UTC minute/day windows.
+
+    Daily quotas can be switched off entirely with ``QUOTAS_ENABLED=false``.
+    That is a deliberate early-stage setting: with few users, a refusal costs
+    more goodwill than the spend it saves. The per-minute request rate limit is
+    separate and stays on, because it protects against runaway loops and floods
+    rather than against ordinary use.
+    """
 
     def __init__(self, session: Session):
         self.session = session
+
+    @staticmethod
+    def enforcement_enabled() -> bool:
+        from config import settings
+
+        return settings.quotas_enabled
 
     def require(
         self,
@@ -174,6 +187,10 @@ class QuotaService:
     ) -> int:
         if limit <= 0 or units <= 0:
             raise ValueError("Quota limit and units must be positive")
+        if not self.enforcement_enabled():
+            # No bucket is written either, so turning enforcement back on later
+            # starts from a clean window rather than a stale backlog.
+            return limit
         current = now or datetime.now(UTC)
         window_start = (
             current.replace(second=0, microsecond=0)
