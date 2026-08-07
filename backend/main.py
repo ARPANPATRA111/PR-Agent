@@ -401,8 +401,28 @@ async def readiness_check():
                 "enabled" if settings.message_cleanup_enabled else "disabled"
             ),
             "keep_alive": getattr(app.state, "keep_alive_status", "disabled"),
+            # Exposed so configuration questions can be answered without the
+            # hosting dashboard: whether daily caps apply, and how many
+            # provider credentials the rotation actually picked up. Counts and
+            # flags only; no credential material.
+            "daily_quotas": "enforced" if settings.quotas_enabled else "unlimited",
+            "groq_credentials": _configured_groq_credential_count(),
+            "privacy_policy": (
+                "published"
+                if settings.privacy_policy_url.startswith("https://")
+                else "unset"
+            ),
         },
     }
+
+
+def _configured_groq_credential_count() -> int:
+    try:
+        from groq_keys import configured_groq_keys
+
+        return len(configured_groq_keys())
+    except Exception:
+        return 0
 
 
 @app.get("/internal/metrics", tags=["Operations"])
