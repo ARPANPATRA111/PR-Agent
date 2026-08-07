@@ -57,10 +57,10 @@ class DeterministicCommandMixin:
             "I keep track of your day so you do not have to. Just talk to me — "
             "hold the microphone button and say what happened.\n\n"
             "<b>Try saying:</b>\n"
-            "🎙️ <i>\"Spent 200 rupees on lunch\"</i>\n"
-            "🎙️ <i>\"Remind me to call Ravi tomorrow at 6 pm\"</i>\n"
-            "🎙️ <i>\"I had two parathas and a cup of tea\"</i>\n"
-            "🎙️ <i>\"Show me all my notes\"</i>\n\n"
+            '🎙️ <i>"Spent 200 rupees on lunch"</i>\n'
+            '🎙️ <i>"Remind me to call Ravi tomorrow at 6 pm"</i>\n'
+            '🎙️ <i>"I had two parathas and a cup of tea"</i>\n'
+            '🎙️ <i>"Show me all my notes"</i>\n\n'
             "I track work, notes, reminders, goals, money, and meals. "
             "I will always show you what I understood and wait for you to tap "
             "✅ before saving anything.\n\n"

@@ -757,9 +757,7 @@ class BotHandler(DeterministicCommandMixin):
                 [
                     {
                         "text": self._choice_label(label),
-                        "callback_data": (
-                            f"agent:pick:{reply.pending_id}:{record_id}"
-                        ),
+                        "callback_data": (f"agent:pick:{reply.pending_id}:{record_id}"),
                     }
                 ]
                 for record_id, label in reply.options

@@ -106,8 +106,12 @@ def seed_note(factory, owner_id: int, title: str, body: str, key: str) -> None:
 
 def test_listing_notes_returns_them_without_a_review(assistant_db):
     owner_id = seed_owner(assistant_db, ALICE)
-    seed_note(assistant_db, owner_id, "Relocation", "Ask HR about relocation", "seed-note-1")
-    seed_note(assistant_db, owner_id, "Invoice", "Ravi needs the invoice", "seed-note-2")
+    seed_note(
+        assistant_db, owner_id, "Relocation", "Ask HR about relocation", "seed-note-1"
+    )
+    seed_note(
+        assistant_db, owner_id, "Invoice", "Ravi needs the invoice", "seed-note-2"
+    )
     assistant = build_assistant(assistant_db, FakeProvider(list_proposal("note")))
 
     reply = assistant.handle(ALICE, "show me all my notes", update_id=1)
@@ -121,7 +125,9 @@ def test_listing_notes_returns_them_without_a_review(assistant_db):
 def test_listing_stays_review_free_even_for_voice(assistant_db):
     """A retrieval changes nothing, so a Correct/Wrong tap only adds friction."""
     owner_id = seed_owner(assistant_db, ALICE)
-    seed_note(assistant_db, owner_id, "Relocation", "Ask HR about relocation", "seed-note-1")
+    seed_note(
+        assistant_db, owner_id, "Relocation", "Ask HR about relocation", "seed-note-1"
+    )
     assistant = build_assistant(assistant_db, FakeProvider(list_proposal("note")))
 
     reply = assistant.handle(
@@ -139,8 +145,12 @@ def test_listing_stays_review_free_even_for_voice(assistant_db):
 
 def test_listing_searches_within_the_owner_records(assistant_db):
     owner_id = seed_owner(assistant_db, ALICE)
-    seed_note(assistant_db, owner_id, "Relocation", "Ask HR about relocation", "seed-note-1")
-    seed_note(assistant_db, owner_id, "Invoice", "Ravi needs the invoice", "seed-note-2")
+    seed_note(
+        assistant_db, owner_id, "Relocation", "Ask HR about relocation", "seed-note-1"
+    )
+    seed_note(
+        assistant_db, owner_id, "Invoice", "Ravi needs the invoice", "seed-note-2"
+    )
     assistant = build_assistant(
         assistant_db,
         FakeProvider(list_proposal("note", search="invoice")),
@@ -155,7 +165,9 @@ def test_listing_searches_within_the_owner_records(assistant_db):
 def test_listing_never_crosses_tenants(assistant_db):
     alice_id = seed_owner(assistant_db, ALICE)
     seed_owner(assistant_db, BOB)
-    seed_note(assistant_db, alice_id, "Salary", "Alice private salary note", "seed-note-1")
+    seed_note(
+        assistant_db, alice_id, "Salary", "Alice private salary note", "seed-note-1"
+    )
     assistant = build_assistant(
         assistant_db,
         FakeProvider(list_proposal("note"), list_proposal("note")),
@@ -337,7 +349,9 @@ def test_smalltalk_output_is_escaped(assistant_db):
 def test_low_confidence_retrieval_still_answers(assistant_db):
     """The confidence floor guards writes; refusing a read helps nobody."""
     owner_id = seed_owner(assistant_db, ALICE)
-    seed_note(assistant_db, owner_id, "Relocation", "Ask HR about relocation", "seed-note-1")
+    seed_note(
+        assistant_db, owner_id, "Relocation", "Ask HR about relocation", "seed-note-1"
+    )
     proposal = list_proposal("note")
     proposal["confidence"] = 0.35
     assistant = build_assistant(assistant_db, FakeProvider(proposal))
@@ -450,7 +464,9 @@ def test_mixed_read_and_write_still_requires_review(assistant_db):
 
 def test_several_reads_are_answered_in_one_turn(assistant_db):
     owner_id = seed_owner(assistant_db, ALICE)
-    seed_note(assistant_db, owner_id, "Relocation", "Ask HR about relocation", "seed-note-1")
+    seed_note(
+        assistant_db, owner_id, "Relocation", "Ask HR about relocation", "seed-note-1"
+    )
     assistant = build_assistant(
         assistant_db,
         FakeProvider(

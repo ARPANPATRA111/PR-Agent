@@ -70,11 +70,11 @@ OPEN_PENDING_STATES = ("clarification", "confirmation", "disambiguation")
 # surface is learned in context rather than from a command list.
 CAPABILITY_HINT = (
     "I can track work, notes, money, reminders, goals and meals. Try:\n"
-    "• \"spent 200 rupees on lunch\"\n"
-    "• \"remind me to call Ravi tomorrow at 6 pm\"\n"
-    "• \"show me all my notes\"\n"
-    "• \"pause my water reminder\"\n"
-    "• \"delete my note about the invoice\""
+    '• "spent 200 rupees on lunch"\n'
+    '• "remind me to call Ravi tomorrow at 6 pm"\n'
+    '• "show me all my notes"\n'
+    '• "pause my water reminder"\n'
+    '• "delete my note about the invoice"'
 )
 
 
@@ -206,7 +206,7 @@ class BoundedAssistant:
         return AssistantReply(
             "I could not work that one out, so I have stopped asking and saved "
             "nothing. Try saying it as one complete sentence — for example "
-            "\"add an expense of 200 rupees for lunch\" or \"show my notes\".",
+            '"add an expense of 200 rupees for lunch" or "show my notes".',
             "cancelled",
         )
 
@@ -748,9 +748,7 @@ class BoundedAssistant:
             return action.model_copy(update={"record_id": record_id})
         return action.model_copy(
             update={
-                "selector": action.selector.model_copy(
-                    update={"record_id": record_id}
-                )
+                "selector": action.selector.model_copy(update={"record_id": record_id})
             }
         )
 
@@ -867,9 +865,7 @@ class BoundedAssistant:
         scan_limit = 100
 
         if record_type == "work_log":
-            rows = service.list_work_logs(
-                owner_id, search=search, limit=scan_limit
-            )
+            rows = service.list_work_logs(owner_id, search=search, limit=scan_limit)
             labels = [(row.id, row.original_text) for row in rows]
         elif record_type == "note":
             rows = service.list_notes(owner_id, search=search, limit=scan_limit)
@@ -907,7 +903,9 @@ class BoundedAssistant:
             ]
         if ordinal == "oldest":
             labels = list(reversed(labels))
-        return [(record_id, " ".join((label or "").split())) for record_id, label in labels]
+        return [
+            (record_id, " ".join((label or "").split())) for record_id, label in labels
+        ]
 
     def _delete_prompt(self, owner_id: int, action: DeleteRecordAction) -> str:
         """Describe the target in the user's own words rather than by number."""
@@ -1062,9 +1060,7 @@ class BoundedAssistant:
                     )
                     if value is not None
                 )
-                summary = (
-                    f"Update {action.record_type.replace('_', ' ')} — {changed}"
-                )
+                summary = f"Update {action.record_type.replace('_', ' ')} — {changed}"
             elif isinstance(action, SetRecordStatusAction):
                 summary = (
                     f"Mark {action.record_type.replace('_', ' ')} as "
@@ -1482,7 +1478,7 @@ class BoundedAssistant:
                 GoalUpdate(version=current.version, status=status),
             )
             return AssistantReply(
-                f"Goal \"{self._clip(row.title, 80)}\" is now {status}.",
+                f'Goal "{self._clip(row.title, 80)}" is now {status}.',
                 "completed",
                 "goal",
                 record_id,
@@ -1498,7 +1494,7 @@ class BoundedAssistant:
                 ReminderUpdate(version=current.version, enabled=enabled),
             )
             return AssistantReply(
-                f"Reminder \"{self._clip(row.title, 80)}\" is now "
+                f'Reminder "{self._clip(row.title, 80)}" is now '
                 f"{'active' if enabled else 'paused'}.",
                 "completed",
                 "reminder",
@@ -1514,7 +1510,7 @@ class BoundedAssistant:
                 NoteUpdate(version=current.version, pinned=status == "pinned"),
             )
             return AssistantReply(
-                f"Note \"{self._clip(row.title or row.body, 80)}\" is now {status}.",
+                f'Note "{self._clip(row.title or row.body, 80)}" is now {status}.',
                 "completed",
                 "note",
                 record_id,
@@ -1556,8 +1552,7 @@ class BoundedAssistant:
             else ""
         )
         return AssistantReply(
-            f"\"{self._clip(row.title, 80)}\" is now at "
-            f"{row.current_value}{target}.",
+            f'"{self._clip(row.title, 80)}" is now at ' f"{row.current_value}{target}.",
             "completed",
             "goal",
             record_id,
@@ -1726,8 +1721,7 @@ class BoundedAssistant:
                 else ""
             )
             lines.append(
-                f"• #{row.id} {self._clip(row.title, 80)} "
-                f"[{row.status}]{progress}"
+                f"• #{row.id} {self._clip(row.title, 80)} " f"[{row.status}]{progress}"
             )
         return "goals", lines
 

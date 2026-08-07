@@ -109,7 +109,9 @@ def test_schema_rejects_a_deletion_with_no_way_to_identify_it():
 
 def test_single_match_confirms_using_the_record_text(assistant_db):
     owner_id = seed_owner(assistant_db, ALICE)
-    seed_note(assistant_db, owner_id, "Invoice", "Ravi needs the invoice", "seed-note-1")
+    seed_note(
+        assistant_db, owner_id, "Invoice", "Ravi needs the invoice", "seed-note-1"
+    )
     assistant = build_assistant(
         assistant_db,
         FakeProvider(delete_proposal("note", search="invoice")),
@@ -126,7 +128,9 @@ def test_single_match_confirms_using_the_record_text(assistant_db):
 
 def test_confirming_a_resolved_deletion_removes_the_record(assistant_db):
     owner_id = seed_owner(assistant_db, ALICE)
-    seed_note(assistant_db, owner_id, "Invoice", "Ravi needs the invoice", "seed-note-1")
+    seed_note(
+        assistant_db, owner_id, "Invoice", "Ravi needs the invoice", "seed-note-1"
+    )
     assistant = build_assistant(
         assistant_db,
         FakeProvider(delete_proposal("note", search="invoice")),
@@ -243,7 +247,9 @@ def test_another_tenant_cannot_choose_from_someone_elses_candidates(assistant_db
 def test_deletion_never_resolves_against_another_tenants_records(assistant_db):
     alice_id = seed_owner(assistant_db, ALICE)
     seed_owner(assistant_db, BOB)
-    seed_note(assistant_db, alice_id, "Invoice", "Ravi needs the invoice", "seed-note-1")
+    seed_note(
+        assistant_db, alice_id, "Invoice", "Ravi needs the invoice", "seed-note-1"
+    )
     assistant = build_assistant(
         assistant_db,
         FakeProvider(delete_proposal("note", search="invoice")),

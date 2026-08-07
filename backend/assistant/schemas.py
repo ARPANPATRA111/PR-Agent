@@ -121,7 +121,9 @@ class RecordSelector(StrictAction):
     @model_validator(mode="after")
     def requires_a_way_to_identify_the_record(self):
         if self.record_id is None and not self.search and self.ordinal is None:
-            raise ValueError("A record reference, search phrase, or ordinal is required")
+            raise ValueError(
+                "A record reference, search phrase, or ordinal is required"
+            )
         return self
 
 
