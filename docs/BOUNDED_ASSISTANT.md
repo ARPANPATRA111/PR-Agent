@@ -19,6 +19,12 @@ Allowed proposal families are:
 - list or search the caller's own records of one type (`list_records`);
 - answer a greeting or an ordinary general-knowledge question in at most 400
   characters (`smalltalk`);
+- edit an existing record's fields (`update_record`);
+- pause, resume, complete, pin, or confirm an existing record
+  (`set_record_status`);
+- add to or set a goal's progress (`record_goal_progress`);
+- change the caller's own timezone and digest preferences
+  (`update_settings`);
 - propose deletion of one record, identified by id or by description;
 - request clarification; or
 - reject an unsupported request.
@@ -52,7 +58,23 @@ anything is stored or reviewed:
 
 A tapped choice is honoured only when it matches a candidate the server offered
 for that pending action, so a crafted callback cannot select an arbitrary row.
+The pending record stores the *original* action, so choosing resumes that
+intent — an ambiguous edit resolves to an edit, never to a deletion.
 Confirmation is still required after a choice.
+
+The same resolution applies to `update_record`, `set_record_status`, and
+`record_goal_progress` through their shared `selector` field.
+
+## Bounded question loops
+
+A clarification that produces another clarification is capped at
+`MAX_CLARIFICATION_ROUNDS` (2). Past that the pending action is cancelled and
+the user is given a concrete example instead of a further question. Without the
+cap a provider that cannot converge will re-ask forever, consuming a provider
+call per turn — observed live as an endless chain of narrowing questions.
+
+The durable context carries `clarification_round` and `final_round` so the
+provider knows when it must act or decline rather than ask again.
 
 ## Validation and execution
 
