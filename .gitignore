@@ -140,6 +140,7 @@ docs/*
 !docs/KEEP_ALIVE.md
 !docs/PUBLIC_LAUNCH.md
 !docs/PRIVACY_POLICY_BRIEF.md
+!docs/MARKET_POSITION.md
 changelog.md
 docker-compose.override.yml
 docker-compose.prod.yml
