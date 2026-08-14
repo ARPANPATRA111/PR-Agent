@@ -1120,7 +1120,9 @@ class DeterministicCommandMixin:
         await self.telegram.send_message(
             message.chat.get("id"),
             "Open the recently authenticated Mini App and choose Vault. "
-            "Secret values are never revealed in Telegram or sent to the AI.",
+            "You can also ask for an item by its label; I show a masked match "
+            "and require a separate reveal tap. Secret values are never sent "
+            "to the AI, and revealed chat messages are auto-deleted.",
             reply_markup=reply_markup,
         )
 

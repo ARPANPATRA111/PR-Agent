@@ -49,7 +49,7 @@ export default function Home() {
     nutrition: <NutritionScreen />,
     vault: <VaultScreen />,
     goals: <GoalsScreen />,
-    settings: <SettingsScreen />,
+    settings: <SettingsScreen onNavigate={setScreen} />,
     export: <ExportScreen />,
     account: <AccountDeletionScreen />,
   } satisfies Record<ScreenName, React.ReactNode>;

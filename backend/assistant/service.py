@@ -8,6 +8,7 @@ from decimal import Decimal
 from hashlib import sha256
 from html import escape
 import json
+import re
 from typing import Callable
 from zoneinfo import ZoneInfo
 
@@ -27,9 +28,11 @@ from assistant.schemas import (
     CreateNutritionAction,
     CreateReminderAction,
     CreateWorkLogAction,
+    DeleteManyRecordsAction,
     DeleteRecordAction,
     ListRecordsAction,
     QueryAction,
+    RetrievePrivateFactAction,
     RecordGoalProgressAction,
     SetRecordStatusAction,
     SmalltalkAction,
@@ -58,8 +61,18 @@ from public_models import (
     AgentAction,
     AgentPendingAction,
     AgentRun,
+    LedgerEntry,
+    Note,
+    NutritionLog,
     PublicUser,
+    PrivateFact,
+    PrivateFactAudit,
+    Reminder,
+    TrackedGoal,
+    WorkLog,
 )
+from config import settings
+from vault_crypto import VaultCipher, VaultConfigurationError, VaultDecryptionError
 
 UTC = timezone.utc
 
@@ -142,6 +155,19 @@ class BoundedAssistant:
                 "Please send a shorter, non-empty request.",
                 "rejected",
             )
+        if re.search(
+            r"\b(?:reset|delete|erase|remove)\b.*\b(?:account|everything|"
+            r"all\s+(?:of\s+)?(?:my\s+)?data)\b",
+            text,
+            re.IGNORECASE,
+        ):
+            return AssistantReply(
+                "For safety, voice and ordinary chat can never erase your whole "
+                "account. If you intend a permanent reset, type "
+                "<code>/resetmydata DELETE MY ACCOUNT</code> exactly; I will still "
+                "ask for one final tap.",
+                "rejected",
+            )
         idempotency_key = f"agent:{actor.telegram_id}:{update_id}"
         existing = self._existing_reply(actor.telegram_id, idempotency_key)
         if existing is not None:
@@ -172,14 +198,15 @@ class BoundedAssistant:
         except ValidationError:
             self._fail_run(run_id, "invalid_provider_schema")
             return AssistantReply(
-                "I could not safely validate that request. "
-                "Use a slash command instead.",
+                "I did not understand that confidently enough to act, so nothing "
+                "was saved. Please try once more in a short sentence.",
                 "failed",
             )
         except Exception:
             self._fail_run(run_id, "provider_failure")
             return AssistantReply(
-                "The assistant is temporarily unavailable. Slash commands still work.",
+                "I could not interpret that message just now, so nothing was saved. "
+                "Please resend it, or use /help for a direct command.",
                 "failed",
             )
         return self._apply_proposal(
@@ -276,13 +303,14 @@ class BoundedAssistant:
             )
         except ValidationError:
             return AssistantReply(
-                "I could not safely validate that answer.",
+                "I did not understand that answer confidently enough. "
+                "Nothing was saved.",
                 "failed",
                 pending_id=pending_id,
             )
         except Exception:
             return AssistantReply(
-                "The assistant is temporarily unavailable. Try again later.",
+                "I could not interpret that answer just now. Please send it once more.",
                 "failed",
                 pending_id=pending_id,
             )
@@ -365,6 +393,10 @@ class BoundedAssistant:
             return AssistantReply("That confirmation has expired.", "expired")
         if pending.proposed_arguments.get("kind") == "batch":
             return self._confirm_batch(pending)
+        if pending.proposed_arguments.get("kind") == "delete_many_snapshot":
+            return self._confirm_delete_many(pending)
+        if pending.proposed_arguments.get("kind") == "reveal_private_fact":
+            return self._confirm_private_fact_reveal(pending)
         try:
             proposal = AgentProposal.model_validate(
                 {
@@ -608,7 +640,7 @@ class BoundedAssistant:
                 run_id,
                 idempotency_key,
                 unsupported.kind,
-                f"{unsupported.reason}\n\n{CAPABILITY_HINT}",
+                "I cannot safely do that from this chat yet.\n\n" + CAPABILITY_HINT,
             )
         clarification = next(
             (action for action in actions if isinstance(action, ClarificationAction)),
@@ -625,6 +657,41 @@ class BoundedAssistant:
                 arguments=clarification.known_arguments,
                 missing_fields=clarification.missing_fields,
                 prompt=clarification.question,
+                replace_existing=replace_existing,
+            )
+        if any(isinstance(action, DeleteManyRecordsAction) for action in actions):
+            if len(actions) != 1:
+                return self._reject(
+                    owner_id,
+                    run_id,
+                    idempotency_key,
+                    "delete_many_records",
+                    "Please ask for a bulk deletion on its own so I can show "
+                    "one clear review.",
+                )
+            return self._prepare_delete_many(
+                owner_id,
+                run_id,
+                idempotency_key,
+                update_id,
+                actions[0],
+                replace_existing=replace_existing,
+            )
+        if any(isinstance(action, RetrievePrivateFactAction) for action in actions):
+            if len(actions) != 1:
+                return self._reject(
+                    owner_id,
+                    run_id,
+                    idempotency_key,
+                    "retrieve_private_fact",
+                    "Please ask for one vault item at a time.",
+                )
+            return self._prepare_private_fact_reveal(
+                owner_id,
+                run_id,
+                idempotency_key,
+                update_id,
+                actions[0],
                 replace_existing=replace_existing,
             )
         # A spoken deletion names a record the way a person would. Resolve that
@@ -721,6 +788,300 @@ class BoundedAssistant:
             action,
             replace_existing=replace_existing,
         )
+
+    BULK_DELETE_LIMIT = 2000
+
+    @staticmethod
+    def _record_model(record_type: str):
+        return {
+            "work_log": WorkLog,
+            "note": Note,
+            "reminder": Reminder,
+            "ledger_entry": LedgerEntry,
+            "nutrition_log": NutritionLog,
+            "goal": TrackedGoal,
+        }[record_type]
+
+    def _prepare_delete_many(
+        self,
+        owner_id: int,
+        run_id: int,
+        idempotency_key: str,
+        update_id: int,
+        action: DeleteManyRecordsAction,
+        *,
+        replace_existing: bool,
+    ) -> AssistantReply:
+        model = self._record_model(action.record_type)
+        with self.session_factory() as session:
+            ids = [
+                row[0]
+                for row in session.query(model.id)
+                .filter(model.owner_id == owner_id)
+                .order_by(model.id.asc())
+                .limit(self.BULK_DELETE_LIMIT + 1)
+                .all()
+            ]
+        noun = action.record_type.replace("_", " ")
+        if not ids:
+            return self._reject(
+                owner_id,
+                run_id,
+                idempotency_key,
+                action.kind,
+                f"You do not have any {noun} records to delete.",
+            )
+        if len(ids) > self.BULK_DELETE_LIMIT:
+            return self._reject(
+                owner_id,
+                run_id,
+                idempotency_key,
+                action.kind,
+                f"There are too many {noun} records for one safe chat action. "
+                "Use the Mini App instead.",
+            )
+        return self._pending(
+            owner_id,
+            run_id,
+            idempotency_key,
+            update_id,
+            state="confirmation",
+            action_type=action.kind,
+            arguments={
+                "kind": "delete_many_snapshot",
+                "record_type": action.record_type,
+                "record_ids": ids,
+            },
+            missing_fields=[],
+            prompt=(
+                f"Delete all {len(ids)} {noun} record"
+                f"{'s' if len(ids) != 1 else ''}? This cannot be undone."
+            ),
+            replace_existing=replace_existing,
+        )
+
+    def _confirm_delete_many(self, pending: AgentPendingAction) -> AssistantReply:
+        stored = pending.proposed_arguments
+        record_type = stored.get("record_type")
+        record_ids = stored.get("record_ids")
+        if (
+            record_type
+            not in {
+                "work_log",
+                "note",
+                "reminder",
+                "ledger_entry",
+                "nutrition_log",
+                "goal",
+            }
+            or not isinstance(record_ids, list)
+            or not all(
+                isinstance(record_id, int) and record_id > 0 for record_id in record_ids
+            )
+        ):
+            return AssistantReply(
+                "The stored deletion review is no longer valid.", "failed"
+            )
+        deleted = 0
+        with self.session_factory() as session:
+            current = (
+                session.query(AgentPendingAction)
+                .filter(
+                    AgentPendingAction.id == pending.id,
+                    AgentPendingAction.owner_id == pending.owner_id,
+                    AgentPendingAction.state == "confirmation",
+                )
+                .with_for_update()
+                .one_or_none()
+            )
+            if current is None:
+                return AssistantReply("That deletion is already closed.", "completed")
+            service = DomainServices(session)
+            for record_id in record_ids:
+                action = DeleteRecordAction(
+                    kind="delete_record",
+                    record_type=record_type,
+                    record_id=record_id,
+                )
+                try:
+                    self._delete_record(service, current.owner_id, action)
+                    deleted += 1
+                except RecordNotFound:
+                    pass
+            current.state = "executed"
+            current.resolved_at_utc = self.clock()
+            self._update_action(
+                session,
+                current.owner_id,
+                current.idempotency_key,
+                status="executed",
+            )
+            run = session.get(AgentRun, current.run_id)
+            if run:
+                run.status = "completed"
+                run.completed_at_utc = self.clock()
+            session.commit()
+        noun = record_type.replace("_", " ")
+        return AssistantReply(
+            f"Deleted {deleted} {noun} record{'s' if deleted != 1 else ''}.",
+            "completed",
+            record_type,
+        )
+
+    def _prepare_private_fact_reveal(
+        self,
+        owner_id: int,
+        run_id: int,
+        idempotency_key: str,
+        update_id: int,
+        action: RetrievePrivateFactAction,
+        *,
+        replace_existing: bool,
+    ) -> AssistantReply:
+        needle = " ".join(action.label.split())[:160]
+        with self.session_factory() as session:
+            exact = (
+                session.query(PrivateFact)
+                .filter(
+                    PrivateFact.owner_id == owner_id,
+                    PrivateFact.label.ilike(needle),
+                )
+                .order_by(PrivateFact.updated_at.desc())
+                .all()
+            )
+            rows = exact or (
+                session.query(PrivateFact)
+                .filter(
+                    PrivateFact.owner_id == owner_id,
+                    PrivateFact.label.ilike(f"%{needle}%"),
+                )
+                .order_by(PrivateFact.updated_at.desc())
+                .limit(5)
+                .all()
+            )
+            matches = [(row.id, row.label, row.masked_value) for row in rows]
+        if not matches:
+            return self._reject(
+                owner_id,
+                run_id,
+                idempotency_key,
+                action.kind,
+                f'I could not find a vault item matching "{needle}". '
+                "Check its label in the Mini App.",
+            )
+        if len(matches) > 1:
+            labels = ", ".join(label for _, label, _ in matches)
+            return self._reject(
+                owner_id,
+                run_id,
+                idempotency_key,
+                action.kind,
+                f"I found several vault items: {labels}. Ask again using the "
+                "exact label.",
+            )
+        record_id, label, masked = matches[0]
+        return self._pending(
+            owner_id,
+            run_id,
+            idempotency_key,
+            update_id,
+            state="confirmation",
+            action_type=action.kind,
+            arguments={
+                "kind": "reveal_private_fact",
+                "record_id": record_id,
+                "label": label,
+            },
+            missing_fields=[],
+            prompt=(
+                f"Reveal {label} ({masked}) in this chat? The message will be "
+                "auto-deleted."
+            ),
+            replace_existing=replace_existing,
+        )
+
+    def _confirm_private_fact_reveal(
+        self,
+        pending: AgentPendingAction,
+    ) -> AssistantReply:
+        record_id = pending.proposed_arguments.get("record_id")
+        if not isinstance(record_id, int) or record_id <= 0:
+            return AssistantReply(
+                "The stored vault request is no longer valid.", "failed"
+            )
+        try:
+            cipher = VaultCipher(settings.vault_encryption_keys)
+        except VaultConfigurationError:
+            return AssistantReply("The vault is not available right now.", "failed")
+        with self.session_factory() as session:
+            current = (
+                session.query(AgentPendingAction)
+                .filter(
+                    AgentPendingAction.id == pending.id,
+                    AgentPendingAction.owner_id == pending.owner_id,
+                    AgentPendingAction.state == "confirmation",
+                )
+                .with_for_update()
+                .one_or_none()
+            )
+            if current is None:
+                return AssistantReply(
+                    "That vault request is already closed.", "completed"
+                )
+            row = (
+                session.query(PrivateFact)
+                .filter(
+                    PrivateFact.id == record_id,
+                    PrivateFact.owner_id == current.owner_id,
+                )
+                .one_or_none()
+            )
+            if row is None:
+                return AssistantReply(
+                    "That vault item is no longer available.", "failed"
+                )
+            try:
+                payload = cipher.decrypt(
+                    ciphertext=row.ciphertext,
+                    nonce=row.nonce,
+                    key_id=row.key_id,
+                    owner_id=current.owner_id,
+                    record_uuid=row.record_uuid,
+                    fact_type=row.fact_type,
+                )
+            except VaultDecryptionError:
+                return AssistantReply(
+                    "I could not safely open that vault item.", "failed"
+                )
+            session.add(
+                PrivateFactAudit(
+                    owner_id=current.owner_id,
+                    record_uuid=row.record_uuid,
+                    action="reveal",
+                    channel="telegram",
+                )
+            )
+            current.state = "executed"
+            current.resolved_at_utc = self.clock()
+            self._update_action(
+                session,
+                current.owner_id,
+                current.idempotency_key,
+                status="executed",
+            )
+            run = session.get(AgentRun, current.run_id)
+            if run:
+                run.status = "completed"
+                run.completed_at_utc = self.clock()
+            label = row.label
+            value = str(payload.get("value", ""))
+            notes = payload.get("notes")
+            session.commit()
+        text = f"{escape(label)}: <code>{escape(value)}</code>"
+        if notes:
+            text += f"\n{escape(str(notes))}"
+        text += "\n\nFor privacy, this message will be auto-deleted."
+        return AssistantReply(text, "completed", "private_fact", record_id)
 
     MAX_DELETE_CHOICES = 5
 

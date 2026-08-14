@@ -59,6 +59,38 @@ from observability import operational_snapshot, runtime_metrics
 setup_logging()
 logger = logging.getLogger(__name__)
 
+# Telegram can deliver a voice note and a typed correction nearly together.
+# Serialize work only within one account so its pending confirmation state
+# stays ordered, while different users continue to run concurrently.
+_telegram_user_locks: dict[int, asyncio.Lock] = {}
+_telegram_user_lock_refs: dict[int, int] = {}
+_telegram_user_lock_guard = asyncio.Lock()
+
+
+@asynccontextmanager
+async def telegram_user_turn(telegram_id: int | None):
+    if telegram_id is None:
+        yield
+        return
+    async with _telegram_user_lock_guard:
+        lock = _telegram_user_locks.setdefault(telegram_id, asyncio.Lock())
+        _telegram_user_lock_refs[telegram_id] = (
+            _telegram_user_lock_refs.get(telegram_id, 0) + 1
+        )
+    try:
+        async with lock:
+            yield
+    finally:
+        async with _telegram_user_lock_guard:
+            remaining = _telegram_user_lock_refs[telegram_id] - 1
+            if remaining == 0:
+                _telegram_user_lock_refs.pop(telegram_id, None)
+                if _telegram_user_locks.get(telegram_id) is lock:
+                    _telegram_user_locks.pop(telegram_id, None)
+            else:
+                _telegram_user_lock_refs[telegram_id] = remaining
+
+
 if settings.sentry_dsn:
     import sentry_sdk
 
@@ -408,6 +440,7 @@ async def readiness_check():
             # provider credentials the rotation actually picked up. Counts and
             # flags only; no credential material.
             "daily_quotas": "enforced" if settings.quotas_enabled else "unlimited",
+            "access": "invite_only" if settings.invite_only else "public",
             "groq_credentials": _configured_groq_credential_count(),
             "privacy_policy": (
                 "published"
@@ -540,7 +573,13 @@ async def telegram_webhook(
                             )
 
                     await asyncio.to_thread(ensure_cleanup_owner)
-                await get_bot_handler().handle_update(update)
+                update_user_id = None
+                if update.message and update.message.from_user:
+                    update_user_id = update.message.from_user.id
+                elif update.callback_query:
+                    update_user_id = update.callback_query.from_user.id
+                async with telegram_user_turn(update_user_id):
+                    await get_bot_handler().handle_update(update)
                 if (
                     settings.message_cleanup_enabled
                     and update.message

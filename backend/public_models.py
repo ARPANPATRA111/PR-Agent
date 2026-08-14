@@ -202,7 +202,10 @@ class PrivateFactAudit(PublicBase):
             "action IN ('create', 'update', 'reveal', 'delete')",
             name="action_supported",
         ),
-        CheckConstraint("channel = 'mini_app'", name="channel_supported"),
+        CheckConstraint(
+            "channel IN ('mini_app', 'telegram')",
+            name="channel_supported",
+        ),
         Index(
             "ix_private_fact_audits_owner_id_occurred_at_utc",
             "owner_id",

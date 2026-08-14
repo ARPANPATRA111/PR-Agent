@@ -147,15 +147,15 @@ def test_provider_schema_is_fully_inlined_and_strict():
         )
 
 
-def test_provider_uses_validated_json_fallback_after_strict_failure(monkeypatch):
+def test_provider_uses_validated_json_fallback_after_primary_failure(monkeypatch):
     provider = GroqIntentProvider("test-key", "primary-model", "fallback-model")
     calls = []
 
     def fake_completion(*, api_key, model_name, messages, strict):
         del messages, api_key
         calls.append((model_name, strict))
-        if strict:
-            raise RuntimeError("strict generation failed")
+        if model_name == "primary-model":
+            raise RuntimeError("primary generation failed")
         return {
             "confidence": 0.95,
             "actions": [{"kind": "create_note", "body": "Buy milk"}],
@@ -166,6 +166,39 @@ def test_provider_uses_validated_json_fallback_after_strict_failure(monkeypatch)
 
     assert calls == [("primary-model", True), ("fallback-model", False)]
     assert result["actions"][0]["kind"] == "create_note"
+
+
+def test_provider_does_not_request_unreliable_remote_json_mode(monkeypatch):
+    provider = GroqIntentProvider("test-key", "primary-model", "fallback-model")
+    captured = {}
+
+    class Message:
+        content = (
+            '{"confidence":0.95,"actions":[{"kind":"smalltalk","answer":"Hello"}]}'
+        )
+
+    class Choice:
+        message = Message()
+
+    class Response:
+        choices = [Choice()]
+
+    class Completions:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return Response()
+
+    class Chat:
+        completions = Completions()
+
+    class Client:
+        chat = Chat()
+
+    monkeypatch.setattr(provider, "_client", lambda api_key: Client())
+    result = provider.classify("hello")
+
+    assert "response_format" not in captured
+    assert result["actions"][0]["kind"] == "smalltalk"
 
 
 def test_provider_fails_closed_when_primary_and_fallback_fail(monkeypatch):

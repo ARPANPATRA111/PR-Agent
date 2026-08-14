@@ -545,7 +545,8 @@ test('provider-disabled nutrition accepts explicit manual values', async ({
 test('account deletion requires explicit confirmation', async ({ page }) => {
   await mockApi(page);
   await page.goto('/');
-  await page.getByRole('button', { name: 'Open Account' }).click();
+  await page.getByRole('button', { name: 'Open Settings' }).click();
+  await page.getByRole('button', { name: 'Delete account' }).click();
   const deleteButton = page.getByRole('button', { name: 'Delete my account' });
   await expect(deleteButton).toBeDisabled();
   await page.getByLabel('Confirmation phrase').fill('DELETE MY ACCOUNT');

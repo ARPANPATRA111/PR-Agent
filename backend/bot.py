@@ -16,7 +16,7 @@ from abuse_controls import (
     QuotaService,
 )
 from config import settings
-from domain.errors import DomainError
+from domain.errors import DomainError, RecordNotFound
 from domain.services import DomainServices
 from models import (
     TelegramUpdate,
@@ -30,6 +30,7 @@ from models import (
 from memory import get_memory_manager
 from llm_agent import get_llm_agent
 from nutrition.providers import get_nutrition_provider
+from privacy import PrivacyService
 from telegram_commands import DeterministicCommandMixin
 from utils import (
     daily_voice_unit_limit,
@@ -372,6 +373,62 @@ class BotHandler(DeterministicCommandMixin):
                 await asyncio.to_thread(self._require_beta_access, actor_message)
             parts = (callback.data or "").split(":")
             if (
+                len(parts) == 3
+                and parts[0] == "account"
+                and parts[1] == "keep"
+                and parts[2].isdigit()
+            ):
+                if callback.from_user.id != int(parts[2]):
+                    await self.telegram.answer_callback_query(
+                        callback.id,
+                        "This confirmation belongs to another account.",
+                    )
+                    return
+                await self.telegram.answer_callback_query(callback.id, "Data kept")
+                await self.telegram.send_message(chat_id, "Nothing was deleted.")
+                try:
+                    await self.telegram.delete_message(
+                        chat_id,
+                        callback.message.message_id,
+                    )
+                except Exception:
+                    logger.warning("Unable to remove account reset confirmation")
+                return
+            if (
+                len(parts) == 3
+                and parts[0] == "account"
+                and parts[1] == "reset"
+                and parts[2].isdigit()
+            ):
+                if callback.from_user.id != int(parts[2]):
+                    await self.telegram.answer_callback_query(
+                        callback.id,
+                        "This confirmation belongs to another account.",
+                    )
+                    return
+                deleted = await asyncio.to_thread(
+                    self._delete_account_from_telegram,
+                    actor_message,
+                )
+                await self.telegram.answer_callback_query(
+                    callback.id,
+                    "Account deleted" if deleted else "Already deleted",
+                )
+                await self.telegram.send_message(
+                    chat_id,
+                    "Your PR-Agent account and stored records have been "
+                    "permanently deleted.",
+                    queue_cleanup=False,
+                )
+                try:
+                    await self.telegram.delete_message(
+                        chat_id,
+                        callback.message.message_id,
+                    )
+                except Exception:
+                    logger.warning("Unable to remove completed account reset prompt")
+                return
+            if (
                 len(parts) not in {3, 4}
                 or parts[0] != "agent"
                 or not parts[2].isdigit()
@@ -438,7 +495,7 @@ class BotHandler(DeterministicCommandMixin):
         except ProviderUnavailable:
             await self.telegram.answer_callback_query(
                 callback.id,
-                "The assistant is unavailable.",
+                "I could not finish that just now.",
             )
         except Exception:
             logger.exception("Telegram callback handling failed")
@@ -696,6 +753,8 @@ class BotHandler(DeterministicCommandMixin):
             "/answeragent": self._v2_answer_agent,
             "/confirmagent": self._v2_confirm_agent,
             "/cancelagent": self._v2_cancel_agent,
+            # Deliberately omitted from /help and Telegram's command menu.
+            "/resetmydata": self._v2_reset_my_data,
         }
         if settings.public_v2_enabled:
             commands.update(
@@ -729,6 +788,57 @@ class BotHandler(DeterministicCommandMixin):
         else:
             await self.telegram.send_message(
                 chat_id, "❓ Unknown command. Use /help to see available commands."
+            )
+
+    async def _v2_reset_my_data(self, message: TelegramMessage) -> None:
+        """Hidden typed-only account reset with a second human confirmation."""
+        if not settings.public_v2_enabled or message.from_user is None:
+            await self.telegram.send_message(
+                message.chat.get("id"),
+                "This command is not available here.",
+            )
+            return
+        if (message.text or "") != "/resetmydata DELETE MY ACCOUNT":
+            await self.telegram.send_message(
+                message.chat.get("id"),
+                "Nothing was deleted. If you intentionally want a full reset, type "
+                "<code>/resetmydata DELETE MY ACCOUNT</code> exactly.",
+            )
+            return
+        await self.telegram.send_message(
+            message.chat.get("id"),
+            "Permanently delete your account and every stored record? "
+            "This cannot be undone.",
+            reply_markup={
+                "inline_keyboard": [
+                    [
+                        {
+                            "text": "Delete everything",
+                            "callback_data": f"account:reset:{message.from_user.id}",
+                        },
+                        {
+                            "text": "Keep my data",
+                            "callback_data": f"account:keep:{message.from_user.id}",
+                        },
+                    ]
+                ]
+            },
+        )
+
+    def _delete_account_from_telegram(self, message: TelegramMessage) -> bool:
+        if message.from_user is None:
+            raise ValueError("Telegram user identity is required")
+        with self.memory.get_session() as session:
+            try:
+                owner = DomainServices(session).get_owner_by_telegram_id(
+                    message.from_user.id
+                )
+            except RecordNotFound:
+                return False
+            return PrivacyService(session).delete_account(
+                owner.id,
+                message.from_user.id,
+                audit_secret=settings.effective_session_signing_secret,
             )
 
     def _get_bounded_assistant(self) -> BoundedAssistant:
@@ -841,7 +951,8 @@ class BotHandler(DeterministicCommandMixin):
         except ProviderUnavailable:
             await self.telegram.send_message(
                 message.chat.get("id"),
-                "The assistant is unavailable. Slash commands still work.",
+                "I could not interpret that message just now. Please resend it, "
+                "or use /help for a direct command.",
             )
 
     async def _handle_typed_shortcut(self, message: TelegramMessage) -> bool:
@@ -1065,7 +1176,8 @@ class BotHandler(DeterministicCommandMixin):
             except ProviderUnavailable:
                 await self.telegram.send_message(
                     message.chat.get("id"),
-                    "The assistant is unavailable. Slash commands still work.",
+                    "I could not interpret that voice note just now. Nothing was "
+                    "saved; please resend it, or type the request.",
                 )
             except Exception:
                 logger.exception(
@@ -1126,7 +1238,7 @@ class BotHandler(DeterministicCommandMixin):
         except ProviderUnavailable:
             await self.telegram.send_message(
                 message.chat.get("id"),
-                "The assistant is unavailable. Try again later.",
+                "I could not interpret that answer just now. Please resend it.",
             )
 
     async def _v2_confirm_agent(self, message: TelegramMessage) -> None:
@@ -1159,7 +1271,7 @@ class BotHandler(DeterministicCommandMixin):
         except ProviderUnavailable:
             await self.telegram.send_message(
                 message.chat.get("id"),
-                "The assistant is unavailable. Try again later.",
+                "I could not finish that just now. Please try once more.",
             )
 
     async def _legacy_cmd_start(self, message: TelegramMessage) -> None:

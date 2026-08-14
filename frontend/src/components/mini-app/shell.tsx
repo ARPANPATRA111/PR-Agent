@@ -4,14 +4,12 @@ import {
   Activity,
   Bell,
   BookOpen,
-  Download,
   Flag,
   Home,
   NotebookPen,
   ReceiptIndianRupee,
   Settings,
   ShieldCheck,
-  ShieldAlert,
   Utensils,
 } from 'lucide-react';
 import type { ComponentType, ReactNode } from 'react';
@@ -35,8 +33,6 @@ const navigation: NavigationItem[] = [
   { id: 'vault', label: 'Vault', icon: ShieldCheck },
   { id: 'goals', label: 'Goals', icon: Flag },
   { id: 'settings', label: 'Settings', icon: Settings },
-  { id: 'export', label: 'Export', icon: Download },
-  { id: 'account', label: 'Account', icon: ShieldAlert },
 ];
 
 export function MiniAppShell({
@@ -80,9 +76,9 @@ export function MiniAppShell({
 
       <nav
         aria-label="Mini App screens"
-        className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/98 shadow-[0_-8px_24px_rgba(0,0,0,0.08)]"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background shadow-[0_-10px_30px_rgba(15,23,42,0.14)]"
       >
-        <div className="mx-auto flex max-w-5xl gap-1 overflow-x-auto px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
+        <div className="mx-auto flex max-w-5xl gap-1 overflow-x-auto bg-background px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
           {navigation.map(({ id, label, icon: Icon }) => {
             const selected = activeScreen === id;
             return (

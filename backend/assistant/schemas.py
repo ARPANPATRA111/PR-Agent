@@ -257,6 +257,21 @@ class DeleteRecordAction(StrictAction):
         return self
 
 
+class DeleteManyRecordsAction(StrictAction):
+    """Delete every owned record of one ordinary tracker type after review."""
+
+    kind: Literal["delete_many_records"]
+    record_type: RecordType
+    scope: Literal["all"]
+
+
+class RetrievePrivateFactAction(StrictAction):
+    """Locate an encrypted fact by label; revealing remains application-owned."""
+
+    kind: Literal["retrieve_private_fact"]
+    label: str = Field(min_length=1, max_length=160)
+
+
 class ClarificationAction(StrictAction):
     kind: Literal["clarification"]
     intended_kind: Literal[
@@ -269,6 +284,8 @@ class ClarificationAction(StrictAction):
         "query",
         "list_records",
         "delete_record",
+        "delete_many_records",
+        "retrieve_private_fact",
         "unknown",
     ]
     question: str = Field(min_length=1, max_length=1000)
@@ -313,6 +330,8 @@ AgentActionProposal = Annotated[
     | RecordGoalProgressAction
     | UpdateSettingsAction
     | DeleteRecordAction
+    | DeleteManyRecordsAction
+    | RetrievePrivateFactAction
     | ClarificationAction
     | UnsupportedAction,
     Field(discriminator="kind"),

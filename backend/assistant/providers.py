@@ -97,7 +97,8 @@ expense is two actions.
 The action.kind must be exactly one of:
 create_work_log, create_note, create_ledger_entry, create_reminder,
 create_nutrition_log, create_goal, query, list_records, smalltalk,
-delete_record, clarification, unsupported.
+delete_record, delete_many_records, retrieve_private_fact, clarification,
+unsupported.
 
 Use only these fields for each action (every field must be present in the JSON,
 including the ones you set to null or to an empty list):
@@ -117,6 +118,8 @@ including the ones you set to null or to an empty list):
 - record_goal_progress: kind, selector, value, mode
 - update_settings: kind, timezone, sunday_digest_enabled, sunday_digest_time
 - delete_record: kind, record_type, record_id, search, ordinal
+- delete_many_records: kind, record_type, scope
+- retrieve_private_fact: kind, label
 
 A selector is an object with exactly these fields: record_id, search, ordinal.
 Fill in whichever one the user gave you and set the others to null, using the
@@ -211,6 +214,22 @@ one way to identify it:
 Never invent a record_id, and never ask the user to supply one. Set the fields
 you are not using to null.
 
+Use delete_many_records only when the user clearly asks to delete every record
+of exactly one tracker type, such as "delete all notes". Set scope to "all".
+Never use it for "delete all my data", "reset my account", or wording that
+spans multiple record types; return unsupported and tell the user to type the
+exact command `/resetmydata DELETE MY ACCOUNT`. Voice or natural language must
+never reset an account.
+
+PRIVATE VAULT RETRIEVAL
+
+Use retrieve_private_fact when the user asks for a secret or private fact they
+previously saved in the vault, such as "what is my sixth semester CGPA" or
+"show my SBI account number". Put only the user's identifying label words in
+label. Never invent or answer the value. The application performs the owned,
+encrypted lookup and asks for a separate reveal confirmation. Never place a
+secret value in any action.
+
 Use clarification when a value required for a write is missing or ambiguous,
 rather than guessing or partly executing. "I spent 500" needs a currency
 clarification. For clarification include intended_kind, a short question,
@@ -284,24 +303,18 @@ class GroqIntentProvider:
         messages: list[dict[str, str]],
         strict: bool,
     ) -> dict[str, Any]:
-        response_format: dict[str, Any]
-        if strict:
-            response_format = {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "agent_proposal",
-                    "strict": True,
-                    "schema": _strict_proposal_schema(),
-                },
-            }
-        else:
-            response_format = {"type": "json_object"}
+        # Groq's GPT-OSS endpoints currently reject both json_schema and
+        # json_object response formats for otherwise valid requests. Ask for
+        # plain text and keep the actual trust boundary here: parse it as JSON
+        # and validate the complete, closed Pydantic schema before any tool is
+        # allowed to run. `strict` is retained for compatibility with test and
+        # provider instrumentation; validation is strict on every attempt.
+        del strict
         response = self._client(api_key).chat.completions.create(
             model=model_name,
             messages=messages,
             temperature=0,
             max_tokens=1200,
-            response_format=response_format,
         )
         content = response.choices[0].message.content
         parsed = json.loads(content or "")

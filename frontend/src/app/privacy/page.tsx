@@ -22,7 +22,9 @@ export default function PrivacyPage() {
             reminders, summaries, security controls, and support. Voice and
             optional AI requests may be processed by configured service
             providers. Private-vault plaintext is never sent to AI or voice
-            providers.
+            providers. If you ask for a vault item by label, only the label is
+            interpreted; the encrypted value is opened by application code
+            after your separate confirmation.
           </p>
         </section>
 
@@ -43,7 +45,9 @@ export default function PrivacyPage() {
             Use the Mini App to edit or delete individual records, export your
             ordinary account data, or permanently delete your account. Vault
             values are intentionally excluded from ordinary exports and must be
-            revealed or deleted from the vault itself.
+            deleted from the vault itself. A confirmed private-chat reveal is
+            queued for automatic deletion, but Telegram delivery still places
+            that value in your chat temporarily.
           </p>
         </section>
 

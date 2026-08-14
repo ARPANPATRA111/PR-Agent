@@ -15,7 +15,8 @@ type a request, or open the Mini App to manage structured records.
 - approximate Indian meal and daily protein tracking;
 - text and voice capture with confirmation before ambiguous writes;
 - editable Mini App records, export, and account deletion; and
-- an optional encrypted vault for permitted personal facts.
+- an optional encrypted vault for permitted personal facts, with masked,
+  explicitly confirmed private-chat retrieval by label.
 
 ```mermaid
 flowchart LR

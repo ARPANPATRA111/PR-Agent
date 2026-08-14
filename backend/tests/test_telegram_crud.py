@@ -12,10 +12,12 @@ from assistant import AssistantReply
 from config import settings
 from models import TelegramMessage, TelegramUpdate
 from public_models import (
+    AccountDeletionAudit,
     LedgerEntry,
     Note,
     NutritionLog,
     PublicBase,
+    PublicUser,
     Reminder,
     TrackedGoal,
     WorkLog,
@@ -200,6 +202,55 @@ async def test_wrong_button_cancels_review_and_requests_new_voice(
     assert bot.telegram.callback_answers[-1] == ("callback-1", "Cancelled")
     assert "Send a new voice note" in bot.telegram.messages[-1]
     assert bot.telegram.deleted_message == (9001, 55)
+
+
+@pytest.mark.asyncio
+async def test_hidden_reset_requires_phrase_and_final_owned_callback(
+    bot_and_factory,
+    monkeypatch,
+):
+    bot, factory = bot_and_factory
+    monkeypatch.setattr(settings, "public_v2_enabled", True)
+    monkeypatch.setattr(settings, "invite_only", False)
+    await bot._handle_command(telegram_message("/note Keep briefly", 70))
+
+    await bot._handle_command(telegram_message("/resetmydata", 71))
+    assert "Nothing was deleted" in bot.telegram.messages[-1]
+    with factory() as session:
+        assert session.query(Note).count() == 1
+
+    await bot._handle_command(telegram_message("/resetmydata DELETE MY ACCOUNT", 72))
+    keyboard = bot.telegram.message_options[-1]["reply_markup"]["inline_keyboard"]
+    assert keyboard[0][0]["callback_data"] == "account:reset:1001"
+    with factory() as session:
+        assert session.query(PublicUser).count() == 1
+
+    update = TelegramUpdate.model_validate(
+        {
+            "update_id": 9200,
+            "callback_query": {
+                "id": "account-reset-callback",
+                "from": {
+                    "id": 1001,
+                    "first_name": "Public",
+                    "username": "public_user",
+                },
+                "message": {
+                    "message_id": 73,
+                    "date": int(datetime.now(timezone.utc).timestamp()),
+                    "chat": {"id": 9001, "type": "private"},
+                    "text": "Permanently delete?",
+                },
+                "data": "account:reset:1001",
+            },
+        }
+    )
+    await bot.handle_update(update)
+
+    with factory() as session:
+        assert session.query(PublicUser).count() == 0
+        assert session.query(Note).count() == 0
+        assert session.query(AccountDeletionAudit).count() == 1
 
 
 @pytest.fixture()

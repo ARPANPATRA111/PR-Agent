@@ -715,6 +715,17 @@ function moneyValue(amountMinor: number, currency: string): string {
   }
 }
 
+function currencyFractionDigits(currency: string): number | null {
+  try {
+    return new Intl.NumberFormat('en', {
+      style: 'currency',
+      currency,
+    }).resolvedOptions().maximumFractionDigits ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function MoneyScreen() {
   const [selectedMonth, setSelectedMonth] = useState(localDate().slice(0, 7));
   const [year, month] = selectedMonth.split('-').map(Number);
@@ -739,10 +750,28 @@ export function MoneyScreen() {
   const [editing, setEditing] = useState<LedgerEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const allowedFractionDigits = currencyFractionDigits(currency);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError(null);
+    const enteredFractionDigits = amount.includes('.')
+      ? amount.split('.')[1].length
+      : 0;
+    if (allowedFractionDigits === null) {
+      setError('Enter a valid three-letter currency code, such as INR.');
+      return;
+    }
+    if (enteredFractionDigits > allowedFractionDigits) {
+      setError(
+        `${currency} supports at most ${allowedFractionDigits} decimal place${
+          allowedFractionDigits === 1 ? '' : 's'
+        }.`,
+      );
+      return;
+    }
+    setSaving(true);
     try {
       if (editing) {
         await fetchAPI(`/api/v2/ledger/${editing.id}`, {
@@ -779,6 +808,8 @@ export function MoneyScreen() {
           ? mutationError.message
           : 'Unable to save transaction.',
       );
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -848,7 +879,7 @@ export function MoneyScreen() {
               </select>
             </FormField>
             <FormField label="Amount" htmlFor="money-amount">
-              <input id="money-amount" type="number" min="0.001" step="0.001" required value={amount} onChange={(event) => setAmount(event.target.value)} className={inputClassName} />
+              <input id="money-amount" type="number" min={allowedFractionDigits === 0 ? '1' : `0.${'0'.repeat(Math.max((allowedFractionDigits || 2) - 1, 0))}1`} step={allowedFractionDigits === 0 ? '1' : `0.${'0'.repeat(Math.max((allowedFractionDigits || 2) - 1, 0))}1`} required value={amount} onChange={(event) => setAmount(event.target.value)} className={inputClassName} />
             </FormField>
             <FormField label="Currency" htmlFor="money-currency">
               <input id="money-currency" required minLength={3} maxLength={3} value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase())} className={inputClassName} />
@@ -858,8 +889,8 @@ export function MoneyScreen() {
             </FormField>
             <div className="sm:col-span-2">
               <MutationError message={error} />
-              <button type="submit" className={`${buttonClassName} mt-2 w-full`}>
-                {editing ? 'Save transaction' : 'Add transaction'}
+              <button type="submit" disabled={saving} className={`${buttonClassName} mt-2 w-full`}>
+                {saving ? 'Savingâ€¦' : editing ? 'Save transaction' : 'Add transaction'}
               </button>
             </div>
           </form>
@@ -1581,7 +1612,11 @@ export function NutritionScreen() {
   );
 }
 
-export function SettingsScreen() {
+export function SettingsScreen({
+  onNavigate,
+}: {
+  onNavigate?: (screen: ScreenName) => void;
+} = {}) {
   const resource = useApiResource(async () => {
     const [settings, nutrition] = await Promise.all([
       fetchAPI<SchedulePreferences>('/api/v2/schedule-preferences'),
@@ -1655,6 +1690,30 @@ export function SettingsScreen() {
         </p>
       ) : null}
       <MutationError message={error} />
+      <div className="mt-5 rounded-xl border bg-card p-4 shadow-sm">
+        <h2 className="font-semibold">Account &amp; data</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Download a private copy or permanently delete your account.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            className={secondaryButtonClassName}
+            onClick={() => onNavigate?.('export')}
+          >
+            <Download className="mr-2 h-4 w-4" aria-hidden />
+            Export data
+          </button>
+          <button
+            type="button"
+            className={destructiveButtonClassName}
+            onClick={() => onNavigate?.('account')}
+          >
+            <Trash2 className="mr-2 h-4 w-4" aria-hidden />
+            Delete account
+          </button>
+        </div>
+      </div>
     </>
   );
 }
@@ -2020,7 +2079,7 @@ export function VaultScreen() {
     <>
       <ScreenHeading
         title="Private facts vault"
-        description="Encrypted values available only inside your recently authenticated Mini App."
+        description="Encrypted values available in the Mini App or after an explicit reveal confirmation in private chat."
         action={
           <button type="button" className={buttonClassName} onClick={() => setDialogOpen(true)}>
             <Plus className="mr-2 h-4 w-4" aria-hidden />
@@ -2032,8 +2091,9 @@ export function VaultScreen() {
         <p className="font-semibold">Keep authentication secrets elsewhere.</p>
         <p className="mt-1 text-muted-foreground">
           Passwords, OTPs, PINs, CVVs, card numbers, recovery phrases, private
-          keys, and full Aadhaar numbers are not accepted. Saved facts never go
-          to the assistant, voice transcription, or Telegram chat.
+          keys, and full Aadhaar numbers are not accepted. Secret values never
+          go to the AI or voice transcription. A value enters Telegram only
+          after you confirm a masked match, and that reply is auto-deleted.
         </p>
       </div>
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

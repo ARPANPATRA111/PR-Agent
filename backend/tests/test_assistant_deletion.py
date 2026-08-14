@@ -66,6 +66,19 @@ def delete_proposal(record_type: str, **overrides) -> dict:
     return {"confidence": 0.95, "actions": [action]}
 
 
+def delete_many_proposal(record_type: str) -> dict:
+    return {
+        "confidence": 0.99,
+        "actions": [
+            {
+                "kind": "delete_many_records",
+                "record_type": record_type,
+                "scope": "all",
+            }
+        ],
+    }
+
+
 def seed_owner(factory, actor: ActorContext) -> int:
     with factory() as session:
         owner = DomainServices(session).ensure_owner(
@@ -105,6 +118,47 @@ def test_schema_rejects_a_deletion_with_no_way_to_identify_it():
                 },
             }
         )
+
+
+def test_delete_all_notes_snapshots_owned_rows_and_requires_confirmation(assistant_db):
+    alice_id = seed_owner(assistant_db, ALICE)
+    bob_id = seed_owner(assistant_db, BOB)
+    seed_note(assistant_db, alice_id, "One", "Alice one", "alice-one")
+    seed_note(assistant_db, alice_id, "Two", "Alice two", "alice-two")
+    seed_note(assistant_db, bob_id, "Other", "Bob note", "bob-note-one")
+    assistant = build_assistant(
+        assistant_db,
+        FakeProvider(delete_many_proposal("note")),
+    )
+
+    review = assistant.handle(ALICE, "delete all notes", update_id=901)
+    assert review.status == "confirmation"
+    assert "all 2 note records" in review.text
+    with assistant_db() as session:
+        assert session.query(Note).count() == 3
+
+    done = assistant.confirm(ALICE, review.pending_id)
+    assert done.status == "completed"
+    assert "Deleted 2 note records" in done.text
+    with assistant_db() as session:
+        assert session.query(Note).filter(Note.owner_id == alice_id).count() == 0
+        assert session.query(Note).filter(Note.owner_id == bob_id).count() == 1
+
+
+def test_wrong_bulk_deletion_keeps_every_record(assistant_db):
+    owner_id = seed_owner(assistant_db, ALICE)
+    seed_note(assistant_db, owner_id, "Keep", "Keep me", "keep-one")
+    assistant = build_assistant(
+        assistant_db,
+        FakeProvider(delete_many_proposal("note")),
+    )
+
+    review = assistant.handle(ALICE, "delete all notes", update_id=902)
+    cancelled = assistant.cancel(ALICE, review.pending_id)
+
+    assert cancelled.status == "cancelled"
+    with assistant_db() as session:
+        assert session.query(Note).filter(Note.owner_id == owner_id).count() == 1
 
 
 def test_single_match_confirms_using_the_record_text(assistant_db):
