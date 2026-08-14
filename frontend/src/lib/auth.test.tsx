@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthProvider, useAuth } from './auth';
-import { fetchAPI, setAccessToken } from './utils';
+import { fetchAPI, setAccessToken, setCsrfToken } from './utils';
 
 function AuthState() {
   const { isAuthenticated, error, user, logout } = useAuth();
@@ -31,9 +31,36 @@ function setTelegram(initData: string) {
 describe('Telegram Mini App authentication', () => {
   afterEach(() => {
     setAccessToken(null);
+    setCsrfToken(null);
     vi.unstubAllGlobals();
     delete window.Telegram;
     document.documentElement.classList.remove('dark');
+  });
+
+  it('shows field-specific FastAPI validation errors', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            detail: [
+              {
+                loc: ['body', 'timezone'],
+                msg: 'Value error, Unknown IANA timezone',
+              },
+            ],
+          }),
+          { status: 422, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+
+    await expect(
+      fetchAPI('/api/v2/work-logs', {
+        method: 'POST',
+        body: JSON.stringify({ timezone: 'Invalid/Timezone' }),
+      }),
+    ).rejects.toThrow('timezone: Value error, Unknown IANA timezone');
   });
 
   it('submits validated initData and enters the authenticated state', async () => {

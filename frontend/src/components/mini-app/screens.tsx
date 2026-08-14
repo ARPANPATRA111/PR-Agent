@@ -8,6 +8,8 @@ import {
   CircleDollarSign,
   Download,
   Edit3,
+  Eye,
+  EyeOff,
   Flag,
   NotebookPen,
   Pause,
@@ -42,6 +44,9 @@ import type {
   NutritionLog,
   NutritionPreferences,
   NutritionSummary,
+  PrivateFact,
+  PrivateFactType,
+  RevealedPrivateFact,
   Reminder,
   SchedulePreferences,
   ScreenName,
@@ -59,8 +64,12 @@ import {
   secondaryButtonClassName,
 } from './screen-kit';
 
-const localTimezone =
+const timezoneAliases: Record<string, string> = {
+  'Asia/Calcutta': 'Asia/Kolkata',
+};
+const reportedTimezone =
   Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+const localTimezone = timezoneAliases[reportedTimezone] || reportedTimezone;
 
 function localDate(date = new Date()): string {
   const offset = date.getTimezoneOffset();
@@ -1912,6 +1921,192 @@ export function ExportScreen() {
         ) : null}
         <MutationError message={error} />
       </Card>
+    </>
+  );
+}
+
+const privateFactLabels: Record<PrivateFactType, string> = {
+  aadhaar_last4: 'Aadhaar last 4 digits',
+  phone: 'Mobile number',
+  bank_account: 'Bank account',
+  ifsc: 'IFSC code',
+  academic_score: 'Academic score / CGPA',
+  other_permitted: 'Other permitted fact',
+};
+
+export function VaultScreen() {
+  const resource = useApiResource(() =>
+    fetchAPI<PrivateFact[]>('/api/v2/private-facts'),
+  );
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [factType, setFactType] = useState<PrivateFactType>('academic_score');
+  const [label, setLabel] = useState('');
+  const [value, setValue] = useState('');
+  const [notes, setNotes] = useState('');
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [revealed, setRevealed] = useState<RevealedPrivateFact | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function create(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    try {
+      const created = await fetchAPI<PrivateFact>('/api/v2/private-facts', {
+        method: 'POST',
+        body: JSON.stringify({
+          fact_type: factType,
+          label,
+          value,
+          notes: notes || null,
+          acknowledge_sensitive_storage: acknowledged,
+        }),
+      });
+      resource.setData((current) => [created, ...(current || [])]);
+      setDialogOpen(false);
+      setLabel('');
+      setValue('');
+      setNotes('');
+      setAcknowledged(false);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'Unable to save this private fact.',
+      );
+    }
+  }
+
+  async function reveal(record: PrivateFact) {
+    setError(null);
+    if (revealed?.id === record.id) {
+      setRevealed(null);
+      return;
+    }
+    try {
+      setRevealed(
+        await fetchAPI<RevealedPrivateFact>(
+          `/api/v2/private-facts/${record.id}/reveal`,
+          { method: 'POST' },
+        ),
+      );
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'Unable to reveal this private fact.',
+      );
+    }
+  }
+
+  async function remove(record: PrivateFact) {
+    if (!window.confirm(`Permanently delete “${record.label}”?`)) return;
+    setError(null);
+    try {
+      await fetchAPI(`/api/v2/private-facts/${record.id}`, { method: 'DELETE' });
+      resource.setData((current) =>
+        (current || []).filter((item) => item.id !== record.id),
+      );
+      if (revealed?.id === record.id) setRevealed(null);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'Unable to delete this private fact.',
+      );
+    }
+  }
+
+  return (
+    <>
+      <ScreenHeading
+        title="Private facts vault"
+        description="Encrypted values available only inside your recently authenticated Mini App."
+        action={
+          <button type="button" className={buttonClassName} onClick={() => setDialogOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" aria-hidden />
+            Add
+          </button>
+        }
+      />
+      <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
+        <p className="font-semibold">Keep authentication secrets elsewhere.</p>
+        <p className="mt-1 text-muted-foreground">
+          Passwords, OTPs, PINs, CVVs, card numbers, recovery phrases, private
+          keys, and full Aadhaar numbers are not accepted. Saved facts never go
+          to the assistant, voice transcription, or Telegram chat.
+        </p>
+      </div>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Add a private fact</DialogTitle>
+            <DialogDescription>
+              The value and optional note are encrypted before database storage.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={create} className="space-y-3">
+            <FormField label="Type" htmlFor="vault-type">
+              <select
+                id="vault-type"
+                value={factType}
+                onChange={(event) => setFactType(event.target.value as PrivateFactType)}
+                className={inputClassName}
+              >
+                {Object.entries(privateFactLabels).map(([id, text]) => (
+                  <option key={id} value={id}>{text}</option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="Label" htmlFor="vault-label" hint="Example: Semester 4 CGPA or SBI scholarship account.">
+              <input id="vault-label" required maxLength={160} value={label} onChange={(event) => setLabel(event.target.value)} className={inputClassName} autoComplete="off" />
+            </FormField>
+            <FormField label={factType === 'aadhaar_last4' ? 'Last 4 digits only' : 'Value'} htmlFor="vault-value">
+              <input id="vault-value" required maxLength={2000} value={value} onChange={(event) => setValue(event.target.value)} className={inputClassName} autoComplete="off" inputMode={factType === 'aadhaar_last4' || factType === 'phone' ? 'numeric' : 'text'} />
+            </FormField>
+            <FormField label="Private note (optional)" htmlFor="vault-notes">
+              <textarea id="vault-notes" maxLength={500} value={notes} onChange={(event) => setNotes(event.target.value)} className={inputClassName} />
+            </FormField>
+            <label className="flex min-h-11 items-start gap-3 text-sm">
+              <input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} className="mt-0.5 h-5 w-5" />
+              I understand this is sensitive data and I can delete it at any time.
+            </label>
+            <MutationError message={error} />
+            <button type="submit" disabled={!acknowledged} className={`${buttonClassName} w-full`}>
+              Save encrypted fact
+            </button>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <MutationError message={error} />
+      <ResourceList resource={resource} emptyLabel="No private facts stored.">
+        {(resource.data || []).map((record) => {
+          const open = revealed?.id === record.id;
+          return (
+            <Card key={record.id}>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {privateFactLabels[record.fact_type]}
+              </p>
+              <h2 className="mt-1 font-semibold">{record.label}</h2>
+              <p className="mt-2 break-all font-mono text-sm">
+                {open ? revealed.value : record.masked_value}
+              </p>
+              {open && revealed.notes ? (
+                <p className="mt-2 text-sm text-muted-foreground">{revealed.notes}</p>
+              ) : null}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" className={secondaryButtonClassName} onClick={() => void reveal(record)}>
+                  {open ? <EyeOff className="mr-2 h-4 w-4" aria-hidden /> : <Eye className="mr-2 h-4 w-4" aria-hidden />}
+                  {open ? 'Hide' : 'Reveal'}
+                </button>
+                <button type="button" className={destructiveButtonClassName} onClick={() => void remove(record)}>
+                  <Trash2 className="mr-2 h-4 w-4" aria-hidden />
+                  Delete
+                </button>
+              </div>
+            </Card>
+          );
+        })}
+      </ResourceList>
     </>
   );
 }

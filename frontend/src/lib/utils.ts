@@ -48,11 +48,23 @@ export async function fetchAPI<T = unknown>(
   }
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    const detail =
-      typeof error.detail === 'string'
-        ? error.detail
-        : `API error: ${response.status}`;
+    const error = await response.json().catch(() => ({})) as {
+      detail?: string | Array<{ loc?: Array<string | number>; msg?: string }>;
+      error?: string;
+    };
+    let detail = `API error: ${response.status}`;
+    if (typeof error.detail === 'string') {
+      detail = error.detail;
+    } else if (Array.isArray(error.detail) && error.detail.length > 0) {
+      detail = error.detail
+        .map((issue) => {
+          const field = issue.loc?.filter((part) => part !== 'body').join('.');
+          return [field, issue.msg].filter(Boolean).join(': ');
+        })
+        .join('; ');
+    } else if (typeof error.error === 'string') {
+      detail = error.error;
+    }
     throw new Error(detail);
   }
 

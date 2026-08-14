@@ -29,6 +29,7 @@ mkdocs-material>=9.2.0
 # Debugging
 ipdb>=0.13.0
 rich>=13.5.0
+qrcode[pil]>=8.2
 
 # Performance profiling
 line-profiler>=4.0.0

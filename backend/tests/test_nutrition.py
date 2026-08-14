@@ -109,6 +109,56 @@ def test_ambiguous_or_missing_portion_requires_clarification(text):
     assert "quantity" in estimate.clarification_question.lower()
 
 
+@pytest.mark.parametrize(
+    ("text", "name", "protein"),
+    [
+        ("one bowl of toor dal", "toor dal bowl", Decimal("7.000")),
+        ("one bowl of masoor dal", "masoor dal bowl", Decimal("8.500")),
+        ("two egg whites", "boiled egg white", Decimal("8.164")),
+        ("two whole eggs", "boiled egg", Decimal("13.430")),
+        ("two egg yolks", "boiled egg yolk", Decimal("5.484")),
+        ("one bowl rajma", "rajma curry bowl", Decimal("10.000")),
+        ("100 g soy chunks", "cooked soy chunks bowl", Decimal("17.000")),
+    ],
+)
+def test_indian_household_variants_are_distinct(text, name, protein):
+    estimate = ReferenceNutritionProvider().estimate(
+        text,
+        default_milk_serving_ml=Decimal("250"),
+        measurement_system="metric",
+    )
+    assert estimate.clarification_required is False
+    assert estimate.items[0].normalized_name == name
+    assert estimate.items[0].protein_grams == protein
+    assert estimate.items[0].visible_assumptions
+
+
+def test_generic_dal_requires_type_and_preparation():
+    estimate = ReferenceNutritionProvider().estimate(
+        "one bowl dal fry",
+        default_milk_serving_ml=Decimal("250"),
+        measurement_system="metric",
+    )
+    assert estimate.clarification_required is True
+    assert "which dal" in estimate.clarification_question.lower()
+
+
+def test_egg_white_has_more_protein_per_piece_than_yolk_but_fewer_calories():
+    provider = ReferenceNutritionProvider()
+    white = provider.estimate(
+        "one egg white",
+        default_milk_serving_ml=Decimal("250"),
+        measurement_system="metric",
+    ).items[0]
+    yolk = provider.estimate(
+        "one egg yolk",
+        default_milk_serving_ml=Decimal("250"),
+        measurement_system="metric",
+    ).items[0]
+    assert white.protein_grams > yolk.protein_grams
+    assert white.calories < yolk.calories
+
+
 def test_decimal_and_invalid_quantities():
     decimal_estimate = ReferenceNutritionProvider().estimate(
         "50.5 g paneer",

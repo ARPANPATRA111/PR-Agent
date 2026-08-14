@@ -120,27 +120,13 @@ temp/
 *.seed
 *.pid.lock
 .lock-wscript
-# Public-v2 documentation is tracked selectively. Legacy local documentation
-# remains ignored until it has been reviewed for personal content.
-docs/*
-!docs/BASELINE_AUDIT.md
-!docs/PUBLIC_V2_SCOPE.md
-!docs/SECRET_ROTATION_CHECKLIST.md
-!docs/SECURITY_MODEL.md
-!docs/TENANT_ISOLATION.md
-!docs/DATABASE_MIGRATIONS.md
-!docs/LOCAL_DEVELOPMENT.md
-!docs/CORE_CRUD.md
-!docs/NUTRITION.md
-!docs/MINI_APP.md
-!docs/DURABLE_WORKER.md
-!docs/PRIVACY_LIFECYCLE.md
-!docs/BOUNDED_ASSISTANT.md
-!docs/REMAINING_WORK_AUDIT.md
-!docs/KEEP_ALIVE.md
-!docs/PUBLIC_LAUNCH.md
-!docs/PRIVACY_POLICY_BRIEF.md
-!docs/MARKET_POSITION.md
+# Detailed design notes and generated presentation material stay local. The
+# public repository keeps only the concise README and implementation itself.
+docs/
+PROJECT_EXPLANATION_3_MINUTES.txt
+main.excalidraw
+scripts/generate_architecture_diagram.mjs
+scripts/generate_bot_qr.py
 changelog.md
 docker-compose.override.yml
 docker-compose.prod.yml
@@ -156,7 +142,6 @@ dp.md
 !.github/workflows/*.yml
 !docker-compose.yml
 !render.yaml
-!DEPLOYMENT.md
 
 # Personal legacy material stays available in the safety tag and the owner's
 # local workspace, but must not be included in public-v2 commits.
@@ -168,3 +153,4 @@ PROJECT_HANDOFF_CONTEXT.txt
 VOICE_CAPABILITY_TEST_PLAN.txt
 *_HANDOFF_*.txt
 *_TEST_PLAN.txt
+*.ps1

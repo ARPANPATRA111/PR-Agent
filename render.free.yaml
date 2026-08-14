@@ -27,7 +27,7 @@ services:
       - key: PUBLIC_V2_ENABLED
         value: "true"
       - key: INVITE_ONLY
-        value: "true"
+        value: "false"
       - key: TELEGRAM_INTEGRATION_ENABLED
         value: "true"
       - key: TELEGRAM_BOT_TOKEN
@@ -105,10 +105,20 @@ services:
         value: https://pr-agent-r24-staging-api.onrender.com/webhook
       - key: TELEGRAM_MINI_APP_URL
         value: https://pr-agent-r24-staging-web.onrender.com
+      - key: TELEGRAM_WELCOME_IMAGE_URL
+        value: https://pr-agent-r24-staging-web.onrender.com/pr-agent-welcome.png
       - key: DATABASE_URL
         sync: false
       - key: SESSION_SIGNING_SECRET
         generateValue: true
+      # Enable only after VAULT_ENCRYPTION_KEYS is set to a generated
+      # key_id:base64-32-byte-key value in Render's masked secret store.
+      - key: VAULT_ENABLED
+        value: "false"
+      - key: VAULT_ENCRYPTION_KEYS
+        sync: false
+      - key: VAULT_RECENT_AUTH_SECONDS
+        value: "300"
       - key: INTERNAL_MONITORING_TOKEN
         generateValue: true
       - key: CORS_ORIGINS

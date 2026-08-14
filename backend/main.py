@@ -49,6 +49,7 @@ from bot import get_bot_handler, TelegramClient
 from scheduler import get_scheduler
 from utils import setup_logging, get_week_boundaries
 from api.public_v2 import router as public_v2_router
+from api.private_vault import router as private_vault_router
 from abuse_controls import BetaAccessRequired, InviteService
 from domain.errors import DomainError
 from domain.services import DomainServices
@@ -198,6 +199,7 @@ from rate_limiter import setup_rate_limiting, limiter, RATE_LIMITS
 setup_rate_limiting(app)
 
 app.include_router(public_v2_router)
+app.include_router(private_vault_router)
 
 app.add_middleware(
     CORSMiddleware,

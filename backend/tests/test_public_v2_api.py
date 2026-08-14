@@ -112,6 +112,88 @@ def test_api_crud_uses_authenticated_owner_and_hides_other_records(api_client):
     assert client.delete(f"/api/v2/notes/{note['id']}").status_code == 204
 
 
+def test_every_public_record_family_is_hidden_from_another_owner(api_client):
+    """Prove isolation at the HTTP boundary, not only in service unit tests."""
+    client, identity = api_client
+    future = datetime.now(timezone.utc) + timedelta(days=1)
+    created = {
+        "work-logs": client.post(
+            "/api/v2/work-logs",
+            json={"original_text": "Alice work", "timezone": "Asia/Kolkata"},
+        ),
+        "notes": client.post(
+            "/api/v2/notes",
+            json={"body": "Alice note"},
+        ),
+        "ledger": client.post(
+            "/api/v2/ledger",
+            json={
+                "direction": "expense",
+                "amount": "9",
+                "currency": "INR",
+                "description": "Alice expense",
+            },
+        ),
+        "goals": client.post(
+            "/api/v2/goals",
+            json={"title": "Alice goal", "target_value": "1"},
+        ),
+        "reminders": client.post(
+            "/api/v2/reminders",
+            json={
+                "title": "Alice reminder",
+                "schedule_type": "once",
+                "start_at_local": future.isoformat(),
+                "timezone": "UTC",
+            },
+        ),
+        "nutrition": client.post(
+            "/api/v2/nutrition",
+            json={
+                "original_text": "50 g paneer",
+                "meal_name": "lunch",
+                "timezone": "Asia/Kolkata",
+            },
+        ),
+    }
+    assert {name: response.status_code for name, response in created.items()} == {
+        "work-logs": 201,
+        "notes": 201,
+        "ledger": 201,
+        "goals": 201,
+        "reminders": 201,
+        "nutrition": 201,
+    }
+
+    records = {name: response.json() for name, response in created.items()}
+    identity["telegram_id"] = 2002
+
+    for family in ("work-logs", "notes", "ledger", "goals", "reminders"):
+        record = records[family]
+        assert client.get(f"/api/v2/{family}/{record['id']}").status_code == 404
+        assert client.delete(f"/api/v2/{family}/{record['id']}").status_code == 404
+
+    assert client.get("/api/v2/work-logs").json() == []
+    assert client.get("/api/v2/notes").json() == []
+    assert client.get("/api/v2/ledger").json() == []
+    assert client.get("/api/v2/goals").json() == []
+    assert client.get("/api/v2/reminders").json() == []
+    assert client.get("/api/v2/ledger/summary").json() == []
+
+    nutrition = records["nutrition"]
+    assert client.get(f"/api/v2/nutrition/{nutrition['id']}").status_code == 404
+    assert (
+        client.post(
+            f"/api/v2/nutrition/{nutrition['id']}/confirm",
+            json={"version": nutrition["version"]},
+        ).status_code
+        == 404
+    )
+    assert client.delete(f"/api/v2/nutrition/{nutrition['id']}").status_code == 404
+    assert client.get("/api/v2/nutrition").json() == []
+    assert "Alice" not in client.get("/api/v2/account/export?format=json").text
+
+
 def test_api_core_create_list_and_money_summary(api_client):
     client, _ = api_client
     work_log = client.post(
@@ -175,6 +257,31 @@ def test_api_core_create_list_and_money_summary(api_client):
     assert client.get("/api/v2/reminders?enabled=true").json()[0]["id"] == (
         reminder.json()["id"]
     )
+
+
+def test_legacy_telegram_timezone_alias_is_canonicalized(api_client):
+    client, _ = api_client
+    work = client.post(
+        "/api/v2/work-logs",
+        json={
+            "original_text": "Logged from an older Telegram WebView",
+            "timezone": "Asia/Calcutta",
+        },
+    )
+    ledger = client.post(
+        "/api/v2/ledger",
+        json={
+            "direction": "expense",
+            "amount": "120",
+            "currency": "INR",
+            "description": "Lunch",
+            "timezone": "Asia/Calcutta",
+        },
+    )
+
+    assert work.status_code == ledger.status_code == 201
+    assert work.json()["timezone"] == "Asia/Kolkata"
+    assert ledger.json()["timezone"] == "Asia/Kolkata"
 
 
 def test_schedule_preferences_are_versioned_and_sunday_only(api_client):

@@ -30,6 +30,8 @@ from public_models import (
     ApplicationSession,
     PublicBase,
     PublicUser,
+    PrivateFact,
+    PrivateFactAudit,
     TelegramMessage,
     WorkLog,
 )
@@ -152,6 +154,8 @@ def test_export_contains_all_sections_and_excludes_other_tenant(privacy_db):
             "input_hash",
             "proposed_arguments",
             "agent_runs",
+            "private_facts",
+            "ciphertext",
         ):
             assert forbidden not in serialized
 
@@ -197,6 +201,25 @@ def test_account_deletion_removes_public_legacy_search_and_sessions(privacy_db):
                 owner_id=alice_id,
                 token_hash="a" * 64,
                 expires_at_utc=datetime.now(UTC) + timedelta(minutes=5),
+            )
+        )
+        private_fact = PrivateFact(
+            owner_id=alice_id,
+            record_uuid="11111111-1111-1111-1111-111111111111",
+            fact_type="academic_score",
+            label="Semester 4 CGPA",
+            masked_value="Stored score",
+            ciphertext=b"ciphertext-only",
+            nonce=b"twelve-bytes",
+            key_id="test",
+        )
+        session.add(private_fact)
+        session.add(
+            PrivateFactAudit(
+                owner_id=alice_id,
+                record_uuid=private_fact.record_uuid,
+                action="create",
+                channel="mini_app",
             )
         )
         run = AgentRun(
@@ -255,6 +278,8 @@ def test_account_deletion_removes_public_legacy_search_and_sessions(privacy_db):
         assert session.query(AgentRun).count() == 0
         assert session.query(AgentAction).count() == 0
         assert session.query(AgentPendingAction).count() == 0
+        assert session.query(PrivateFact).count() == 0
+        assert session.query(PrivateFactAudit).count() == 0
         assert session.query(UserDB).filter(UserDB.telegram_id == 101).count() == 0
         assert (
             session.query(SearchableEntryDB)

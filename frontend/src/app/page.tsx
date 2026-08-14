@@ -14,6 +14,7 @@ import {
   NutritionScreen,
   RemindersScreen,
   SettingsScreen,
+  VaultScreen,
   WorkLogsScreen,
 } from '@/components/mini-app/screens';
 import { useAuth } from '@/lib/auth';
@@ -46,6 +47,7 @@ export default function Home() {
     reminders: <RemindersScreen />,
     money: <MoneyScreen />,
     nutrition: <NutritionScreen />,
+    vault: <VaultScreen />,
     goals: <GoalsScreen />,
     settings: <SettingsScreen />,
     export: <ExportScreen />,

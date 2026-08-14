@@ -10,6 +10,7 @@ import {
   NotebookPen,
   ReceiptIndianRupee,
   Settings,
+  ShieldCheck,
   ShieldAlert,
   Utensils,
 } from 'lucide-react';
@@ -31,6 +32,7 @@ const navigation: NavigationItem[] = [
   { id: 'reminders', label: 'Reminders', icon: Bell },
   { id: 'money', label: 'Money', icon: ReceiptIndianRupee },
   { id: 'nutrition', label: 'Nutrition', icon: Utensils },
+  { id: 'vault', label: 'Vault', icon: ShieldCheck },
   { id: 'goals', label: 'Goals', icon: Flag },
   { id: 'settings', label: 'Settings', icon: Settings },
   { id: 'export', label: 'Export', icon: Download },

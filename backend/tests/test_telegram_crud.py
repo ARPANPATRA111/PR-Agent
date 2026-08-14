@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import create_engine, event
@@ -26,11 +27,16 @@ class FakeTelegramClient:
         self.messages: list[str] = []
         self.message_options: list[dict] = []
         self.callback_answers: list[tuple[str, str | None]] = []
+        self.photos: list[tuple[int, str, dict]] = []
 
     async def send_message(self, chat_id, text, **kwargs):
         del chat_id
         self.messages.append(text)
         self.message_options.append(kwargs)
+        return {"ok": True}
+
+    async def send_photo(self, chat_id, photo_url, **kwargs):
+        self.photos.append((chat_id, photo_url, kwargs))
         return {"ok": True}
 
     async def send_typing_action(self, chat_id):
@@ -91,6 +97,12 @@ async def test_public_update_does_not_require_legacy_user_table(
     bot, _ = bot_and_factory
     monkeypatch.setattr(settings, "public_v2_enabled", True)
     monkeypatch.setattr(settings, "invite_only", False)
+    monkeypatch.setattr(settings, "message_cleanup_enabled", True)
+    monkeypatch.setattr(
+        settings,
+        "telegram_welcome_image_url",
+        "https://mini.example/pr-agent-welcome.png",
+    )
     message = telegram_message("/start", 500)
 
     await bot.handle_update(
@@ -101,6 +113,15 @@ async def test_public_update_does_not_require_legacy_user_table(
     assert "Hi Public" in greeting
     # Onboarding must lead with the voice-first gesture, not a command list.
     assert "microphone" in greeting.lower()
+    assert "Pin this chat" in greeting
+    assert bot.telegram.photos == [
+        (9001, "https://mini.example/pr-agent-welcome.png", {})
+    ]
+
+    await bot.handle_update(
+        TelegramUpdate(update_id=9002, message=telegram_message("/start", 501)),
+    )
+    assert "Pin this chat" not in bot.telegram.messages[-1]
 
 
 @pytest.mark.asyncio
@@ -249,6 +270,66 @@ async def test_plain_text_fails_closed_when_bounded_assistant_is_disabled(
         500,
     )
     assert "disabled" in bot.telegram.messages[-1].lower()
+
+
+@pytest.mark.asyncio
+async def test_explicit_typed_expense_works_without_ai(bot_and_factory, monkeypatch):
+    bot, factory = bot_and_factory
+    monkeypatch.setattr(settings, "ai_agent_enabled", False)
+    await bot._handle_bounded_text(
+        telegram_message("I spent 240.50 rupees on dinner", 52),
+        502,
+    )
+    with factory() as session:
+        row = session.query(LedgerEntry).one()
+        assert row.amount_minor == 24050
+        assert row.currency == "INR"
+        assert row.description == "dinner"
+    assert "saved" in bot.telegram.messages[-1].lower()
+
+
+@pytest.mark.asyncio
+async def test_typed_expense_never_invents_missing_currency(
+    bot_and_factory, monkeypatch
+):
+    bot, factory = bot_and_factory
+    monkeypatch.setattr(settings, "ai_agent_enabled", False)
+    await bot._handle_bounded_text(
+        telegram_message("I spent 240 on dinner", 54),
+        504,
+    )
+    with factory() as session:
+        assert session.query(LedgerEntry).count() == 0
+    assert "disabled" in bot.telegram.messages[-1].lower()
+
+
+@pytest.mark.asyncio
+async def test_common_typed_question_works_without_ai(bot_and_factory, monkeypatch):
+    bot, _ = bot_and_factory
+    monkeypatch.setattr(settings, "ai_agent_enabled", False)
+    await bot._handle_bounded_text(
+        telegram_message("How much protein did I eat today", 55),
+        505,
+    )
+    assert "protein" in bot.telegram.messages[-1].lower()
+    assert "disabled" not in bot.telegram.messages[-1].lower()
+
+
+@pytest.mark.asyncio
+async def test_explicit_typed_indian_meal_works_without_ai(
+    bot_and_factory, monkeypatch
+):
+    bot, factory = bot_and_factory
+    monkeypatch.setattr(settings, "ai_agent_enabled", False)
+    monkeypatch.setattr(settings, "nutrition_provider", "reference")
+    await bot._handle_bounded_text(
+        telegram_message("I ate one bowl masoor dal", 53),
+        503,
+    )
+    with factory() as session:
+        row = session.query(NutritionLog).one()
+        assert row.total_protein_grams == Decimal("8.500")
+    assert "food preview" in bot.telegram.messages[-1].lower()
 
 
 @pytest.mark.asyncio

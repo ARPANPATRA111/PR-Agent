@@ -35,6 +35,13 @@ ZERO_DECIMAL_CURRENCIES = frozenset(
 )
 THREE_DECIMAL_CURRENCIES = frozenset("BHD IQD JOD KWD LYD OMR TND".split())
 
+# Some Telegram Android/WebView builds still report historical IANA aliases.
+# Store and return canonical names so the same payload behaves on every host,
+# including slim Linux containers whose tzdata omits backward links.
+TIMEZONE_ALIASES = {
+    "Asia/Calcutta": "Asia/Kolkata",
+}
+
 
 class StrictSchema(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
@@ -55,6 +62,7 @@ def _reject_control_characters(value: str) -> str:
 
 
 def _validate_timezone(value: str) -> str:
+    value = TIMEZONE_ALIASES.get(value, value)
     try:
         ZoneInfo(value)
     except ZoneInfoNotFoundError as exc:

@@ -51,8 +51,33 @@ class DeterministicCommandMixin:
             if mini_app_url.startswith("https://")
             else None
         )
+        chat_id = message.chat.get("id")
+        image_url = settings.telegram_welcome_image_url.strip()
+        if not image_url and settings.frontend_base_url.startswith("https://"):
+            image_url = settings.frontend_base_url.rstrip("/") + "/pr-agent-welcome.png"
+        if image_url.startswith("https://"):
+            try:
+                await self.telegram.send_photo(chat_id, image_url)
+            except Exception:
+                # Onboarding text is the reliable fallback if Telegram cannot
+                # fetch the static asset during a deploy or CDN transition.
+                logger.exception("Unable to send Telegram welcome image")
+
+        show_pin_tip = False
+        if settings.public_v2_enabled:
+            show_pin_tip = await asyncio.to_thread(
+                self._consume_pin_chat_tip,
+                message,
+            )
+        pin_tip = (
+            "\n\n📌 <b>One-time tip:</b> Pin this chat in Telegram now. I remove "
+            "processed messages after about an hour to keep things tidy, and "
+            "pinning the conversation keeps PR-Agent easy to find."
+            if show_pin_tip and settings.message_cleanup_enabled
+            else ""
+        )
         await self.telegram.send_message(
-            message.chat.get("id"),
+            chat_id,
             f"👋 <b>Hi {first_name}!</b>\n\n"
             "I keep track of your day so you do not have to. Just talk to me — "
             "hold the microphone button and say what happened.\n\n"
@@ -67,9 +92,28 @@ class DeterministicCommandMixin:
             "🔒 Your records are private to your Telegram account. Nobody else "
             "can see them, and you can export or delete everything at any time."
             f"{self._privacy_sentence()}\n\n"
-            "Typing works too. /help lists every command.",
+            "Typing works too. /help lists every command." + pin_tip,
             reply_markup=reply_markup,
         )
+
+    def _consume_pin_chat_tip(self, message: TelegramMessage) -> bool:
+        """Mark the discovery hint as shown for this Telegram user."""
+        if message.from_user is None:
+            return False
+        with self.memory.get_session() as session:
+            owner = DomainServices(session).ensure_owner(
+                telegram_id=message.from_user.id,
+                first_name=message.from_user.first_name,
+                last_name=message.from_user.last_name,
+                username=message.from_user.username,
+            )
+            preferences = dict(owner.preferences or {})
+            if preferences.get("pin_chat_tip_shown"):
+                return False
+            preferences["pin_chat_tip_shown"] = True
+            owner.preferences = preferences
+            session.flush()
+            return True
 
     @staticmethod
     def _privacy_sentence() -> str:
@@ -129,7 +173,7 @@ class DeterministicCommandMixin:
             "<b>Assistant follow-up:</b> /answeragent, /confirmagent, "
             "/cancelagent\n\n"
             "<b>Analytics and privacy:</b> /today, /week, /spending, "
-            "/settings, /export, /deleteaccount\n\n"
+            "/settings, /vault, /export, /deleteaccount\n\n"
             "/spending reports income and expenses for the current month. "
             "/nutrition lists today's meal estimates and totals. Times default "
             "to Asia/Kolkata for this deployment. Processed chat messages are "
@@ -1054,6 +1098,30 @@ class DeterministicCommandMixin:
                 if settings.telegram_mini_app_url
                 else ""
             ),
+        )
+
+    async def _v2_vault_link(self, message: TelegramMessage) -> None:
+        if not settings.vault_enabled:
+            await self.telegram.send_message(
+                message.chat.get("id"),
+                "The encrypted private facts vault is not enabled on this deployment.",
+            )
+            return
+        url = settings.telegram_mini_app_url
+        reply_markup = (
+            {
+                "inline_keyboard": [
+                    [{"text": "Open private vault", "web_app": {"url": url}}]
+                ]
+            }
+            if url.startswith("https://")
+            else None
+        )
+        await self.telegram.send_message(
+            message.chat.get("id"),
+            "Open the recently authenticated Mini App and choose Vault. "
+            "Secret values are never revealed in Telegram or sent to the AI.",
+            reply_markup=reply_markup,
         )
 
     async def _v2_export_link(self, message: TelegramMessage) -> None:

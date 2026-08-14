@@ -220,6 +220,10 @@ class Settings(BaseSettings):
     telegram_mini_app_url: str = Field(
         default="", description="Telegram Mini App URL configured in BotFather"
     )
+    telegram_welcome_image_url: str = Field(
+        default="",
+        description="Public HTTPS image shown with the /start welcome message",
+    )
     telegram_auth_max_age_seconds: int = Field(
         default=300,
         ge=30,
@@ -387,6 +391,20 @@ class Settings(BaseSettings):
     csrf_cookie_name: str = Field(
         default="pr_agent_csrf", description="CSRF cookie name"
     )
+    vault_enabled: bool = Field(
+        default=False,
+        description="Enable the Mini App-only encrypted personal facts vault",
+    )
+    vault_encryption_keys: str = Field(
+        default="",
+        description="Comma-separated key_id:urlsafe-base64-key entries; first is active",
+    )
+    vault_recent_auth_seconds: int = Field(
+        default=300,
+        ge=60,
+        le=900,
+        description="Maximum session age allowed when revealing a private fact",
+    )
     cors_origins: str = Field(
         default="http://localhost:3000",
         description="Comma-separated list of allowed CORS origins",
@@ -519,6 +537,8 @@ class Settings(BaseSettings):
                     )
                 )
             ]
+            if self.vault_enabled and not self.vault_encryption_keys.strip():
+                missing.append("VAULT_ENCRYPTION_KEYS")
             if missing:
                 raise ValueError(
                     "Missing secure configuration for: " + ", ".join(missing)

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   AccountDeletionScreen,
   SettingsScreen,
+  VaultScreen,
   WorkLogsScreen,
 } from './screens';
 
@@ -199,5 +200,74 @@ describe('important Mini App forms', () => {
     expect(patchRequests[0].url).toContain('/schedule-preferences');
     expect(patchRequests[1].url).toContain('/nutrition/preferences');
     expect(patchRequests[1].body.version).toBe(2);
+  });
+
+  it('keeps vault lists masked and requires acknowledgement before saving', async () => {
+    const requests: Array<{ url: string; method: string; body: string | null }> = [];
+    const timestamp = new Date().toISOString();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (urlValue: string, options?: RequestInit) => {
+        const url = String(urlValue);
+        const method = options?.method || 'GET';
+        const body = typeof options?.body === 'string' ? options.body : null;
+        requests.push({ url, method, body });
+        if (url.endsWith('/reveal')) {
+          return jsonResponse({
+            id: 1,
+            record_uuid: '11111111-1111-1111-1111-111111111111',
+            fact_type: 'academic_score',
+            label: 'Semester 4 CGPA',
+            masked_value: 'Stored score',
+            value: '8.72',
+            notes: null,
+            version: 1,
+            created_at: timestamp,
+            updated_at: timestamp,
+          });
+        }
+        if (method === 'POST') {
+          return jsonResponse(
+            {
+              id: 1,
+              record_uuid: '11111111-1111-1111-1111-111111111111',
+              fact_type: 'academic_score',
+              label: 'Semester 4 CGPA',
+              masked_value: 'Stored score',
+              version: 1,
+              created_at: timestamp,
+              updated_at: timestamp,
+            },
+            201,
+          );
+        }
+        return jsonResponse([]);
+      }),
+    );
+    const user = userEvent.setup();
+    render(<VaultScreen />);
+    await screen.findByText('No private facts stored.');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+    await user.type(screen.getByLabelText('Label'), 'Semester 4 CGPA');
+    await user.type(screen.getByLabelText('Value'), '8.72');
+    const save = screen.getByRole('button', { name: 'Save encrypted fact' });
+    expect(save).toBeDisabled();
+    await user.click(
+      screen.getByLabelText(
+        'I understand this is sensitive data and I can delete it at any time.',
+      ),
+    );
+    await user.click(save);
+    expect(await screen.findByText('Stored score')).toBeInTheDocument();
+    expect(screen.queryByText('8.72')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Reveal' }));
+    expect(await screen.findByText('8.72')).toBeInTheDocument();
+    expect(
+      requests.some(
+        (request) =>
+          request.method === 'POST' &&
+          request.body?.includes('"acknowledge_sensitive_storage":true'),
+      ),
+    ).toBe(true);
   });
 });

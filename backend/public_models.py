@@ -15,6 +15,7 @@ from sqlalchemy import (
     Index,
     Integer,
     JSON,
+    LargeBinary,
     MetaData,
     Numeric,
     String,
@@ -142,6 +143,70 @@ class UserPreference(PublicBase, TimestampMixin):
         CheckConstraint(
             "measurement_system IN ('metric', 'imperial')",
             name="measurement_system_supported",
+        ),
+    )
+
+
+class PrivateFact(PublicBase, TimestampMixin):
+    """Encrypted user fact; plaintext values never enter ordinary columns."""
+
+    __tablename__ = "private_facts"
+
+    id = Column(Integer, primary_key=True)
+    owner_id = Column(
+        Integer,
+        ForeignKey("app_users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    record_uuid = Column(String(36), nullable=False, unique=True)
+    fact_type = Column(String(32), nullable=False)
+    label = Column(String(160), nullable=False)
+    masked_value = Column(String(64), nullable=False)
+    ciphertext = Column(LargeBinary, nullable=False)
+    nonce = Column(LargeBinary, nullable=False)
+    key_id = Column(String(32), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "fact_type IN ('aadhaar_last4', 'phone', 'bank_account', 'ifsc', "
+            "'academic_score', 'other_permitted')",
+            name="fact_type_supported",
+        ),
+        Index("ix_private_facts_owner_id_fact_type", "owner_id", "fact_type"),
+        Index("ix_private_facts_owner_id_created_at", "owner_id", "created_at"),
+    )
+
+
+class PrivateFactAudit(PublicBase):
+    """Content-free owner-scoped access trail for encrypted facts."""
+
+    __tablename__ = "private_fact_audits"
+
+    id = Column(Integer, primary_key=True)
+    owner_id = Column(
+        Integer,
+        ForeignKey("app_users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    record_uuid = Column(String(36), nullable=False)
+    action = Column(String(16), nullable=False)
+    channel = Column(String(24), nullable=False, server_default="mini_app")
+    occurred_at_utc = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=utc_timestamp(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('create', 'update', 'reveal', 'delete')",
+            name="action_supported",
+        ),
+        CheckConstraint("channel = 'mini_app'", name="channel_supported"),
+        Index(
+            "ix_private_fact_audits_owner_id_occurred_at_utc",
+            "owner_id",
+            "occurred_at_utc",
         ),
     )
 

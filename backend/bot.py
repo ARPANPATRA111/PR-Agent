@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import re
 from math import ceil
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, List
@@ -137,6 +138,37 @@ class TelegramClient:
                     logger.exception("Unable to queue outbound Telegram cleanup")
         return result
 
+    async def send_photo(
+        self,
+        chat_id: int,
+        photo_url: str,
+        *,
+        caption: str | None = None,
+        parse_mode: str = "HTML",
+        queue_cleanup: bool = True,
+    ) -> dict:
+        """Send a remotely hosted welcome image without persisting its bytes."""
+        payload = {
+            "chat_id": chat_id,
+            "photo": photo_url,
+            "parse_mode": parse_mode,
+        }
+        if caption:
+            payload["caption"] = caption
+        result = await self._request_with_retry("POST", "sendPhoto", json=payload)
+        if settings.message_cleanup_enabled and queue_cleanup and result.get("ok"):
+            message_id = (result.get("result") or {}).get("message_id")
+            if message_id is not None:
+                try:
+                    await asyncio.to_thread(
+                        self._queue_outbound_cleanup,
+                        chat_id,
+                        int(message_id),
+                    )
+                except Exception:
+                    logger.exception("Unable to queue welcome-image cleanup")
+        return result
+
     @staticmethod
     def _queue_outbound_cleanup(chat_id: int, message_id: int) -> None:
         from telegram_cleanup import queue_telegram_message
@@ -217,6 +249,7 @@ class TelegramClient:
                     {"command": "notes", "description": "My notes"},
                     {"command": "reminders", "description": "My reminders"},
                     {"command": "goals", "description": "My goals"},
+                    {"command": "vault", "description": "Encrypted private facts"},
                     {"command": "settings", "description": "Preferences"},
                     {"command": "privacy", "description": "How your data is used"},
                     {"command": "help", "description": "All commands"},
@@ -672,6 +705,7 @@ class BotHandler(DeterministicCommandMixin):
                     "/summary": self._v2_week_summary,
                     "/spending": self._v2_spending_summary,
                     "/settings": self._v2_settings_link,
+                    "/vault": self._v2_vault_link,
                     "/export": self._v2_export_link,
                     "/deleteaccount": self._v2_delete_account_link,
                     "/privacy": self._cmd_privacy,
@@ -788,6 +822,8 @@ class BotHandler(DeterministicCommandMixin):
                 "That message is too long. Please split it into smaller entries.",
             )
             return
+        if await self._handle_typed_shortcut(message):
+            return
         if not settings.ai_agent_enabled:
             await self.telegram.send_message(
                 message.chat.get("id"),
@@ -807,6 +843,132 @@ class BotHandler(DeterministicCommandMixin):
                 message.chat.get("id"),
                 "The assistant is unavailable. Slash commands still work.",
             )
+
+    async def _handle_typed_shortcut(self, message: TelegramMessage) -> bool:
+        """Handle the most common explicit typed writes without an AI call."""
+        original = " ".join((message.text or "").strip().split())
+        lowered = original.lower()
+        if lowered in {
+            "what did i do today",
+            "show me today",
+            "today summary",
+            "today's summary",
+        }:
+            await self._v2_today_summary(message)
+            return True
+        if lowered in {
+            "how much did i spend this month",
+            "show my spending",
+            "spending this month",
+            "my spending this month",
+        }:
+            await self._v2_spending_summary(message)
+            return True
+        if lowered in {
+            "what did i eat today",
+            "how much protein did i eat today",
+            "how much protein today",
+            "protein today",
+            "today's protein",
+        }:
+            await self._v2_nutrition_summary(
+                message.model_copy(update={"text": "/nutrition"})
+            )
+            return True
+        currency_tokens = {
+            "₹": "INR",
+            "rs": "INR",
+            "rs.": "INR",
+            "rupee": "INR",
+            "rupees": "INR",
+            "inr": "INR",
+        }
+        ledger = re.fullmatch(
+            r"(?:i\s+)?(?P<verb>spent|paid|earned|received)\s+"
+            r"(?:(?P<prefix>₹|rs\.?|inr)\s*)?"
+            r"(?P<amount>\d+(?:\.\d{1,3})?)\s*"
+            r"(?P<suffix>rupees?|inr)?\s+(?:on|for|from)\s+"
+            r"(?P<description>.+)",
+            lowered,
+        )
+        if ledger and (ledger.group("prefix") or ledger.group("suffix")):
+            currency_word = ledger.group("prefix") or ledger.group("suffix")
+            currency = currency_tokens.get(currency_word or "", "INR")
+            direction = (
+                "expense" if ledger.group("verb") in {"spent", "paid"} else "income"
+            )
+            rewritten = message.model_copy(
+                update={
+                    "text": (
+                        f"/{direction} {ledger.group('amount')} {currency} "
+                        f"{ledger.group('description')}"
+                    )
+                }
+            )
+            await self._v2_create_ledger_direction(rewritten, direction)
+            return True
+
+        for prefix, command in (
+            ("note:", "/note"),
+            ("log:", "/log"),
+            ("work:", "/log"),
+        ):
+            if lowered.startswith(prefix) and original[len(prefix) :].strip():
+                rewritten = message.model_copy(
+                    update={"text": f"{command} {original[len(prefix):].strip()}"}
+                )
+                handler = (
+                    self._v2_create_note
+                    if command == "/note"
+                    else self._v2_create_work_log
+                )
+                await handler(rewritten)
+                return True
+
+        food_prefixes = ("i ate ", "ate ", "i had ")
+        food_terms = {
+            "dal",
+            "paneer",
+            "roti",
+            "chapati",
+            "rice",
+            "chawal",
+            "egg",
+            "idli",
+            "dosa",
+            "rajma",
+            "chole",
+            "sambar",
+            "khichdi",
+            "dahi",
+            "curd",
+            "sprouts",
+            "soy",
+            "soya",
+            "poha",
+            "upma",
+            "milk",
+            "banana",
+            "paratha",
+            "sabzi",
+            "meal",
+            "breakfast",
+            "lunch",
+            "dinner",
+        }
+        prefix = next(
+            (value for value in food_prefixes if lowered.startswith(value)), None
+        )
+        if prefix and any(
+            re.search(rf"\b{re.escape(term)}\b", lowered[len(prefix) :])
+            for term in food_terms
+        ):
+            rewritten = message.model_copy(
+                update={"text": f"/food {original[len(prefix):].strip()}"}
+            )
+            await self._v2_create_food(rewritten)
+            return True
+        return False
 
     async def _interpret(
         self,

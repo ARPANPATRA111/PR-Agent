@@ -33,6 +33,7 @@ slowapi>=0.1.9
 # Authentication
 PyJWT>=2.8.0
 passlib[bcrypt]>=1.7.4
+cryptography>=44.0.0
 
 # Utilities
 python-multipart>=0.0.6

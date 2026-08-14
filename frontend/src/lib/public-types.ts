@@ -142,6 +142,26 @@ export interface SchedulePreferences {
   next_digest_at_utc: string | null;
 }
 
+export type PrivateFactType =
+  | 'aadhaar_last4'
+  | 'phone'
+  | 'bank_account'
+  | 'ifsc'
+  | 'academic_score'
+  | 'other_permitted';
+
+export interface PrivateFact extends VersionedRecord {
+  record_uuid: string;
+  fact_type: PrivateFactType;
+  label: string;
+  masked_value: string;
+}
+
+export interface RevealedPrivateFact extends PrivateFact {
+  value: string;
+  notes: string | null;
+}
+
 export type ScreenName =
   | 'home'
   | 'work'
@@ -149,6 +169,7 @@ export type ScreenName =
   | 'reminders'
   | 'money'
   | 'nutrition'
+  | 'vault'
   | 'goals'
   | 'settings'
   | 'export'
