@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   AccountDeletionScreen,
+  GoalsScreen,
+  NotesScreen,
   SettingsScreen,
   VaultScreen,
   WorkLogsScreen,
@@ -91,6 +93,87 @@ describe('important Mini App forms', () => {
           request.body?.includes('"version":1'),
       ),
     ).toBe(true);
+  });
+
+  it('saves note titles and tags from the Mini App', async () => {
+    let records: Array<Record<string, unknown>> = [];
+    let posted: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, options?: RequestInit) => {
+        if (options?.method === 'POST') {
+          const payload = JSON.parse(String(options.body)) as Record<string, unknown>;
+          posted = payload;
+          records = [{
+            id: 1,
+            version: 1,
+            title: payload.title,
+            body: payload.body,
+            tags: payload.tags,
+            pinned: false,
+            capture_source: 'mini_app',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }];
+          return jsonResponse(records[0], 201);
+        }
+        return jsonResponse(records);
+      }),
+    );
+    const user = userEvent.setup();
+    render(<NotesScreen />);
+    await screen.findByText('No notes yet.');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+    await user.type(screen.getByLabelText('Title (optional)'), 'Release follow-up');
+    await user.type(screen.getByLabelText('Note'), 'Monitor the staging delay.');
+    await user.type(screen.getByLabelText('Tags (optional, comma separated)'), 'Staging, Validation');
+    await user.click(screen.getByRole('button', { name: 'Add note' }));
+
+    expect(await screen.findByText('Release follow-up')).toBeInTheDocument();
+    expect(posted).toMatchObject({ tags: ['staging', 'validation'] });
+  });
+
+  it('saves and displays a goal description with readable progress', async () => {
+    let records: Array<Record<string, unknown>> = [];
+    let posted: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, options?: RequestInit) => {
+        if (options?.method === 'POST') {
+          const payload = JSON.parse(String(options.body)) as Record<string, unknown>;
+          posted = payload;
+          records = [{
+            id: 1,
+            version: 1,
+            title: payload.title,
+            description: payload.description,
+            target_value: '20.0000',
+            current_value: '0.0000',
+            unit: 'scenarios',
+            start_date: '2026-08-20',
+            due_date: null,
+            status: 'active',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }];
+          return jsonResponse(records[0], 201);
+        }
+        return jsonResponse(records);
+      }),
+    );
+    const user = userEvent.setup();
+    render(<GoalsScreen />);
+    await screen.findByText('No goals yet.');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+    await user.type(screen.getByLabelText('Goal'), 'Voice coverage');
+    await user.type(screen.getByLabelText('Description (optional)'), 'Improve voice-native tracking.');
+    await user.type(screen.getByLabelText('Target (optional)'), '20');
+    await user.type(screen.getByLabelText('Unit (optional)'), 'scenarios');
+    await user.click(screen.getByRole('button', { name: 'Add goal' }));
+
+    expect(await screen.findByText('Improve voice-native tracking.')).toBeInTheDocument();
+    expect(screen.getByText(/0 \/ 20 scenarios/)).toBeInTheDocument();
+    expect(posted).toMatchObject({ description: 'Improve voice-native tracking.' });
   });
 
   it('requires typed, checked, and final confirmation for account deletion', async () => {

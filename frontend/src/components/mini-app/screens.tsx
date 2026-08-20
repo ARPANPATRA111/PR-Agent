@@ -91,6 +91,14 @@ function idempotencyKey(prefix: string): string {
   return `${prefix}:${crypto.randomUUID()}`;
 }
 
+function parseTags(value: string): string[] {
+  return [...new Set(value.split(',').map((tag) => tag.trim().toLowerCase()).filter(Boolean))].slice(0, 20);
+}
+
+function formatDecimal(value: string): string {
+  return value.includes('.') ? value.replace(/\.?0+$/, '') : value;
+}
+
 function Card({
   children,
   className = '',
@@ -243,6 +251,7 @@ export function WorkLogsScreen() {
   );
   const [text, setText] = useState('');
   const [category, setCategory] = useState('');
+  const [tags, setTags] = useState('');
   const [editing, setEditing] = useState<WorkLog | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -260,6 +269,7 @@ export function WorkLogsScreen() {
             version: editing.version,
             original_text: text,
             category: category || null,
+            tags: parseTags(tags),
           }),
         });
       } else {
@@ -268,6 +278,7 @@ export function WorkLogsScreen() {
           body: JSON.stringify({
             original_text: text,
             category: category || null,
+            tags: parseTags(tags),
             timezone: localTimezone,
             capture_source: 'mini_app',
             idempotency_key: idempotencyKey('work'),
@@ -276,6 +287,7 @@ export function WorkLogsScreen() {
       }
       setText('');
       setCategory('');
+      setTags('');
       setEditing(null);
       setDialogOpen(false);
       await resource.reload();
@@ -301,7 +313,7 @@ export function WorkLogsScreen() {
       <ScreenHeading
         title="Work logs"
         description="Review your progress history and activity patterns."
-        action={<button type="button" className={buttonClassName} onClick={() => { setEditing(null); setText(''); setCategory(''); setDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" aria-hidden />Add</button>}
+        action={<button type="button" className={buttonClassName} onClick={() => { setEditing(null); setText(''); setCategory(''); setTags(''); setDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" aria-hidden />Add</button>}
       />
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-lg">
@@ -327,6 +339,15 @@ export function WorkLogsScreen() {
             className={inputClassName}
           />
         </FormField>
+        <FormField label="Tags (optional, comma separated)" htmlFor="work-tags">
+          <input
+            id="work-tags"
+            value={tags}
+            onChange={(event) => setTags(event.target.value)}
+            maxLength={500}
+            className={inputClassName}
+          />
+        </FormField>
         <MutationError message={error} />
         <div className="flex flex-wrap gap-2">
           <button type="submit" disabled={saving} className={buttonClassName}>
@@ -341,6 +362,7 @@ export function WorkLogsScreen() {
                 setEditing(null);
                 setText('');
                 setCategory('');
+                setTags('');
               }}
             >
               Cancel
@@ -360,11 +382,17 @@ export function WorkLogsScreen() {
               {record.category || 'Uncategorized'} ·{' '}
               {formatDateTime(record.logged_at_utc)}
             </p>
+            {record.tags.length ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Tags: {record.tags.join(', ')}
+              </p>
+            ) : null}
             <RecordActions
               onEdit={() => {
                 setEditing(record);
                 setText(record.original_text);
                 setCategory(record.category || '');
+                setTags(record.tags.join(', '));
                 setDialogOpen(true);
               }}
               onDelete={() => void remove(record)}
@@ -381,7 +409,9 @@ export function NotesScreen() {
     () => fetchAPI<Note[]>('/api/v2/notes?limit=100'),
     '',
   );
+  const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
+  const [tags, setTags] = useState('');
   const [editing, setEditing] = useState<Note | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -393,19 +423,28 @@ export function NotesScreen() {
       if (editing) {
         await fetchAPI(`/api/v2/notes/${editing.id}`, {
           method: 'PATCH',
-          body: JSON.stringify({ version: editing.version, body }),
+          body: JSON.stringify({
+            version: editing.version,
+            title: title.trim() || body.split('\n')[0].slice(0, 80),
+            body,
+            tags: parseTags(tags),
+          }),
         });
       } else {
         await fetchAPI('/api/v2/notes', {
           method: 'POST',
           body: JSON.stringify({
+            title: title.trim() || null,
             body,
+            tags: parseTags(tags),
             capture_source: 'mini_app',
             idempotency_key: idempotencyKey('note'),
           }),
         });
       }
+      setTitle('');
       setBody('');
+      setTags('');
       setEditing(null);
       setDialogOpen(false);
       await resource.reload();
@@ -434,11 +473,20 @@ export function NotesScreen() {
 
   return (
     <>
-      <ScreenHeading title="Notes" description="Searchable private notes, with important items pinned first." action={<button type="button" className={buttonClassName} onClick={() => { setEditing(null); setBody(''); setDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" aria-hidden />Add</button>} />
+      <ScreenHeading title="Notes" description="Searchable private notes, with important items pinned first." action={<button type="button" className={buttonClassName} onClick={() => { setEditing(null); setTitle(''); setBody(''); setTags(''); setDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" aria-hidden />Add</button>} />
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader><DialogTitle>{editing ? 'Edit note' : 'Add note'}</DialogTitle><DialogDescription>Keep a private thought, reference, or follow-up.</DialogDescription></DialogHeader>
       <form onSubmit={submit} className="space-y-3">
+        <FormField label="Title (optional)" htmlFor="note-title">
+          <input
+            id="note-title"
+            maxLength={255}
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            className={inputClassName}
+          />
+        </FormField>
         <FormField label="Note" htmlFor="note-body">
           <textarea
             id="note-body"
@@ -447,6 +495,15 @@ export function NotesScreen() {
             rows={3}
             value={body}
             onChange={(event) => setBody(event.target.value)}
+            className={inputClassName}
+          />
+        </FormField>
+        <FormField label="Tags (optional, comma separated)" htmlFor="note-tags">
+          <input
+            id="note-tags"
+            value={tags}
+            onChange={(event) => setTags(event.target.value)}
+            maxLength={500}
             className={inputClassName}
           />
         </FormField>
@@ -469,6 +526,11 @@ export function NotesScreen() {
                 <p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground">
                   {record.body}
                 </p>
+                {record.tags.length ? (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Tags: {record.tags.join(', ')}
+                  </p>
+                ) : null}
               </div>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -484,7 +546,9 @@ export function NotesScreen() {
               <RecordActions
                 onEdit={() => {
                   setEditing(record);
+                  setTitle(record.title);
                   setBody(record.body);
+                  setTags(record.tags.join(', '));
                   setDialogOpen(true);
                 }}
                 onDelete={() => void remove(record)}
@@ -978,6 +1042,7 @@ export function GoalsScreen() {
     '',
   );
   const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [target, setTarget] = useState('');
   const [unit, setUnit] = useState('');
   const [currentValue, setCurrentValue] = useState('0');
@@ -995,6 +1060,7 @@ export function GoalsScreen() {
           body: JSON.stringify({
             version: editing.version,
             title,
+            description: description || null,
             target_value: target || null,
             current_value: currentValue,
             unit: unit || null,
@@ -1005,6 +1071,7 @@ export function GoalsScreen() {
           method: 'POST',
           body: JSON.stringify({
             title,
+            description: description || null,
             target_value: target || null,
             unit: unit || null,
             idempotency_key: idempotencyKey('goal'),
@@ -1012,6 +1079,7 @@ export function GoalsScreen() {
         });
       }
       setTitle('');
+      setDescription('');
       setTarget('');
       setUnit('');
       setCurrentValue('0');
@@ -1046,7 +1114,7 @@ export function GoalsScreen() {
       <ScreenHeading
         title="Goals"
         description="Active targets, progress, and completion status."
-        action={<button type="button" className={buttonClassName} onClick={() => { setEditing(null); setTitle(''); setTarget(''); setUnit(''); setCurrentValue('0'); setDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" aria-hidden />Add</button>}
+        action={<button type="button" className={buttonClassName} onClick={() => { setEditing(null); setTitle(''); setDescription(''); setTarget(''); setUnit(''); setCurrentValue('0'); setDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" aria-hidden />Add</button>}
       />
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
@@ -1063,6 +1131,18 @@ export function GoalsScreen() {
               maxLength={255}
               value={title}
               onChange={(event) => setTitle(event.target.value)}
+              className={inputClassName}
+            />
+          </FormField>
+        </div>
+        <div className="sm:col-span-2">
+          <FormField label="Description (optional)" htmlFor="goal-description">
+            <textarea
+              id="goal-description"
+              maxLength={10_000}
+              rows={3}
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
               className={inputClassName}
             />
           </FormField>
@@ -1114,6 +1194,7 @@ export function GoalsScreen() {
               onClick={() => {
                 setEditing(null);
                 setTitle('');
+                setDescription('');
                 setTarget('');
                 setUnit('');
                 setCurrentValue('0');
@@ -1130,9 +1211,14 @@ export function GoalsScreen() {
         {(resource.data || []).map((record) => (
           <Card key={record.id}>
             <h2 className="break-words font-semibold">{record.title}</h2>
+            {record.description ? (
+              <p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground">
+                {record.description}
+              </p>
+            ) : null}
             <p className="mt-1 text-sm text-muted-foreground">
-              {record.current_value}
-              {record.target_value ? ` / ${record.target_value}` : ''}
+              {formatDecimal(record.current_value)}
+              {record.target_value !== null ? ` / ${formatDecimal(record.target_value)}` : ''}
               {record.unit ? ` ${record.unit}` : ''} · {record.status}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -1142,6 +1228,7 @@ export function GoalsScreen() {
                 onClick={() => {
                   setEditing(record);
                   setTitle(record.title);
+                  setDescription(record.description || '');
                   setTarget(record.target_value || '');
                   setCurrentValue(record.current_value);
                   setUnit(record.unit || '');
