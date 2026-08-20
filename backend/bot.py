@@ -1103,6 +1103,14 @@ class BotHandler(DeterministicCommandMixin):
                 pending_id,
                 text,
             )
+        confirmation_id = await asyncio.to_thread(
+            assistant.open_confirmation_id,
+            actor.telegram_id,
+        )
+        confirmation = self._confirmation_response(text)
+        if confirmation_id is not None and confirmation is not None:
+            handler = assistant.confirm if confirmation else assistant.cancel
+            return await asyncio.to_thread(handler, actor, confirmation_id)
         return await asyncio.to_thread(
             assistant.handle,
             actor,
@@ -1110,6 +1118,27 @@ class BotHandler(DeterministicCommandMixin):
             update_id=update_id,
             review_required=review_required,
         )
+
+    @staticmethod
+    def _confirmation_response(text: str) -> bool | None:
+        """Recognise an explicit yes/no reply without spending another AI call."""
+        normalized = " ".join(re.findall(r"[a-z]+", text.casefold()))
+        if not normalized:
+            return None
+        negative = (
+            r"^(?:no|nope|cancel|wrong|stop)\b",
+            r"\b(?:not right|not correct|do not|don't|cancel it)\b",
+        )
+        if any(re.search(pattern, normalized) for pattern in negative):
+            return False
+        positive = (
+            r"^(?:yes|yep|yeah|correct|confirm|okay|ok|sure)\b",
+            r"\b(?:looks right|that is right|this is right|go ahead|do it|"
+            r"please save|please set|please create)\b",
+        )
+        if any(re.search(pattern, normalized) for pattern in positive):
+            return True
+        return None
 
     async def _handle_bounded_voice(
         self,

@@ -242,8 +242,8 @@ class Settings(BaseSettings):
         default="",
         description=(
             "Additional Groq API keys, comma separated. Requests rotate across "
-            "every configured key, which raises the shared provider ceiling "
-            "instead of restricting users when one key is rate limited."
+            "every configured key for traffic distribution and credential "
+            "failover; organisation-level provider limits still apply."
         ),
     )
     groq_model: str = Field(
@@ -251,8 +251,14 @@ class Settings(BaseSettings):
         description="Groq model used for bounded provider calls",
     )
     groq_fallback_model: str = Field(
-        default="openai/gpt-oss-20b",
-        description="Fallback Groq model used after a strict generation failure",
+        default="qwen/qwen3.6-27b",
+        description="Production fallback used after the primary generation fails",
+    )
+    groq_request_timeout_seconds: float = Field(
+        default=30,
+        ge=5,
+        le=120,
+        description="Maximum duration of one Groq request before controlled fallback",
     )
     llm_temperature: float = Field(
         default=0.7, ge=0.0, le=1.0, description="Temperature for LLM generation"

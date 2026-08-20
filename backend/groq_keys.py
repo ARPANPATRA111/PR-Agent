@@ -1,10 +1,9 @@
 """Shared rotation across several Groq credentials.
 
-One API key serving every user is the tightest ceiling in the deployment: the
-provider's per-organisation rate limits are shared, so a handful of concurrent
-users can make every request fail at once. Adding keys raises that ceiling
-without restricting anybody, which is the point — a refusal is a worse outcome
-than a slower request.
+Rotation distributes requests across configured credentials and lets a
+temporarily unhealthy or revoked credential be sidelined. Groq rate limits are
+enforced at the organisation level, so several keys from one organisation do
+not increase the organisation's quota.
 
 The pool round-robins so no single key absorbs a burst, and briefly sidelines a
 key that has just been rate-limited. It deliberately never runs out: if every

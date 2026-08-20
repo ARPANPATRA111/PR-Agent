@@ -16,7 +16,8 @@ type a request, or open the Mini App to manage structured records.
 - text and voice capture with confirmation before ambiguous writes;
 - editable Mini App records, export, and account deletion; and
 - an optional encrypted vault for permitted personal facts, with masked,
-  explicitly confirmed private-chat retrieval by label.
+  explicitly confirmed private-chat saves and retrieval by label. Explicit
+  voice saves are encrypted before the intent model is called.
 
 ```mermaid
 flowchart LR
@@ -63,6 +64,12 @@ corepack pnpm build
 ```
 
 Never commit tokens, database URLs, private exports, or encryption keys.
+
+For credential rotation, keep one key in `GROQ_API_KEY` and place additional
+comma-separated keys in the masked `GROQ_API_KEYS` environment variable. The
+process rotates requests and temporarily sidelines a key after a 429. Multiple
+keys in the same Groq organisation do not increase its organisation-wide rate
+limit; use the Groq Limits page or an appropriate paid tier for more capacity.
 
 ## License
 

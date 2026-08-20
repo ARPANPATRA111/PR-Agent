@@ -13,7 +13,7 @@ from assistant import ActorContext, BoundedAssistant
 from config import settings
 from domain.services import DomainServices
 from nutrition.providers import get_nutrition_provider
-from public_models import PrivateFact, PrivateFactAudit, PublicBase
+from public_models import AgentPendingAction, PrivateFact, PrivateFactAudit, PublicBase
 from vault_crypto import VaultCipher
 
 ALICE = ActorContext(telegram_id=101, first_name="Alice")
@@ -52,6 +52,7 @@ def vault_db(monkeypatch):
     PublicBase.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     monkeypatch.setattr(settings, "vault_encryption_keys", KEYS)
+    monkeypatch.setattr(settings, "vault_enabled", True)
     yield factory
     engine.dispose()
 
@@ -121,3 +122,59 @@ def test_cancelling_vault_reveal_never_decrypts(vault_db):
 
     with vault_db() as session:
         assert session.query(PrivateFactAudit).count() == 0
+
+
+def test_vault_lookup_understands_mobile_number_alias(vault_db):
+    seed_fact(vault_db, ALICE, "Mobile No.", "+919876543210")
+    assistant = build(vault_db, "mobile number")
+
+    review = assistant.handle(ALICE, "what is my mobile number", update_id=3)
+
+    assert review.status == "confirmation"
+    assert "Mobile No." in review.text
+
+
+def test_explicit_voice_style_vault_save_is_encrypted_before_review(vault_db):
+    class ProviderMustNotSeeSecret:
+        provider_name = "forbidden"
+        model_name = "forbidden"
+
+        def classify(self, text, *, context=None):
+            del text, context
+            raise AssertionError("vault values must not reach the intent provider")
+
+    assistant = BoundedAssistant(
+        vault_db,
+        ProviderMustNotSeeSecret(),
+        get_nutrition_provider("reference"),
+    )
+    secret = "+91 98765 43210"
+
+    review = assistant.handle(
+        ALICE,
+        f"save my mobile number as {secret} in my vault",
+        update_id=4,
+        review_required=True,
+    )
+
+    assert review.status == "confirmation"
+    assert secret not in review.text
+    with vault_db() as session:
+        pending = session.query(AgentPendingAction).one()
+        assert secret not in str(pending.proposed_arguments)
+        assert session.query(PrivateFact).count() == 0
+
+    saved = assistant.confirm(ALICE, review.pending_id)
+    assert saved.status == "completed"
+    with vault_db() as session:
+        row = session.query(PrivateFact).one()
+        payload = VaultCipher(KEYS).decrypt(
+            ciphertext=row.ciphertext,
+            nonce=row.nonce,
+            key_id=row.key_id,
+            owner_id=row.owner_id,
+            record_uuid=row.record_uuid,
+            fact_type=row.fact_type,
+        )
+        assert payload["value"] == "+919876543210"
+        assert session.query(PrivateFactAudit).one().channel == "telegram"

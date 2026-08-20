@@ -18,7 +18,7 @@ def mock_settings():
     with patch("config.settings") as mock:
         mock.telegram_bot_token = "test_token"
         mock.groq_api_key = "test_groq_key"
-        mock.groq_model = "llama-3.3-70b-versatile"
+        mock.groq_model = "openai/gpt-oss-120b"
         mock.whisper_model = "base"
         mock.whisper_language = "auto"
         mock.database_url = "sqlite:///:memory:"

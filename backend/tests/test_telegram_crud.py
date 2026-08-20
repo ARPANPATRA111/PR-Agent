@@ -397,6 +397,9 @@ async def test_plain_text_uses_only_bounded_assistant_context(
         def open_clarification_id(self, telegram_id):
             return None
 
+        def open_confirmation_id(self, telegram_id):
+            return None
+
         def handle(self, actor, text, *, update_id, review_required=False):
             self.calls.append((actor, text, update_id))
             return AssistantReply("Safe action completed.", "completed")
@@ -413,6 +416,44 @@ async def test_plain_text_uses_only_bounded_assistant_context(
     assert text == "Completed the login screen"
     assert update_id == 501
     assert bot.telegram.messages[-1] == "Safe action completed."
+
+
+@pytest.mark.asyncio
+async def test_spoken_yes_confirms_the_open_review_without_reclassification(
+    bot_and_factory,
+):
+    bot, _ = bot_and_factory
+
+    class ConfirmationAssistant:
+        def open_clarification_id(self, telegram_id):
+            assert telegram_id == 1001
+            return None
+
+        def open_confirmation_id(self, telegram_id):
+            assert telegram_id == 1001
+            return 77
+
+        def confirm(self, actor, pending_id):
+            assert actor.telegram_id == 1001
+            assert pending_id == 77
+            return AssistantReply("Reminder scheduled.", "completed")
+
+        def handle(self, *args, **kwargs):
+            raise AssertionError("an explicit confirmation must not be reclassified")
+
+    bot.bounded_assistant = ConfirmationAssistant()
+    reply = await bot._interpret(
+        telegram_message(
+            "Yeah, this is the right information. Please set the reminder.",
+            510,
+        ),
+        "Yeah, this is the right information. Please set the reminder.",
+        update_id=9510,
+        review_required=True,
+    )
+
+    assert reply.status == "completed"
+    assert reply.text == "Reminder scheduled."
 
 
 @pytest.mark.asyncio

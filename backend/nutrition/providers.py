@@ -155,7 +155,11 @@ class GroqNutritionProvider(NutritionEstimationProvider):
         with self._client_lock:
             client = self._clients.get(api_key)
             if client is None:
-                client = Groq(api_key=api_key)
+                client = Groq(
+                    api_key=api_key,
+                    timeout=settings.groq_request_timeout_seconds,
+                    max_retries=0,
+                )
                 self._clients[api_key] = client
             return client
 

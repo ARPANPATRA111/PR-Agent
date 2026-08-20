@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import re
 import uuid
 from datetime import datetime, timezone
 from typing import Annotated, Generator, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from auth import TokenData, get_current_user
@@ -18,73 +17,17 @@ from domain.services import DomainServices
 from memory import get_memory_manager
 from public_models import PrivateFact, PrivateFactAudit
 from vault_crypto import VaultCipher, VaultConfigurationError, VaultDecryptionError
+from vault_policy import FactType, VaultFactInput, mask_private_fact
 
 router = APIRouter(prefix="/api/v2/private-facts", tags=["Private facts vault"])
-
-FactType = Literal[
-    "aadhaar_last4",
-    "phone",
-    "bank_account",
-    "ifsc",
-    "academic_score",
-    "other_permitted",
-]
-
-PROHIBITED_LABEL = re.compile(
-    r"\b(password|passcode|otp|one[ -]?time password|pin|cvv|cvc|card number|"
-    r"private key|seed phrase|recovery code|full aadhaar)\b",
-    re.IGNORECASE,
-)
 
 
 class StrictSchema(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
-class FactCreate(StrictSchema):
-    fact_type: FactType
-    label: str = Field(min_length=1, max_length=160)
-    value: str = Field(min_length=1, max_length=2_000)
-    notes: str | None = Field(default=None, max_length=500)
+class FactCreate(VaultFactInput):
     acknowledge_sensitive_storage: Literal[True]
-
-    @field_validator("label")
-    @classmethod
-    def label_is_safe(cls, value: str) -> str:
-        if PROHIBITED_LABEL.search(value):
-            raise ValueError("This kind of secret is not supported")
-        if re.search(r"\d{6,}", value) or re.search(
-            r"\b[A-Z]{4}0[A-Z0-9]{6}\b", value.upper()
-        ):
-            raise ValueError("Put the private value in the encrypted value field")
-        return value
-
-    @model_validator(mode="after")
-    def value_matches_type(self):
-        compact = re.sub(r"[\s-]", "", self.value)
-        if self.fact_type == "aadhaar_last4" and not re.fullmatch(r"\d{4}", compact):
-            raise ValueError("Only the last four Aadhaar digits are accepted")
-        if self.fact_type == "other_permitted" and re.fullmatch(r"\d{12}", compact):
-            raise ValueError("Full Aadhaar numbers are not accepted")
-        if self.fact_type == "ifsc":
-            normalized = compact.upper()
-            if not re.fullmatch(r"[A-Z]{4}0[A-Z0-9]{6}", normalized):
-                raise ValueError("Enter a valid 11-character IFSC code")
-            self.value = normalized
-        elif self.fact_type == "phone":
-            if not re.fullmatch(r"\+?[0-9]{7,15}", compact):
-                raise ValueError("Enter a phone number with 7 to 15 digits")
-            self.value = compact
-        elif self.fact_type == "bank_account":
-            normalized = compact.upper()
-            if not re.fullmatch(r"[A-Z0-9]{6,34}", normalized):
-                raise ValueError(
-                    "Enter a bank account identifier with 6 to 34 characters"
-                )
-            self.value = normalized
-        if "-----BEGIN" in self.value.upper():
-            raise ValueError("Private keys are not accepted")
-        return self
 
 
 class FactUpdate(FactCreate):
@@ -174,18 +117,7 @@ def _owned(context: VaultContext, record_id: int) -> PrivateFact:
 
 
 def _mask(fact_type: str, value: str) -> str:
-    compact = re.sub(r"\s", "", value)
-    if fact_type == "aadhaar_last4":
-        return f"•••• •••• {compact[-4:]}"
-    if fact_type == "ifsc":
-        return f"{compact[:4]}0••••••"
-    if fact_type == "phone":
-        return f"••••••{compact[-4:]}"
-    if fact_type == "bank_account":
-        return f"••••••{compact[-4:]}"
-    if fact_type == "academic_score":
-        return "Stored score"
-    return "Stored securely"
+    return mask_private_fact(fact_type, value)
 
 
 def _masked(row: PrivateFact) -> FactMasked:

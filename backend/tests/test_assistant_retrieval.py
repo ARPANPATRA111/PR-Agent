@@ -241,6 +241,30 @@ def test_listing_goals_can_filter_by_status(assistant_db):
     assert "Read twelve books" in reply.text
 
 
+def test_goal_progress_does_not_expose_database_decimal_scale(assistant_db):
+    owner_id = seed_owner(assistant_db, ALICE)
+    with assistant_db() as session:
+        DomainServices(session).create_goal(
+            owner_id,
+            GoalCreate(
+                title="Capability Test Voice coverage",
+                target_value=20,
+                unit="scenarios",
+                idempotency_key="seed-goal-format",
+            ),
+        )
+        session.commit()
+    assistant = build_assistant(
+        assistant_db,
+        FakeProvider(list_proposal("goal", status="active")),
+    )
+
+    reply = assistant.handle(ALICE, "which goals are active", update_id=81)
+
+    assert "0/20 scenarios" in reply.text
+    assert "0.000" not in reply.text
+
+
 def test_listing_work_logs_respects_a_date_window(assistant_db):
     owner_id = seed_owner(assistant_db, ALICE)
     with assistant_db() as session:
@@ -344,6 +368,32 @@ def test_smalltalk_output_is_escaped(assistant_db):
 
     assert "<script>" not in reply.text
     assert "&lt;script&gt;" in reply.text
+
+
+def test_unsupported_reply_preserves_the_safe_redirect(assistant_db):
+    seed_owner(assistant_db, ALICE)
+    assistant = build_assistant(
+        assistant_db,
+        FakeProvider(
+            {
+                "confidence": 0.99,
+                "actions": [
+                    {
+                        "kind": "unsupported",
+                        "reason": (
+                            "I cannot book a cab, but I can set a reminder for "
+                            "you to book one."
+                        ),
+                    }
+                ],
+            }
+        ),
+    )
+
+    reply = assistant.handle(ALICE, "book me a cab", update_id=131)
+
+    assert "cannot book a cab" in reply.text
+    assert "set a reminder" in reply.text
 
 
 def test_low_confidence_retrieval_still_answers(assistant_db):
@@ -735,6 +785,7 @@ def test_the_provider_is_told_when_it_is_the_final_round(assistant_db):
     _, context = provider.contexts[-1]
     assert context["clarification_round"] == 1
     assert context["final_round"] is False
+    assert context["clarification_question"] == "Which currency?"
 
 
 def test_a_successful_answer_still_completes_normally(assistant_db):

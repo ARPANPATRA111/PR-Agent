@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
+from difflib import SequenceMatcher
 from hashlib import sha256
 from html import escape
 import json
 import re
 from typing import Callable
+import uuid
 from zoneinfo import ZoneInfo
 
 from pydantic import ValidationError
@@ -73,6 +76,7 @@ from public_models import (
 )
 from config import settings
 from vault_crypto import VaultCipher, VaultConfigurationError, VaultDecryptionError
+from vault_policy import VaultFactInput, mask_private_fact
 
 UTC = timezone.utc
 
@@ -173,6 +177,26 @@ class BoundedAssistant:
         if existing is not None:
             return existing
         try:
+            vault_capture = self._parse_vault_capture(text)
+        except (ValidationError, ValueError) as exc:
+            if isinstance(exc, ValidationError):
+                detail = str(exc.errors()[0].get("msg", "Invalid vault value"))
+                detail = detail.removeprefix("Value error, ")
+            else:
+                detail = str(exc)
+            return AssistantReply(
+                f"I could not save that vault item: {escape(detail)}.",
+                "rejected",
+            )
+        if vault_capture is not None:
+            return self._prepare_private_fact_create(
+                actor,
+                text,
+                update_id,
+                idempotency_key,
+                vault_capture,
+            )
+        try:
             owner_id, run_id, default_timezone = self._start_run(actor, text, update_id)
         except GlobalQuotaExceeded:
             return AssistantReply(
@@ -237,19 +261,15 @@ class BoundedAssistant:
             "cancelled",
         )
 
-    def open_clarification_id(self, telegram_id: int) -> int | None:
-        """Return the caller's newest unanswered question, if one is waiting.
-
-        This lets a spoken or typed reply continue the conversation naturally
-        instead of requiring the user to quote a command and a pending id.
-        """
+    def _open_pending_id(self, telegram_id: int, state: str) -> int | None:
+        """Return the caller's newest unexpired pending item in ``state``."""
         with self.session_factory() as session:
             pending = (
                 session.query(AgentPendingAction)
                 .join(PublicUser, PublicUser.id == AgentPendingAction.owner_id)
                 .filter(
                     PublicUser.telegram_id == telegram_id,
-                    AgentPendingAction.state == "clarification",
+                    AgentPendingAction.state == state,
                 )
                 .order_by(AgentPendingAction.id.desc())
                 .first()
@@ -260,6 +280,18 @@ class BoundedAssistant:
             if expires.tzinfo is None:
                 expires = expires.replace(tzinfo=UTC)
             return pending.id if expires > self.clock() else None
+
+    def open_clarification_id(self, telegram_id: int) -> int | None:
+        """Return the caller's newest unanswered question, if one is waiting.
+
+        This lets a spoken or typed reply continue the conversation naturally
+        instead of requiring the user to quote a command and a pending id.
+        """
+        return self._open_pending_id(telegram_id, "clarification")
+
+    def open_confirmation_id(self, telegram_id: int) -> int | None:
+        """Return a review that can be confirmed by an explicit chat reply."""
+        return self._open_pending_id(telegram_id, "confirmation")
 
     def answer_clarification(
         self,
@@ -286,6 +318,7 @@ class BoundedAssistant:
             "intended_kind": pending.action_type,
             "known_arguments": pending.proposed_arguments,
             "missing_fields": pending.missing_fields,
+            "clarification_question": pending.prompt,
             "clarification_round": pending.version,
             "final_round": pending.version >= self.MAX_CLARIFICATION_ROUNDS,
         }
@@ -397,6 +430,8 @@ class BoundedAssistant:
             return self._confirm_delete_many(pending)
         if pending.proposed_arguments.get("kind") == "reveal_private_fact":
             return self._confirm_private_fact_reveal(pending)
+        if pending.proposed_arguments.get("kind") == "create_private_fact_encrypted":
+            return self._confirm_private_fact_create(pending)
         try:
             proposal = AgentProposal.model_validate(
                 {
@@ -574,6 +609,8 @@ class BoundedAssistant:
         actor: ActorContext,
         text: str,
         update_id: int,
+        *,
+        consume_ai_quota: bool = True,
     ) -> tuple[int, int, str]:
         with self.session_factory() as session:
             service = DomainServices(session)
@@ -583,22 +620,23 @@ class BoundedAssistant:
                 last_name=actor.last_name,
                 username=actor.username,
             )
-            quotas = QuotaService(session)
-            quotas.require(
-                owner.id,
-                "ai_classifications",
-                limit=self.daily_ai_limit,
-            )
-            if self.global_daily_ai_limit > 0:
-                quotas.require_global(
+            if consume_ai_quota:
+                quotas = QuotaService(session)
+                quotas.require(
+                    owner.id,
                     "ai_classifications",
-                    limit=self.global_daily_ai_limit,
+                    limit=self.daily_ai_limit,
                 )
+                if self.global_daily_ai_limit > 0:
+                    quotas.require_global(
+                        "ai_classifications",
+                        limit=self.global_daily_ai_limit,
+                    )
             default_timezone = service.get_schedule_preferences(owner.id)["timezone"]
             run = AgentRun(
                 owner_id=owner.id,
-                provider=self.provider.provider_name,
-                model=self.provider.model_name[:128],
+                provider=(self.provider.provider_name if consume_ai_quota else "local"),
+                model=(self.provider.model_name[:128] if consume_ai_quota else "vault"),
                 input_hash=sha256(text.encode("utf-8")).hexdigest(),
                 original_update_id=update_id,
             )
@@ -640,7 +678,7 @@ class BoundedAssistant:
                 run_id,
                 idempotency_key,
                 unsupported.kind,
-                "I cannot safely do that from this chat yet.\n\n" + CAPABILITY_HINT,
+                unsupported.reason + "\n\n" + CAPABILITY_HINT,
             )
         clarification = next(
             (action for action in actions if isinstance(action, ClarificationAction)),
@@ -756,7 +794,11 @@ class BoundedAssistant:
                     "actions": [action.model_dump(mode="json") for action in actions],
                 },
                 missing_fields=[],
-                prompt=self._review_prompt(actions, uncertain=uncertain),
+                prompt=self._review_prompt(
+                    actions,
+                    owner_id=owner_id,
+                    uncertain=uncertain,
+                ),
                 replace_existing=replace_existing,
             )
         if len(actions) > 1:
@@ -928,6 +970,216 @@ class BoundedAssistant:
             record_type,
         )
 
+    @staticmethod
+    def _parse_vault_capture(text: str) -> VaultFactInput | None:
+        """Parse an explicit vault save locally so its value never reaches the LLM."""
+        if not re.search(r"\bvault\b", text, re.IGNORECASE) or not re.search(
+            r"\b(?:save|store|remember)\b", text, re.IGNORECASE
+        ):
+            return None
+
+        body = text.strip().rstrip(" .")
+        body = re.sub(
+            r"^(?:please\s+)?(?:save|store|remember)\s+",
+            "",
+            body,
+            flags=re.IGNORECASE,
+        )
+        body = re.sub(
+            r"^(?:this\s+)?(?:in|into|to)\s+(?:(?:my|the)\s+)?vault[,\s]*",
+            "",
+            body,
+            flags=re.IGNORECASE,
+        )
+        body = re.sub(
+            r"[,\s]+(?:in|into|to)\s+(?:(?:my|the)\s+)?vault$",
+            "",
+            body,
+            flags=re.IGNORECASE,
+        ).strip(" ,")
+
+        match = re.match(
+            r"^(?:my\s+)?(?P<label>.+?)\s+(?:is|as|equals?)\s+(?P<value>.+)$",
+            body,
+            flags=re.IGNORECASE,
+        )
+        if match is None:
+            known_label = re.match(
+                r"^(?:my\s+)?(?P<label>(?:mobile|phone|telephone|contact)\s+"
+                r"(?:number|no\.?|num(?:ber)?\.?)|(?:bank\s+)?account\s+"
+                r"(?:number|no\.?|num(?:ber)?\.?)|ifsc(?:\s+code)?|"
+                r"(?:aadhaar|aadhar)\s+last\s+(?:four|4)|"
+                r"(?:sixth|6th|semester|sem|college|university|academic|my)"
+                r"[^,]*?(?:cgpa|gpa|score))[,\s:]+(?P<value>.+)$",
+                body,
+                flags=re.IGNORECASE,
+            )
+            match = known_label
+        if match is None:
+            raise ValueError(
+                'say the label and value explicitly, for example "save my mobile '
+                'number as 9876543210 in my vault"'
+            )
+
+        label = " ".join(match.group("label").split()).strip(" ,:")
+        value = " ".join(match.group("value").split()).strip(" ,:")
+        lowered = label.lower()
+        if re.search(r"\b(?:mobile|phone|telephone|contact)\b", lowered):
+            fact_type = "phone"
+        elif "ifsc" in lowered:
+            fact_type = "ifsc"
+        elif "aadhaar" in lowered or "aadhar" in lowered:
+            fact_type = "aadhaar_last4"
+        elif "account" in lowered:
+            fact_type = "bank_account"
+        elif re.search(r"\b(?:cgpa|gpa|score)\b", lowered):
+            fact_type = "academic_score"
+        else:
+            fact_type = "other_permitted"
+        return VaultFactInput(
+            fact_type=fact_type,
+            label=label,
+            value=value,
+            notes=None,
+        )
+
+    def _prepare_private_fact_create(
+        self,
+        actor: ActorContext,
+        text: str,
+        update_id: int,
+        idempotency_key: str,
+        fact: VaultFactInput,
+    ) -> AssistantReply:
+        if not settings.vault_enabled:
+            return AssistantReply(
+                "The encrypted vault is not enabled on this deployment.",
+                "rejected",
+            )
+        try:
+            cipher = VaultCipher(settings.vault_encryption_keys)
+        except VaultConfigurationError:
+            return AssistantReply("The vault is not available right now.", "failed")
+
+        owner_id, run_id, _ = self._start_run(
+            actor,
+            text,
+            update_id,
+            consume_ai_quota=False,
+        )
+        record_uuid = str(uuid.uuid4())
+        encrypted = cipher.encrypt(
+            {"value": fact.value, "notes": fact.notes},
+            owner_id=owner_id,
+            record_uuid=record_uuid,
+            fact_type=fact.fact_type,
+        )
+        masked = mask_private_fact(fact.fact_type, fact.value)
+        return self._pending(
+            owner_id,
+            run_id,
+            idempotency_key,
+            update_id,
+            state="confirmation",
+            action_type="create_private_fact",
+            arguments={
+                "kind": "create_private_fact_encrypted",
+                "record_uuid": record_uuid,
+                "fact_type": fact.fact_type,
+                "label": fact.label,
+                "masked_value": masked,
+                "ciphertext": base64.b64encode(encrypted.ciphertext).decode("ascii"),
+                "nonce": base64.b64encode(encrypted.nonce).decode("ascii"),
+                "key_id": encrypted.key_id,
+            },
+            missing_fields=[],
+            prompt=f"Save {fact.label} ({masked}) in your encrypted vault?",
+            replace_existing=False,
+        )
+
+    def _confirm_private_fact_create(
+        self,
+        pending: AgentPendingAction,
+    ) -> AssistantReply:
+        values = pending.proposed_arguments
+        try:
+            record_uuid = str(uuid.UUID(str(values["record_uuid"])))
+            fact_type = str(values["fact_type"])
+            if fact_type not in {
+                "aadhaar_last4",
+                "phone",
+                "bank_account",
+                "ifsc",
+                "academic_score",
+                "other_permitted",
+            }:
+                raise ValueError
+            label = str(values["label"])
+            masked = str(values["masked_value"])
+            key_id = str(values["key_id"])
+            ciphertext = base64.b64decode(str(values["ciphertext"]), validate=True)
+            nonce = base64.b64decode(str(values["nonce"]), validate=True)
+            if not (label and len(label) <= 160 and masked and len(masked) <= 64):
+                raise ValueError
+        except (KeyError, TypeError, ValueError):
+            return AssistantReply(
+                "The stored vault proposal is no longer valid.", "failed"
+            )
+
+        with self.session_factory() as session:
+            current = (
+                session.query(AgentPendingAction)
+                .filter(
+                    AgentPendingAction.id == pending.id,
+                    AgentPendingAction.owner_id == pending.owner_id,
+                    AgentPendingAction.state == "confirmation",
+                )
+                .with_for_update()
+                .one_or_none()
+            )
+            if current is None:
+                return AssistantReply("That vault save is already closed.", "completed")
+            row = PrivateFact(
+                owner_id=current.owner_id,
+                record_uuid=record_uuid,
+                fact_type=fact_type,
+                label=label,
+                masked_value=masked,
+                ciphertext=ciphertext,
+                nonce=nonce,
+                key_id=key_id,
+            )
+            session.add(row)
+            session.flush()
+            session.add(
+                PrivateFactAudit(
+                    owner_id=current.owner_id,
+                    record_uuid=record_uuid,
+                    action="create",
+                    channel="telegram",
+                )
+            )
+            current.state = "executed"
+            current.resolved_at_utc = self.clock()
+            self._update_action(
+                session,
+                current.owner_id,
+                current.idempotency_key,
+                status="executed",
+            )
+            run = session.get(AgentRun, current.run_id)
+            if run:
+                run.status = "completed"
+                run.completed_at_utc = self.clock()
+            session.commit()
+            record_id = row.id
+        return AssistantReply(
+            f"Saved {escape(label)} ({escape(masked)}) to your encrypted vault.",
+            "completed",
+            "private_fact",
+            record_id,
+        )
+
     def _prepare_private_fact_reveal(
         self,
         owner_id: int,
@@ -940,26 +1192,28 @@ class BoundedAssistant:
     ) -> AssistantReply:
         needle = " ".join(action.label.split())[:160]
         with self.session_factory() as session:
-            exact = (
+            rows = (
                 session.query(PrivateFact)
                 .filter(
                     PrivateFact.owner_id == owner_id,
-                    PrivateFact.label.ilike(needle),
                 )
                 .order_by(PrivateFact.updated_at.desc())
+                .limit(100)
                 .all()
             )
-            rows = exact or (
-                session.query(PrivateFact)
-                .filter(
-                    PrivateFact.owner_id == owner_id,
-                    PrivateFact.label.ilike(f"%{needle}%"),
-                )
-                .order_by(PrivateFact.updated_at.desc())
-                .limit(5)
-                .all()
+            ranked = sorted(
+                (
+                    (self._vault_label_score(needle, row.label, row.fact_type), row)
+                    for row in rows
+                ),
+                key=lambda item: item[0],
+                reverse=True,
             )
-            matches = [(row.id, row.label, row.masked_value) for row in rows]
+            accepted = [item for item in ranked if item[0] >= 0.55]
+            if accepted:
+                best_score = accepted[0][0]
+                accepted = [item for item in accepted if best_score - item[0] <= 0.08]
+            matches = [(row.id, row.label, row.masked_value) for _, row in accepted[:5]]
         if not matches:
             return self._reject(
                 owner_id,
@@ -999,6 +1253,54 @@ class BoundedAssistant:
             ),
             replace_existing=replace_existing,
         )
+
+    @staticmethod
+    def _normalized_reference(value: str) -> str:
+        normalized = value.casefold().replace("a/c", " account ")
+        tokens = re.findall(r"[a-z0-9]+", normalized)
+        aliases = {
+            "mobile": "phone",
+            "cell": "phone",
+            "telephone": "phone",
+            "contact": "phone",
+            "no": "number",
+            "num": "number",
+            "nbr": "number",
+            "acct": "account",
+            "sem": "semester",
+            "sixth": "6",
+            "6th": "6",
+        }
+        ignored = {"my", "the", "please", "show", "tell", "what", "is"}
+        return " ".join(
+            aliases.get(token, token) for token in tokens if token not in ignored
+        )
+
+    @classmethod
+    def _vault_label_score(cls, needle: str, label: str, fact_type: str) -> float:
+        wanted = cls._normalized_reference(needle)
+        candidate = cls._normalized_reference(label)
+        if not wanted or not candidate:
+            return 0.0
+        if wanted == candidate:
+            return 1.0
+        if wanted in candidate or candidate in wanted:
+            return 0.92
+        wanted_tokens = set(wanted.split())
+        candidate_tokens = set(candidate.split())
+        overlap = len(wanted_tokens & candidate_tokens) / max(
+            len(wanted_tokens | candidate_tokens), 1
+        )
+        sequence = SequenceMatcher(None, wanted, candidate).ratio()
+        type_aliases = {
+            "phone": {"phone", "number"},
+            "bank_account": {"bank", "account"},
+            "ifsc": {"ifsc"},
+            "academic_score": {"cgpa", "gpa", "score"},
+            "aadhaar_last4": {"aadhaar", "aadhar"},
+        }
+        type_bonus = 0.2 if wanted_tokens & type_aliases.get(fact_type, set()) else 0
+        return min(1.0, max(overlap, sequence * 0.75) + type_bonus)
 
     def _confirm_private_fact_reveal(
         self,
@@ -1230,7 +1532,17 @@ class BoundedAssistant:
             labels = [(row.id, row.original_text) for row in rows]
         elif record_type == "note":
             rows = service.list_notes(owner_id, search=search, limit=scan_limit)
-            labels = [(row.id, row.title or row.body) for row in rows]
+            labels = [
+                (
+                    row.id,
+                    (
+                        f"{row.title} — {row.body}"
+                        if row.title and row.title.strip() != row.body.strip()
+                        else row.body
+                    ),
+                )
+                for row in rows
+            ]
         elif record_type == "ledger_entry":
             rows = service.list_ledger_entries(
                 owner_id, search=search, limit=scan_limit
@@ -1262,6 +1574,31 @@ class BoundedAssistant:
                 for record_id, label in labels
                 if needle in (label or "").lower()
             ]
+        if needle and not labels:
+            unfiltered = self._reference_candidates(
+                service,
+                owner_id,
+                record_type=record_type,
+                search=None,
+                ordinal=None,
+            )
+            normalized_needle = self._normalized_reference(needle)
+            wanted = set(normalized_needle.split())
+            scored = []
+            for record_id, label in unfiltered:
+                normalized_label = self._normalized_reference(label)
+                candidate = set(normalized_label.split())
+                overlap = len(wanted & candidate) / max(len(wanted), 1)
+                sequence = SequenceMatcher(
+                    None,
+                    normalized_needle,
+                    normalized_label,
+                ).ratio()
+                score = max(overlap, sequence * 0.8)
+                if score >= 0.5:
+                    scored.append((score, record_id, label))
+            scored.sort(key=lambda item: item[0], reverse=True)
+            labels = [(record_id, label) for _, record_id, label in scored]
         if ordinal == "oldest":
             labels = list(reversed(labels))
         return [
@@ -1275,7 +1612,14 @@ class BoundedAssistant:
             service = DomainServices(session)
             getters = {
                 "work_log": (service.get_work_log, lambda row: row.original_text),
-                "note": (service.get_note, lambda row: row.title or row.body),
+                "note": (
+                    service.get_note,
+                    lambda row: (
+                        f"{row.title} — {row.body}"
+                        if row.title and row.title.strip() != row.body.strip()
+                        else row.body
+                    ),
+                ),
                 "reminder": (service.get_reminder, lambda row: row.title),
                 "ledger_entry": (
                     service.get_ledger_entry,
@@ -1356,14 +1700,22 @@ class BoundedAssistant:
                 "actions": [resolved.model_dump(mode="json")],
             }
             current.missing_fields = []
-            current.prompt = f"{self._review_prompt([resolved])}\n\nSelected: {label}"
+            current.prompt = (
+                f"{self._review_prompt([resolved], owner_id=pending.owner_id)}"
+                f"\n\nSelected: {label}"
+            )
             current.version += 1
             session.commit()
             prompt = current.prompt
         return AssistantReply(escape(prompt), "confirmation", pending_id=pending_id)
 
-    @staticmethod
-    def _review_prompt(actions, *, uncertain: bool = False) -> str:
+    def _review_prompt(
+        self,
+        actions,
+        *,
+        owner_id: int,
+        uncertain: bool = False,
+    ) -> str:
         def short(value, limit: int = 180) -> str:
             normalized = " ".join(str(value).split())
             return (
@@ -1382,9 +1734,23 @@ class BoundedAssistant:
         ]
         for index, action in enumerate(actions, start=1):
             if isinstance(action, CreateWorkLogAction):
-                summary = f"Work log — {short(action.text)}"
+                details = []
+                if action.category:
+                    details.append(f"category {short(action.category, 64)}")
+                if action.tags:
+                    details.append(
+                        "tags " + ", ".join(short(tag, 32) for tag in action.tags)
+                    )
+                suffix = f" ({'; '.join(details)})" if details else ""
+                summary = f"Work log — {short(action.text)}{suffix}"
             elif isinstance(action, CreateNoteAction):
-                summary = f"Note — {short(action.body)}"
+                title = f"{short(action.title, 80)}: " if action.title else ""
+                tags = (
+                    " (tags " + ", ".join(short(tag, 32) for tag in action.tags) + ")"
+                    if action.tags
+                    else ""
+                )
+                summary = f"Note — {title}{short(action.body)}{tags}"
             elif isinstance(action, CreateLedgerAction):
                 summary = (
                     f"{action.direction.title()} — {action.amount} "
@@ -1398,7 +1764,16 @@ class BoundedAssistant:
             elif isinstance(action, CreateNutritionAction):
                 summary = f"Food log — {short(action.text)}"
             elif isinstance(action, CreateGoalAction):
-                summary = f"Goal — {short(action.title)}"
+                details = []
+                if action.target_value is not None:
+                    details.append(
+                        f"target {action.target_value}"
+                        f"{' ' + short(action.unit, 32) if action.unit else ''}"
+                    )
+                if action.description:
+                    details.append(f"description {short(action.description, 100)}")
+                suffix = f" ({'; '.join(details)})" if details else ""
+                summary = f"Goal — {short(action.title)}{suffix}"
             elif isinstance(action, QueryAction):
                 summary = f"Read {action.query_type} summary"
             elif isinstance(action, ListRecordsAction):
@@ -1441,10 +1816,7 @@ class BoundedAssistant:
                     if value is not None
                 )
             elif isinstance(action, DeleteRecordAction):
-                summary = (
-                    f"Delete {action.record_type.replace('_', ' ')} "
-                    f"#{action.record_id}"
-                )
+                summary = self._delete_prompt(owner_id, action).rstrip(".?")
             else:
                 summary = "Unsupported action"
             lines.append(f"{index}. {summary}")
@@ -2077,7 +2449,8 @@ class BoundedAssistant:
         lines = []
         for row in rows:
             progress = (
-                f" — {row.current_value}/{row.target_value} {row.unit or ''}".rstrip()
+                f" — {self._display_decimal(row.current_value)}/"
+                f"{self._display_decimal(row.target_value)} {row.unit or ''}".rstrip()
                 if row.target_value is not None
                 else ""
             )
@@ -2187,6 +2560,13 @@ class BoundedAssistant:
         )
         major = Decimal(amount_minor) / (Decimal(10) ** digits)
         return f"{major.quantize(Decimal(1).scaleb(-digits)):f}"
+
+    @staticmethod
+    def _display_decimal(value: Decimal) -> str:
+        rendered = format(value, "f")
+        if "." in rendered:
+            rendered = rendered.rstrip("0").rstrip(".")
+        return rendered or "0"
 
     @staticmethod
     def _delete_record(

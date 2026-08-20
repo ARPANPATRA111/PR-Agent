@@ -37,7 +37,7 @@ def test_free_blueprint_contains_only_free_api_and_static_site():
     assert environment["AI_PROVIDER"] == "groq"
     assert environment["GROQ_API_KEY"] is None
     assert environment["GROQ_MODEL"] == "openai/gpt-oss-120b"
-    assert environment["GROQ_FALLBACK_MODEL"] == "openai/gpt-oss-20b"
+    assert environment["GROQ_FALLBACK_MODEL"] == "qwen/qwen3.6-27b"
     assert environment["WHISPER_MODEL"] == "whisper-large-v3-turbo"
     assert environment["NUTRITION_PROVIDER"] == "groq"
     assert environment["MESSAGE_CLEANUP_ENABLED"] == "true"

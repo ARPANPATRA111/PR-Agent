@@ -64,7 +64,9 @@ services:
       - key: QUOTAS_ENABLED
         value: "false"
       - key: PER_USER_DAILY_AI_LIMIT
-        value: "200"
+        # Temporary manual-test allowance. Restore to 200 after the current
+        # one-to-two-day voice test run.
+        value: "500"
       - key: PER_USER_DAILY_NUTRITION_LIMIT
         value: "100"
       - key: PER_USER_DAILY_SUMMARY_LIMIT
@@ -82,9 +84,9 @@ services:
       - key: GROQ_API_KEY
         sync: false
       # Optional extra Groq credentials, comma separated, no spaces needed.
-      # Requests rotate across every key configured here, which raises the
-      # shared provider ceiling rather than limiting users when one key is
-      # rate limited. Leave blank until keys are generated, then paste them
+      # Requests rotate across every key configured here for traffic
+      # distribution and credential failover. Groq's organisation-wide quota
+      # still applies. Leave blank until keys are generated, then paste them
       # into the Render dashboard as a masked value.
       - key: GROQ_API_KEYS
         sync: false
@@ -96,7 +98,9 @@ services:
       - key: GROQ_MODEL
         value: openai/gpt-oss-120b
       - key: GROQ_FALLBACK_MODEL
-        value: openai/gpt-oss-20b
+        value: qwen/qwen3.6-27b
+      - key: GROQ_REQUEST_TIMEOUT_SECONDS
+        value: "30"
       - key: WHISPER_MODEL
         value: whisper-large-v3-turbo
       - key: NUTRITION_PROVIDER

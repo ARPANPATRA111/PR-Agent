@@ -180,6 +180,60 @@ def test_single_match_confirms_using_the_record_text(assistant_db):
         assert session.query(Note).count() == 1
 
 
+def test_note_description_allows_a_spacing_tolerant_delete_match(assistant_db):
+    owner_id = seed_owner(assistant_db, ALICE)
+    seed_note(
+        assistant_db,
+        owner_id,
+        "Staging observation",
+        "The staging wake-up delay needs monitoring after cold starts.",
+        "seed-note-spacing",
+    )
+    assistant = build_assistant(
+        assistant_db,
+        FakeProvider(delete_proposal("note", search="staging wake up delay")),
+    )
+
+    reply = assistant.handle(
+        ALICE, "delete the staging wake up delay note", update_id=12
+    )
+
+    assert reply.status == "confirmation"
+    assert "wake-up delay" in reply.text
+
+
+def test_voice_delete_review_names_latest_expense_instead_of_its_id(assistant_db):
+    owner_id = seed_owner(assistant_db, ALICE)
+    with assistant_db() as session:
+        DomainServices(session).create_ledger_entry(
+            owner_id,
+            LedgerCreate(
+                direction="expense",
+                amount=120,
+                currency="INR",
+                description="Capability test mobile data",
+                capture_source="telegram_voice",
+                idempotency_key="seed-latest-expense",
+            ),
+        )
+        session.commit()
+    assistant = build_assistant(
+        assistant_db,
+        FakeProvider(delete_proposal("ledger_entry", ordinal="latest")),
+    )
+
+    reply = assistant.handle(
+        ALICE,
+        "delete my last expense",
+        update_id=13,
+        review_required=True,
+    )
+
+    assert reply.status == "confirmation"
+    assert "Capability test mobile data" in reply.text
+    assert "#" not in reply.text
+
+
 def test_confirming_a_resolved_deletion_removes_the_record(assistant_db):
     owner_id = seed_owner(assistant_db, ALICE)
     seed_note(
