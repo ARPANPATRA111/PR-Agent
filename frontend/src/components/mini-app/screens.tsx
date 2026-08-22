@@ -790,27 +790,49 @@ function currencyFractionDigits(currency: string): number | null {
   }
 }
 
+function ledgerCategoryClass(category: string | null): string {
+  const palette = [
+    'bg-violet-500/10 text-violet-700 dark:text-violet-300',
+    'bg-blue-500/10 text-blue-700 dark:text-blue-300',
+    'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+    'bg-amber-500/10 text-amber-700 dark:text-amber-300',
+    'bg-rose-500/10 text-rose-700 dark:text-rose-300',
+    'bg-cyan-500/10 text-cyan-700 dark:text-cyan-300',
+  ];
+  const normalized = (category || 'uncategorized').toLowerCase();
+  const hash = [...normalized].reduce(
+    (total, character) => total + character.charCodeAt(0),
+    0,
+  );
+  return palette[hash % palette.length];
+}
+
 export function MoneyScreen() {
+  const [rangeMode, setRangeMode] = useState<'all' | 'month'>('all');
   const [selectedMonth, setSelectedMonth] = useState(localDate().slice(0, 7));
   const [year, month] = selectedMonth.split('-').map(Number);
   const monthStart = `${selectedMonth}-01`;
   const monthEnd = localDate(new Date(year, month, 0));
   const resource = useApiResource(async () => {
+    const rangeQuery = rangeMode === 'month'
+      ? `start_date=${monthStart}&end_date=${monthEnd}&`
+      : '';
     const [entries, totals] = await Promise.all([
       fetchAPI<LedgerEntry[]>(
-        `/api/v2/ledger?start_date=${monthStart}&end_date=${monthEnd}&limit=100`,
+        `/api/v2/ledger?${rangeQuery}limit=100`,
       ),
       fetchAPI<LedgerSummary[]>(
-        `/api/v2/ledger/summary?start_date=${monthStart}&end_date=${monthEnd}`,
+        `/api/v2/ledger/summary${rangeMode === 'month' ? `?start_date=${monthStart}&end_date=${monthEnd}` : ''}`,
       ),
     ]);
     return { entries, totals };
-  }, selectedMonth);
+  }, `${rangeMode}:${selectedMonth}`);
   const [direction, setDirection] =
     useState<LedgerEntry['direction']>('expense');
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState('INR');
   const [description, setDescription] = useState('');
+  const [category, setCategory] = useState('');
   const [editing, setEditing] = useState<LedgerEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -845,6 +867,7 @@ export function MoneyScreen() {
             amount,
             currency,
             description,
+            category: category || null,
           }),
         });
       } else {
@@ -855,6 +878,7 @@ export function MoneyScreen() {
             amount,
             currency,
             description,
+            category: category || null,
             timezone: localTimezone,
             capture_source: 'mini_app',
             idempotency_key: idempotencyKey('ledger'),
@@ -863,6 +887,7 @@ export function MoneyScreen() {
       }
       setAmount('');
       setDescription('');
+      setCategory('');
       setEditing(null);
       setDialogOpen(false);
       await resource.reload();
@@ -896,6 +921,7 @@ export function MoneyScreen() {
               setEditing(null);
               setAmount('');
               setDescription('');
+              setCategory('');
               setDialogOpen(true);
             }}
           >
@@ -904,20 +930,39 @@ export function MoneyScreen() {
           </button>
         }
       />
-      <div className="mb-4 flex items-center justify-between rounded-xl border bg-card p-3">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Reporting month
-          </p>
-          <p className="font-semibold">{selectedMonth}</p>
+      <div className="mb-4 rounded-xl border bg-card p-3">
+        <div className="grid grid-cols-2 gap-2" role="group" aria-label="Money history range">
+          <button
+            type="button"
+            className={rangeMode === 'all' ? buttonClassName : secondaryButtonClassName}
+            onClick={() => setRangeMode('all')}
+          >
+            All activity
+          </button>
+          <button
+            type="button"
+            className={rangeMode === 'month' ? buttonClassName : secondaryButtonClassName}
+            onClick={() => setRangeMode('month')}
+          >
+            One month
+          </button>
         </div>
-        <input
-          type="month"
-          aria-label="Reporting month"
-          value={selectedMonth}
-          onChange={(event) => setSelectedMonth(event.target.value)}
-          className="min-h-11 rounded-lg border bg-background px-3 text-sm"
-        />
+        {rangeMode === 'month' ? (
+          <label className="mt-3 flex items-center justify-between gap-3 text-sm">
+            <span className="font-medium">Reporting month</span>
+            <input
+              type="month"
+              aria-label="Reporting month"
+              value={selectedMonth}
+              onChange={(event) => setSelectedMonth(event.target.value)}
+              className="min-h-11 rounded-lg border bg-background px-3 text-sm"
+            />
+          </label>
+        ) : (
+          <p className="mt-3 text-xs text-muted-foreground">
+            Showing your latest 100 transactions across all dates.
+          </p>
+        )}
       </div>
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
@@ -951,6 +996,9 @@ export function MoneyScreen() {
             <FormField label="Description" htmlFor="money-description">
               <input id="money-description" required maxLength={5_000} value={description} onChange={(event) => setDescription(event.target.value)} className={inputClassName} />
             </FormField>
+            <FormField label="Category (optional)" htmlFor="money-category">
+              <input id="money-category" maxLength={64} value={category} onChange={(event) => setCategory(event.target.value)} className={inputClassName} placeholder="Food, travel, bills" />
+            </FormField>
             <div className="sm:col-span-2">
               <MutationError message={error} />
               <button type="submit" disabled={saving} className={`${buttonClassName} mt-2 w-full`}>
@@ -964,7 +1012,7 @@ export function MoneyScreen() {
         <div className="mb-5 grid gap-3 sm:grid-cols-2">
           {resource.data.totals.map((total) => (
             <Card key={total.currency}>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{total.currency} monthly flow</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{total.currency} {rangeMode === 'month' ? 'monthly' : 'all-time'} flow</p>
               <div className="mt-3 grid grid-cols-3 gap-2 text-center">
                 <div><p className="text-xs text-muted-foreground">Income</p><p className="font-semibold text-emerald-600">{moneyValue(total.income_minor, total.currency)}</p></div>
                 <div><p className="text-xs text-muted-foreground">Spent</p><p className="font-semibold text-destructive">{moneyValue(total.expense_minor, total.currency)}</p></div>
@@ -991,6 +1039,9 @@ export function MoneyScreen() {
                 <p className="text-sm text-muted-foreground">
                   {record.direction} · {record.user_local_date}
                 </p>
+                <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${ledgerCategoryClass(record.category)}`}>
+                  {record.category || 'Uncategorized'}
+                </span>
               </div>
               <p className="shrink-0 font-semibold">
                 {moneyValue(record.amount_minor, record.currency)}
@@ -1013,6 +1064,7 @@ export function MoneyScreen() {
                   );
                   setCurrency(record.currency);
                   setDescription(record.description);
+                  setCategory(record.category || '');
                   setDialogOpen(true);
                 }}
               >
@@ -1277,18 +1329,20 @@ export function GoalsScreen() {
 }
 
 export function NutritionScreen() {
+  const [viewMode, setViewMode] = useState<'history' | 'day'>('history');
   const [selectedDate, setSelectedDate] = useState(localDate());
   const resource = useApiResource(async () => {
+    const logsPath = viewMode === 'day'
+      ? `/api/v2/nutrition?start_date=${selectedDate}&end_date=${selectedDate}&limit=100`
+      : '/api/v2/nutrition?limit=100';
     const [logs, summary] = await Promise.all([
-      fetchAPI<NutritionLog[]>(
-        `/api/v2/nutrition?start_date=${selectedDate}&end_date=${selectedDate}&limit=100`,
-      ),
+      fetchAPI<NutritionLog[]>(logsPath),
       fetchAPI<NutritionSummary>(
         `/api/v2/nutrition/summary?start_date=${selectedDate}&end_date=${selectedDate}`,
       ),
     ]);
     return { logs, summary };
-  }, selectedDate);
+  }, `${viewMode}:${selectedDate}`);
   const [description, setDescription] = useState('');
   const [mealName, setMealName] = useState('');
   const [editingItem, setEditingItem] = useState<{
@@ -1418,28 +1472,52 @@ export function NutritionScreen() {
           </button>
         }
       />
-      <div className="mb-4 flex items-center justify-between rounded-xl border bg-card p-2">
-        <button
-          type="button"
-          onClick={() => moveDay(-1)}
-          className={secondaryButtonClassName}
-          aria-label="Previous day"
-        >
-          <ChevronLeft className="h-4 w-4" aria-hidden />
-        </button>
-        <time dateTime={selectedDate} className="text-sm font-semibold">
-          {selectedDate}
-        </time>
-        <button
-          type="button"
-          onClick={() => moveDay(1)}
-          className={secondaryButtonClassName}
-          aria-label="Next day"
-        >
-          <ChevronRight className="h-4 w-4" aria-hidden />
-        </button>
+      <div className="mb-4 rounded-xl border bg-card p-3">
+        <div className="grid grid-cols-2 gap-2" role="group" aria-label="Nutrition history range">
+          <button
+            type="button"
+            className={viewMode === 'history' ? buttonClassName : secondaryButtonClassName}
+            onClick={() => setViewMode('history')}
+          >
+            Recent meals
+          </button>
+          <button
+            type="button"
+            className={viewMode === 'day' ? buttonClassName : secondaryButtonClassName}
+            onClick={() => setViewMode('day')}
+          >
+            One day
+          </button>
+        </div>
+        {viewMode === 'day' ? (
+          <div className="mt-3 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => moveDay(-1)}
+              className={secondaryButtonClassName}
+              aria-label="Previous day"
+            >
+              <ChevronLeft className="h-4 w-4" aria-hidden />
+            </button>
+            <time dateTime={selectedDate} className="text-sm font-semibold">
+              {selectedDate}
+            </time>
+            <button
+              type="button"
+              onClick={() => moveDay(1)}
+              className={secondaryButtonClassName}
+              aria-label="Next day"
+            >
+              <ChevronRight className="h-4 w-4" aria-hidden />
+            </button>
+          </div>
+        ) : (
+          <p className="mt-3 text-xs text-muted-foreground">
+            Showing your latest 100 meals across all dates. Choose One day for daily totals.
+          </p>
+        )}
       </div>
-      {resource.data ? (
+      {resource.data && viewMode === 'day' ? (
         <div className="mb-4 grid grid-cols-2 gap-3">
           <Metric
             label="Approx. calories"
@@ -1592,7 +1670,7 @@ export function NutritionScreen() {
       ) : null}
       <ResourceList
         resource={{ ...resource, data: resource.data?.logs || null }}
-        emptyLabel="No food logs for this day."
+        emptyLabel={viewMode === 'day' ? 'No food logs for this day.' : 'No food logs yet.'}
       >
         {(resource.data?.logs || []).map((log) => (
           <Card key={log.id}>
@@ -1603,6 +1681,9 @@ export function NutritionScreen() {
                 </h2>
                 <p className="break-words text-sm text-muted-foreground">
                   {log.original_text}
+                </p>
+                <p className="mt-1 text-xs font-medium text-muted-foreground">
+                  {log.user_local_date}
                 </p>
               </div>
               <span className="rounded-full bg-muted px-2 py-1 text-xs">

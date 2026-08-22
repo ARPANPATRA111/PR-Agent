@@ -374,6 +374,44 @@ class BotHandler(DeterministicCommandMixin):
             parts = (callback.data or "").split(":")
             if (
                 len(parts) == 3
+                and parts[0] == "nutrition"
+                and parts[1] in {"confirm", "cancel"}
+                and parts[2].isdigit()
+            ):
+                assistant = self._get_bounded_assistant()
+                handler = (
+                    assistant.confirm_nutrition_preview
+                    if parts[1] == "confirm"
+                    else assistant.cancel_nutrition_preview
+                )
+                reply = await asyncio.to_thread(
+                    handler,
+                    self._actor(actor_message),
+                    int(parts[2]),
+                )
+                await self.telegram.answer_callback_query(
+                    callback.id,
+                    (
+                        "Meal confirmed"
+                        if reply.status == "completed"
+                        else (
+                            "Preview discarded"
+                            if reply.status == "cancelled"
+                            else "Unavailable"
+                        )
+                    ),
+                )
+                await self._send_assistant_reply(chat_id, reply)
+                try:
+                    await self.telegram.delete_message(
+                        chat_id,
+                        callback.message.message_id,
+                    )
+                except Exception:
+                    logger.warning("Unable to remove resolved food preview")
+                return
+            if (
+                len(parts) == 3
                 and parts[0] == "account"
                 and parts[1] == "keep"
                 and parts[2].isdigit()
@@ -894,6 +932,21 @@ class BotHandler(DeterministicCommandMixin):
                     ]
                 ]
             }
+        elif reply.status == "nutrition_confirmation" and reply.record_id is not None:
+            reply_markup = {
+                "inline_keyboard": [
+                    [
+                        {
+                            "text": "✅ Correct",
+                            "callback_data": (f"nutrition:confirm:{reply.record_id}"),
+                        },
+                        {
+                            "text": "❌ Wrong",
+                            "callback_data": (f"nutrition:cancel:{reply.record_id}"),
+                        },
+                    ]
+                ]
+            }
         elif reply.status == "disambiguation" and reply.pending_id is not None:
             # One row per candidate keeps the record id in callback data, so
             # the user picks by reading the record instead of quoting a number.
@@ -1070,9 +1123,26 @@ class BotHandler(DeterministicCommandMixin):
         prefix = next(
             (value for value in food_prefixes if lowered.startswith(value)), None
         )
-        if prefix and any(
-            re.search(rf"\b{re.escape(term)}\b", lowered[len(prefix) :])
-            for term in food_terms
+        has_explicit_macros = bool(
+            re.search(r"\b\d+(?:\.\d+)?\s*(?:kcal|calories?|cals?)\b", lowered)
+            and (
+                re.search(
+                    r"\b\d+(?:\.\d+)?\s*(?:g|grams?)?\s*(?:of\s+)?protein\b",
+                    lowered,
+                )
+                or re.search(
+                    r"\bprotein\s*\d+(?:\.\d+)?\s*(?:g|grams?)?\b",
+                    lowered,
+                )
+            )
+        )
+        if (
+            prefix
+            and not has_explicit_macros
+            and any(
+                re.search(rf"\b{re.escape(term)}\b", lowered[len(prefix) :])
+                for term in food_terms
+            )
         ):
             rewritten = message.model_copy(
                 update={"text": f"/food {original[len(prefix):].strip()}"}
@@ -1097,6 +1167,21 @@ class BotHandler(DeterministicCommandMixin):
             actor.telegram_id,
         )
         if pending_id is not None:
+            replacement = self._clarification_replacement(text)
+            if replacement is not None:
+                await asyncio.to_thread(assistant.cancel, actor, pending_id)
+                if not replacement:
+                    return AssistantReply(
+                        "Okay, I dropped that request. Nothing was saved.",
+                        "cancelled",
+                    )
+                return await asyncio.to_thread(
+                    assistant.handle,
+                    actor,
+                    replacement,
+                    update_id=update_id,
+                    review_required=review_required,
+                )
             return await asyncio.to_thread(
                 assistant.answer_clarification,
                 actor,
@@ -1118,6 +1203,26 @@ class BotHandler(DeterministicCommandMixin):
             update_id=update_id,
             review_required=review_required,
         )
+
+    @staticmethod
+    def _clarification_replacement(text: str) -> str | None:
+        """Return a new request when the user explicitly abandons a question."""
+        match = re.match(
+            r"^\s*(?:forget\s+(?:it|that)|never\s*mind|nevermind|"
+            r"cancel\s+(?:it|that)|drop\s+(?:it|that)|leave\s+(?:it|that)|"
+            r"skip\s+(?:it|that))\b(?P<rest>.*)$",
+            text,
+            re.IGNORECASE,
+        )
+        if match is None:
+            return None
+        rest = re.sub(
+            r"^[\s,.;:—-]*(?:(?:and|but)\s+)?(?:just\s+)?",
+            "",
+            match.group("rest"),
+            flags=re.IGNORECASE,
+        )
+        return rest.strip()
 
     @staticmethod
     def _confirmation_response(text: str) -> bool | None:

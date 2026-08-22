@@ -265,6 +265,126 @@ def test_goal_progress_does_not_expose_database_decimal_scale(assistant_db):
     assert "0.000" not in reply.text
 
 
+def seed_expense(
+    factory,
+    owner_id: int,
+    *,
+    amount: str,
+    description: str,
+    category: str,
+    occurred_at: datetime,
+    key: str,
+) -> None:
+    with factory() as session:
+        DomainServices(session).create_ledger_entry(
+            owner_id,
+            LedgerCreate(
+                direction="expense",
+                amount=amount,
+                currency="INR",
+                description=description,
+                category=category,
+                transaction_at_local=occurred_at,
+                timezone="Asia/Kolkata",
+                capture_source="telegram_text",
+                idempotency_key=key,
+            ),
+        )
+        session.commit()
+
+
+def test_spending_queries_honor_period_search_and_category_ranking(assistant_db):
+    owner_id = seed_owner(assistant_db, ALICE)
+    seed_expense(
+        assistant_db,
+        owner_id,
+        amount="299",
+        description="mobile data recharge",
+        category="bills",
+        occurred_at=datetime(2026, 7, 5, 10, 0),
+        key="july-mobile",
+    )
+    seed_expense(
+        assistant_db,
+        owner_id,
+        amount="1200",
+        description="monthly groceries",
+        category="food",
+        occurred_at=datetime(2026, 7, 8, 10, 0),
+        key="july-groceries",
+    )
+    seed_expense(
+        assistant_db,
+        owner_id,
+        amount="999",
+        description="mobile data current month",
+        category="bills",
+        occurred_at=datetime(2026, 8, 3, 10, 0),
+        key="august-mobile",
+    )
+    provider = FakeProvider(
+        {
+            "confidence": 0.99,
+            "action": {
+                "kind": "query",
+                "query_type": "spending",
+                "timezone": "Asia/Kolkata",
+                "start_date": None,
+                "end_date": None,
+                "search": None,
+                "ranking": None,
+            },
+        },
+        {
+            "confidence": 0.99,
+            "action": {
+                "kind": "query",
+                "query_type": "spending",
+                "timezone": "Asia/Kolkata",
+                "start_date": None,
+                "end_date": None,
+                "search": None,
+                "ranking": "highest",
+            },
+        },
+        {
+            "confidence": 0.99,
+            "action": {
+                "kind": "query",
+                "query_type": "spending",
+                "timezone": "Asia/Kolkata",
+                "start_date": "2026-06-01",
+                "end_date": "2026-06-30",
+                "search": None,
+                "ranking": None,
+            },
+        },
+    )
+    assistant = build_assistant(
+        assistant_db,
+        provider,
+        clock=lambda: datetime(2026, 8, 22, 12, tzinfo=UTC),
+    )
+
+    mobile = assistant.handle(
+        ALICE,
+        "how much did I spend on mobile data last month",
+        update_id=201,
+    )
+    highest = assistant.handle(
+        ALICE,
+        "where did I spend the most last month",
+        update_id=202,
+    )
+    empty = assistant.handle(ALICE, "spending in June", update_id=203)
+
+    assert "299.00" in mobile.text
+    assert "999.00" not in mobile.text
+    assert "food" in highest.text
+    assert "1200.00" in highest.text
+    assert empty.text == "No expenses recorded for 2026-06-01 to 2026-06-30."
+
+
 def test_listing_work_logs_respects_a_date_window(assistant_db):
     owner_id = seed_owner(assistant_db, ALICE)
     with assistant_db() as session:

@@ -57,7 +57,11 @@ class DeterministicCommandMixin:
             image_url = settings.frontend_base_url.rstrip("/") + "/pr-agent-welcome.png"
         if image_url.startswith("https://"):
             try:
-                await self.telegram.send_photo(chat_id, image_url)
+                await self.telegram.send_photo(
+                    chat_id,
+                    image_url,
+                    queue_cleanup=False,
+                )
             except Exception:
                 # Onboarding text is the reliable fallback if Telegram cannot
                 # fetch the static asset during a deploy or CDN transition.
@@ -71,7 +75,7 @@ class DeterministicCommandMixin:
             )
         pin_tip = (
             "\n\n📌 <b>One-time tip:</b> Pin this chat in Telegram now. I remove "
-            "processed messages after about an hour to keep things tidy, and "
+            "processed messages after about two days to keep things tidy, and "
             "pinning the conversation keeps PR-Agent easy to find."
             if show_pin_tip and settings.message_cleanup_enabled
             else ""
@@ -94,6 +98,7 @@ class DeterministicCommandMixin:
             f"{self._privacy_sentence()}\n\n"
             "Typing works too. /help lists every command." + pin_tip,
             reply_markup=reply_markup,
+            queue_cleanup=False,
         )
 
     def _consume_pin_chat_tip(self, message: TelegramMessage) -> bool:
@@ -138,8 +143,8 @@ class DeterministicCommandMixin:
             "other user can read it.\n"
             "• Voice notes are transcribed by a third-party provider and the "
             "audio is not kept afterwards.\n"
-            "• Processed chat messages are removed after an hour unless you "
-            "pin them.\n"
+            "• Processed chat messages are removed after about two days unless "
+            "you pin them. The welcome message stays.\n"
             "• /export downloads everything held about you.\n"
             "• /deleteaccount permanently erases it." + link,
         )
@@ -177,7 +182,9 @@ class DeterministicCommandMixin:
             "/spending reports income and expenses for the current month. "
             "/nutrition lists today's meal estimates and totals. Times default "
             "to Asia/Kolkata for this deployment. Processed chat messages are "
-            "removed after one hour unless you pin them.\n\n"
+            "removed after about two days unless you pin them; the welcome "
+            "message stays. Natural-language requests are limited to 25 per "
+            "account per day, while direct slash commands remain available.\n\n"
             "Examples:\n"
             "<code>/log Finished tenant-isolation tests</code>\n"
             "<code>/note Ask HR about relocation</code>\n"
@@ -788,11 +795,15 @@ class DeterministicCommandMixin:
             )
             if log.clarification_question:
                 return (
-                    f"❓ <b>Food draft #{log.id}</b>\n"
-                    f"{escape(log.clarification_question)}\n\n"
-                    f"Original entry preserved. Use "
-                    f"<code>/savefoodnote {log.id}</code> to keep it "
-                    "without estimates."
+                    (
+                        f"❓ <b>Food draft #{log.id}</b>\n"
+                        f"{escape(log.clarification_question)}\n\n"
+                        f"Original entry preserved. Use "
+                        f"<code>/savefoodnote {log.id}</code> to keep it "
+                        "without estimates."
+                    ),
+                    log.status,
+                    log.id,
                 )
             lines = [
                 f"• {escape(item.normalized_name)}: "
@@ -810,18 +821,61 @@ class DeterministicCommandMixin:
             status_text = (
                 "Saved automatically using your preference."
                 if log.status == "confirmed"
-                else f"Confirm with <code>/confirmfood {log.id}</code>."
+                else "Tap Correct to count this meal, or Wrong to discard it."
             )
             return (
-                f"<b>Food preview #{log.id}</b>\n"
-                + "\n".join(lines)
-                + f"\n\nApproximately {log.total_calories} kcal, "
-                f"{log.total_protein_grams} g protein."
-                + assumption_text
-                + f"\n\n{status_text}"
+                (
+                    f"<b>Food preview #{log.id}</b>\n"
+                    + "\n".join(lines)
+                    + f"\n\nApproximately {log.total_calories} kcal, "
+                    f"{log.total_protein_grams} g protein."
+                    + assumption_text
+                    + f"\n\n{status_text}"
+                ),
+                log.status,
+                log.id,
             )
 
-        await self._domain_reply(message, operation)
+        try:
+            text, status, record_id = await asyncio.to_thread(
+                self._run_domain,
+                message,
+                operation,
+            )
+            reply_markup = (
+                {
+                    "inline_keyboard": [
+                        [
+                            {
+                                "text": "✅ Correct",
+                                "callback_data": f"nutrition:confirm:{record_id}",
+                            },
+                            {
+                                "text": "❌ Wrong",
+                                "callback_data": f"nutrition:cancel:{record_id}",
+                            },
+                        ]
+                    ]
+                }
+                if status == "draft"
+                else None
+            )
+            await self.telegram.send_message(
+                message.chat.get("id"),
+                text,
+                reply_markup=reply_markup,
+            )
+        except (DomainError, ValueError, InvalidOperation) as exc:
+            await self.telegram.send_message(
+                message.chat.get("id"),
+                f"❌ {escape(str(exc))}",
+            )
+        except Exception:
+            logger.exception("Food preview command failed")
+            await self.telegram.send_message(
+                message.chat.get("id"),
+                "❌ I could not estimate that meal. Please try again.",
+            )
 
     async def _v2_confirm_food(self, message: TelegramMessage) -> None:
         record_id = self._single_id(message)

@@ -636,6 +636,55 @@ class DomainServices:
             )[f"{direction}_minor"] = int(total)
         return [grouped[key] for key in sorted(grouped)]
 
+    def analyze_expenses(
+        self,
+        owner_id: int,
+        *,
+        start_date: date,
+        end_date: date,
+        search: str | None = None,
+    ) -> dict[str, Any]:
+        """Return exact owned expense totals and category aggregates."""
+        query = self.session.query(LedgerEntry).filter(
+            LedgerEntry.owner_id == owner_id,
+            LedgerEntry.direction == "expense",
+            LedgerEntry.user_local_date >= start_date,
+            LedgerEntry.user_local_date <= end_date,
+        )
+        if search:
+            pattern = f"%{search[:200]}%"
+            query = query.filter(
+                or_(
+                    LedgerEntry.description.ilike(pattern),
+                    LedgerEntry.category.ilike(pattern),
+                )
+            )
+        rows = query.order_by(LedgerEntry.transaction_at_utc.desc()).all()
+        totals: dict[str, dict[str, int]] = defaultdict(
+            lambda: {"amount_minor": 0, "count": 0}
+        )
+        categories: dict[tuple[str, str], dict[str, Any]] = defaultdict(
+            lambda: {"amount_minor": 0, "count": 0}
+        )
+        for row in rows:
+            totals[row.currency]["amount_minor"] += row.amount_minor
+            totals[row.currency]["count"] += 1
+            category = row.category or "uncategorized"
+            bucket = categories[(row.currency, category)]
+            bucket["amount_minor"] += row.amount_minor
+            bucket["count"] += 1
+        return {
+            "entries": rows,
+            "totals": [
+                {"currency": currency, **values}
+                for currency, values in sorted(totals.items())
+            ],
+            "categories": [
+                {"currency": currency, "category": category, **values}
+                for (currency, category), values in sorted(categories.items())
+            ],
+        }
+
     def update_ledger_entry(
         self, owner_id: int, record_id: int, data: LedgerUpdate
     ) -> LedgerEntry:
@@ -1151,6 +1200,8 @@ class DomainServices:
         owner_id: int,
         record_id: int,
         data: NutritionManualSave,
+        *,
+        confirm: bool = True,
     ) -> NutritionLog:
         draft = self.get_nutrition_log(owner_id, record_id)
         if draft.version != data.version:
@@ -1167,8 +1218,8 @@ class DomainServices:
         draft.provider_metadata = {"provider": "manual"}
         draft.visible_assumptions = data.visible_assumptions
         draft.clarification_question = None
-        draft.status = "confirmed"
-        draft.confirmed_by_user = True
+        draft.status = "confirmed" if confirm else "draft"
+        draft.confirmed_by_user = confirm
         draft.user_modified = True
         draft.version += 1
         self.session.flush()

@@ -45,6 +45,7 @@ from assistant.schemas import (
 )
 from domain.errors import DomainError, RecordNotFound
 from domain.schemas import (
+    EstimatedNutritionItem,
     GoalCreate,
     GoalUpdate,
     LedgerCreate,
@@ -52,6 +53,7 @@ from domain.schemas import (
     NoteCreate,
     NoteUpdate,
     NutritionDraftCreate,
+    NutritionManualSave,
     ReminderCreate,
     ReminderUpdate,
     SchedulePreferenceUpdate,
@@ -127,7 +129,7 @@ class BoundedAssistant:
         min_confidence: float = 0.8,
         pending_ttl_minutes: int = 30,
         max_input_length: int = 4000,
-        daily_ai_limit: int = 50,
+        daily_ai_limit: int = 25,
         daily_summary_limit: int = 30,
         global_daily_ai_limit: int = 0,
         clock: Callable[[], datetime] | None = None,
@@ -159,12 +161,7 @@ class BoundedAssistant:
                 "Please send a shorter, non-empty request.",
                 "rejected",
             )
-        if re.search(
-            r"\b(?:reset|delete|erase|remove)\b.*\b(?:account|everything|"
-            r"all\s+(?:of\s+)?(?:my\s+)?data)\b",
-            text,
-            re.IGNORECASE,
-        ):
+        if self._is_direct_account_reset_request(text):
             return AssistantReply(
                 "For safety, voice and ordinary chat can never erase your whole "
                 "account. If you intend a permanent reset, type "
@@ -196,6 +193,33 @@ class BoundedAssistant:
                 idempotency_key,
                 vault_capture,
             )
+        manual_nutrition = self._parse_manual_nutrition(text)
+        if manual_nutrition is not None:
+            owner_id, run_id, default_timezone = self._start_run(
+                actor,
+                text,
+                update_id,
+                consume_ai_quota=False,
+            )
+            proposal = AgentProposal(
+                confidence=1,
+                action=CreateNutritionAction(
+                    kind="create_nutrition_log",
+                    text=text,
+                    meal_name=manual_nutrition["meal_name"],
+                    timezone=default_timezone,
+                    calories=manual_nutrition["calories"],
+                    protein_grams=manual_nutrition["protein_grams"],
+                ),
+            )
+            return self._apply_proposal(
+                owner_id,
+                run_id,
+                proposal,
+                update_id=update_id,
+                idempotency_key=idempotency_key,
+                review_required=review_required,
+            )
         try:
             owner_id, run_id, default_timezone = self._start_run(actor, text, update_id)
         except GlobalQuotaExceeded:
@@ -219,6 +243,11 @@ class BoundedAssistant:
         try:
             raw = self.provider.classify(text, context=context)
             proposal = AgentProposal.model_validate(raw)
+            proposal = self._normalize_contextual_queries(
+                proposal,
+                text,
+                default_timezone,
+            )
         except ValidationError:
             self._fail_run(run_id, "invalid_provider_schema")
             return AssistantReply(
@@ -241,6 +270,133 @@ class BoundedAssistant:
             idempotency_key=idempotency_key,
             review_required=review_required,
         )
+
+    def _normalize_contextual_queries(
+        self,
+        proposal: AgentProposal,
+        text: str,
+        default_timezone: str,
+    ) -> AgentProposal:
+        """Make explicit time/ranking words authoritative over model omissions."""
+        normalized = " ".join(text.casefold().split())
+        rewritten = []
+        for action in proposal.proposed_actions:
+            if not isinstance(action, QueryAction) or action.query_type != "spending":
+                rewritten.append(action)
+                continue
+            updates = {}
+            try:
+                zone = ZoneInfo(action.timezone or default_timezone)
+            except Exception:
+                zone = ZoneInfo(default_timezone)
+            today = self.clock().astimezone(zone).date()
+            if "last month" in normalized:
+                previous_end = today.replace(day=1) - timedelta(days=1)
+                updates.update(
+                    start_date=previous_end.replace(day=1),
+                    end_date=previous_end,
+                )
+            elif "this month" in normalized:
+                updates.update(start_date=today.replace(day=1), end_date=today)
+            if action.ranking is None:
+                if re.search(r"\b(?:most|highest|maximum)\b", normalized):
+                    updates["ranking"] = "highest"
+                elif re.search(r"\b(?:least|lowest|minimum)\b", normalized):
+                    updates["ranking"] = "lowest"
+            if action.search is None:
+                match = re.search(
+                    r"\b(?:spend|spent)\s+on\s+(?P<search>.+?)\s+"
+                    r"(?:this|last)\s+month\b",
+                    normalized,
+                )
+                if match:
+                    updates["search"] = match.group("search").strip(' ,.?"')[:200]
+            rewritten.append(action.model_copy(update=updates) if updates else action)
+        return proposal.model_copy(
+            update={
+                "action": rewritten[0] if proposal.action is not None else None,
+                "actions": rewritten if proposal.actions is not None else None,
+            }
+        )
+
+    @staticmethod
+    def _is_direct_account_reset_request(text: str) -> bool:
+        """Recognise a direct reset request without scanning quoted note data."""
+        normalized = " ".join(text.casefold().split())
+        if re.match(
+            r"^(?:create|save|write|remember|add|make)\b.*\b(?:note|log)\b",
+            normalized,
+        ):
+            return False
+        return bool(
+            re.match(
+                r"^(?:please\s+)?(?:i\s+(?:want|need|would\s+like)\s+"
+                r"(?:you\s+)?to\s+)?(?:reset|delete|erase|remove)\b",
+                normalized,
+            )
+            and re.search(
+                r"\b(?:account|everything|all\s+(?:of\s+)?(?:my\s+)?data|"
+                r"all\s+(?:of\s+)?(?:my\s+)?records)\b",
+                normalized,
+            )
+        )
+
+    @staticmethod
+    def _parse_manual_nutrition(text: str) -> dict[str, Decimal | str] | None:
+        """Extract exact whole-meal macros the user explicitly supplied."""
+        if not re.search(
+            r"^\s*(?:i\s+)?(?:ate|had|consumed)\b|^\s*(?:log|add|record)\b.*\bfood\b",
+            text,
+            re.IGNORECASE,
+        ):
+            return None
+        calorie_match = re.search(
+            r"(?P<value>\d+(?:\.\d+)?)\s*(?:kcal|calories?|cals?)\b",
+            text,
+            re.IGNORECASE,
+        )
+        protein_match = re.search(
+            r"(?P<value>\d+(?:\.\d+)?)\s*(?:g|grams?)?\s*(?:of\s+)?protein\b",
+            text,
+            re.IGNORECASE,
+        ) or re.search(
+            r"\bprotein\s*(?P<value>\d+(?:\.\d+)?)\s*(?:g|grams?)?\b",
+            text,
+            re.IGNORECASE,
+        )
+        if calorie_match is None or protein_match is None:
+            return None
+        cleaned = re.sub(
+            r"\b\d+(?:\.\d+)?\s*(?:kcal|calories?|cals?)\b",
+            " ",
+            text,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(
+            r"\b\d+(?:\.\d+)?\s*(?:g|grams?)?\s*(?:of\s+)?protein\b|"
+            r"\bprotein\s*\d+(?:\.\d+)?\s*(?:g|grams?)?\b",
+            " ",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(
+            r"^\s*(?:i\s+)?(?:ate|had|consumed)\s+",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(
+            r"\b(?:with|and|containing|which has|that has)\b",
+            " ",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        meal_name = " ".join(cleaned.strip(" ,.;:-").split()) or "User-described meal"
+        return {
+            "meal_name": meal_name[:128],
+            "calories": Decimal(calorie_match.group("value")),
+            "protein_grams": Decimal(protein_match.group("value")),
+        }
 
     # Two questions is generous for a bounded tracker. Anything beyond that is
     # a provider that cannot converge, not a user who is being unclear.
@@ -533,6 +689,7 @@ class BoundedAssistant:
                     return AssistantReply("That review is already closed.", "completed")
                 service = DomainServices(session)
                 results: list[str] = []
+                nutrition_reply: AssistantReply | None = None
                 for index, action in enumerate(actions, start=1):
                     if isinstance(action, DeleteRecordAction):
                         try:
@@ -554,6 +711,8 @@ class BoundedAssistant:
                         action,
                     )
                     results.append(reply.text)
+                    if reply.status == "nutrition_confirmation":
+                        nutrition_reply = reply
                 current.state = "executed"
                 current.resolved_at_utc = self.clock()
                 self._update_action(
@@ -569,12 +728,82 @@ class BoundedAssistant:
                 session.commit()
         except (DomainError, ValueError) as exc:
             return AssistantReply(escape(str(exc)), "failed", pending_id=pending.id)
+        text = "Confirmed and saved:\n" + "\n".join(
+            f"{index}. {result}" for index, result in enumerate(results, start=1)
+        )
+        if nutrition_reply is not None:
+            return AssistantReply(
+                text,
+                "nutrition_confirmation",
+                "nutrition_log",
+                nutrition_reply.record_id,
+            )
+        return AssistantReply(text, "completed")
+
+    def confirm_nutrition_preview(
+        self,
+        actor: ActorContext,
+        record_id: int,
+    ) -> AssistantReply:
+        """Confirm one draft, scoped only to the Telegram account that tapped."""
+        with self.session_factory() as session:
+            service = DomainServices(session)
+            try:
+                owner = service.get_owner_by_telegram_id(actor.telegram_id)
+                current = service.get_nutrition_log(owner.id, record_id)
+                if current.status == "confirmed":
+                    return AssistantReply(
+                        "That meal was already confirmed.",
+                        "completed",
+                        "nutrition_log",
+                        current.id,
+                    )
+                row = service.confirm_nutrition_log(
+                    owner.id,
+                    current.id,
+                    current.version,
+                )
+            except RecordNotFound:
+                return AssistantReply(
+                    "That food preview is not available for this account.",
+                    "rejected",
+                )
+            session.commit()
+            return AssistantReply(
+                f"Food log #{row.id} confirmed: approximately "
+                f"{row.total_calories} kcal and "
+                f"{row.total_protein_grams} g protein.",
+                "completed",
+                "nutrition_log",
+                row.id,
+            )
+
+    def cancel_nutrition_preview(
+        self,
+        actor: ActorContext,
+        record_id: int,
+    ) -> AssistantReply:
+        """Discard an owned draft so a Wrong tap leaves no nutrition record."""
+        with self.session_factory() as session:
+            service = DomainServices(session)
+            try:
+                owner = service.get_owner_by_telegram_id(actor.telegram_id)
+                current = service.get_nutrition_log(owner.id, record_id)
+                if current.status != "draft":
+                    return AssistantReply(
+                        "Only an unconfirmed food preview can be discarded.",
+                        "rejected",
+                    )
+                service.delete_nutrition_log(owner.id, current.id)
+            except RecordNotFound:
+                return AssistantReply(
+                    "That food preview is not available for this account.",
+                    "rejected",
+                )
+            session.commit()
         return AssistantReply(
-            "Confirmed and saved:\n"
-            + "\n".join(
-                f"{index}. {result}" for index, result in enumerate(results, start=1)
-            ),
-            "completed",
+            "Food preview discarded. Nothing was counted.",
+            "cancelled",
         )
 
     def cancel(self, actor: ActorContext, pending_id: int) -> AssistantReply:
@@ -745,6 +974,19 @@ class BoundedAssistant:
         )
         if early_reply is not None:
             return early_reply
+
+        # A nutrition preview is itself the review surface: it contains the
+        # interpreted food, item estimates, totals, and assumptions. Creating
+        # the draft here avoids a confusing review followed by a second
+        # /confirmfood step. Drafts never count toward daily totals.
+        if len(actions) == 1 and isinstance(actions[0], CreateNutritionAction):
+            return self._execute(
+                owner_id,
+                run_id,
+                idempotency_key,
+                actions[0],
+                replace_existing=replace_existing,
+            )
 
         # Reading owned records or answering conversationally cannot change
         # anything, so neither the review step nor the confidence floor applies.
@@ -2025,29 +2267,77 @@ class BoundedAssistant:
                 row.id,
             )
         if isinstance(action, CreateNutritionAction):
-            row = service.estimate_nutrition_draft(
-                owner_id,
-                NutritionDraftCreate(
-                    original_text=action.text,
-                    meal_name=action.meal_name,
-                    timezone=action.timezone,
-                    idempotency_key=idempotency_key,
-                ),
-                self.nutrition_provider,
+            draft_data = NutritionDraftCreate(
+                original_text=action.text,
+                meal_name=action.meal_name,
+                timezone=action.timezone,
+                idempotency_key=idempotency_key,
             )
+            if action.calories is not None and action.protein_grams is not None:
+                row = service.create_nutrition_draft(owner_id, draft_data)
+                assumption = "Calories and protein were entered by the user."
+                row = service.apply_manual_nutrition(
+                    owner_id,
+                    row.id,
+                    NutritionManualSave(
+                        version=row.version,
+                        items=[
+                            EstimatedNutritionItem(
+                                original_item_text=action.text[:1000],
+                                normalized_name=(
+                                    action.meal_name or "User-described meal"
+                                ),
+                                quantity_value=Decimal("1"),
+                                quantity_unit="serving",
+                                portion_description="User-entered serving",
+                                calories=action.calories,
+                                protein_grams=action.protein_grams,
+                                visible_assumptions=[assumption],
+                                confidence=Decimal("1"),
+                            )
+                        ],
+                        visible_assumptions=[assumption],
+                    ),
+                    confirm=False,
+                )
+            else:
+                row = service.estimate_nutrition_draft(
+                    owner_id,
+                    draft_data,
+                    self.nutrition_provider,
+                )
             if row.clarification_question:
                 text = (
                     f"Food draft #{row.id} saved. "
                     f"{escape(row.clarification_question)}"
                 )
             else:
-                text = (
-                    f"Food draft #{row.id}: approximately "
-                    f"{row.total_calories} kcal and "
-                    f"{row.total_protein_grams} g protein. "
-                    f"Confirm with /confirmfood {row.id}."
+                item_lines = "\n".join(
+                    f"• {escape(item.normalized_name)}: "
+                    f"{item.calories} kcal, {item.protein_grams} g protein"
+                    for item in row.items
                 )
-            return AssistantReply(text, "completed", "nutrition_log", row.id)
+                assumptions = "\n".join(
+                    f"• {escape(value)}" for value in row.visible_assumptions
+                )
+                assumption_text = (
+                    f"\n\n<b>Assumptions</b>\n{assumptions}" if assumptions else ""
+                )
+                text = (
+                    f"<b>Food preview #{row.id}</b>\n"
+                    f"You said: {escape(action.text)}\n\n"
+                    f"{item_lines}\n\n"
+                    f"Total: approximately {row.total_calories} kcal and "
+                    f"{row.total_protein_grams} g protein."
+                    f"{assumption_text}\n\n"
+                    "Tap Correct to count this meal, or Wrong to discard it."
+                )
+            status = (
+                "completed"
+                if row.status == "confirmed" or row.clarification_question
+                else "nutrition_confirmation"
+            )
+            return AssistantReply(text, status, "nutrition_log", row.id)
         if isinstance(action, CreateGoalAction):
             row = service.create_goal(
                 owner_id,
@@ -2499,15 +2789,65 @@ class BoundedAssistant:
                 + "; ".join(escape(row.original_text[:120]) for row in rows)
             )
         if action.query_type == "spending":
-            start = today.replace(day=1)
+            start = action.start_date or today.replace(day=1)
+            end = action.end_date or today
+            if end < start:
+                return "The requested spending period is invalid."
+            analysis = service.analyze_expenses(
+                owner_id,
+                start_date=start,
+                end_date=end,
+                search=action.search,
+            )
+            period = (
+                "this month"
+                if start == today.replace(day=1) and end == today
+                else f"{start.isoformat()} to {end.isoformat()}"
+            )
+            if not analysis["entries"]:
+                matching = (
+                    f" matching “{escape(action.search)}”" if action.search else ""
+                )
+                return f"No expenses recorded for {period}{matching}."
+            if action.ranking:
+                label = "Most" if action.ranking == "highest" else "Least"
+                lines = []
+                currencies = sorted({row["currency"] for row in analysis["categories"]})
+                for currency in currencies:
+                    candidates = [
+                        row
+                        for row in analysis["categories"]
+                        if row["currency"] == currency
+                    ]
+                    selected = (
+                        max(candidates, key=lambda row: row["amount_minor"])
+                        if action.ranking == "highest"
+                        else min(candidates, key=lambda row: row["amount_minor"])
+                    )
+                    lines.append(
+                        f"{escape(selected['category'])}: {currency} "
+                        f"{self._major_amount(selected['amount_minor'], currency)} "
+                        f"across {selected['count']} expense"
+                        f"{'s' if selected['count'] != 1 else ''}"
+                    )
+                return f"{label} spending category for {period}: " + "; ".join(lines)
+            if action.search:
+                return (
+                    f"Spending matching “{escape(action.search)}” for {period}: "
+                    + "; ".join(
+                        f"{row['currency']} "
+                        f"{self._major_amount(row['amount_minor'], row['currency'])} "
+                        f"across {row['count']} expense"
+                        f"{'s' if row['count'] != 1 else ''}"
+                        for row in analysis["totals"]
+                    )
+                )
             totals = service.summarize_ledger(
                 owner_id,
                 start_date=start,
-                end_date=today,
+                end_date=end,
             )
-            if not totals:
-                return "No ledger entries this month."
-            return "This month: " + "; ".join(
+            return f"Ledger summary for {period}: " + "; ".join(
                 f"{row['currency']} expenses "
                 f"{self._major_amount(row['expense_minor'], row['currency'])}, "
                 f"income {self._major_amount(row['income_minor'], row['currency'])}"

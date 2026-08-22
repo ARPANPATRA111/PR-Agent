@@ -53,20 +53,13 @@ services:
       - key: MESSAGE_CLEANUP_ENABLED
         value: "true"
       - key: MESSAGE_CLEANUP_DELAY_SECONDS
-        value: "3600"
-      # Daily quotas are intentionally OFF while the user base is small: a
-      # refusal costs more than the provider spend it saves. The values below
-      # stay configured so that flipping QUOTAS_ENABLED back to true is the
-      # only change needed once usage grows.
-      #
-      # The per-minute request rate limit is separate and still applies, so a
-      # runaway client or retry loop is still contained.
+        value: "172800"
+      # Public natural-language usage is capped per Telegram account. Direct
+      # slash commands remain available after the daily AI allowance is used.
       - key: QUOTAS_ENABLED
-        value: "false"
+        value: "true"
       - key: PER_USER_DAILY_AI_LIMIT
-        # Temporary manual-test allowance. Restore to 200 after the current
-        # one-to-two-day voice test run.
-        value: "500"
+        value: "25"
       - key: PER_USER_DAILY_NUTRITION_LIMIT
         value: "100"
       - key: PER_USER_DAILY_SUMMARY_LIMIT

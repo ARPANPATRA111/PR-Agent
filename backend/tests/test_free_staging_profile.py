@@ -41,7 +41,9 @@ def test_free_blueprint_contains_only_free_api_and_static_site():
     assert environment["WHISPER_MODEL"] == "whisper-large-v3-turbo"
     assert environment["NUTRITION_PROVIDER"] == "groq"
     assert environment["MESSAGE_CLEANUP_ENABLED"] == "true"
-    assert environment["MESSAGE_CLEANUP_DELAY_SECONDS"] == "3600"
+    assert environment["MESSAGE_CLEANUP_DELAY_SECONDS"] == "172800"
+    assert environment["QUOTAS_ENABLED"] == "true"
+    assert environment["PER_USER_DAILY_AI_LIMIT"] == "25"
     secret_entries = {
         item["key"]: item
         for item in services[0]["envVars"]

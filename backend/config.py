@@ -93,7 +93,7 @@ class Settings(BaseSettings):
         description="Queue processed Telegram messages for best-effort deletion",
     )
     message_cleanup_delay_seconds: int = Field(
-        default=3600,
+        default=172800,
         ge=0,
         le=604800,
         description="Retention delay before Telegram message deletion",
@@ -154,7 +154,7 @@ class Settings(BaseSettings):
         le=5000,
     )
     per_user_daily_text_limit: int = Field(default=250, ge=1, le=10000)
-    per_user_daily_ai_limit: int = Field(default=50, ge=1, le=5000)
+    per_user_daily_ai_limit: int = Field(default=25, ge=1, le=5000)
     per_user_daily_nutrition_limit: int = Field(default=50, ge=1, le=1000)
     per_user_daily_summary_limit: int = Field(default=30, ge=1, le=1000)
     per_user_daily_export_limit: int = Field(default=5, ge=1, le=100)

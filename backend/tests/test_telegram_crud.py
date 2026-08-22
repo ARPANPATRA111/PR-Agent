@@ -117,8 +117,13 @@ async def test_public_update_does_not_require_legacy_user_table(
     assert "microphone" in greeting.lower()
     assert "Pin this chat" in greeting
     assert bot.telegram.photos == [
-        (9001, "https://mini.example/pr-agent-welcome.png", {})
+        (
+            9001,
+            "https://mini.example/pr-agent-welcome.png",
+            {"queue_cleanup": False},
+        )
     ]
+    assert bot.telegram.message_options[-1]["queue_cleanup"] is False
 
     await bot.handle_update(
         TelegramUpdate(update_id=9002, message=telegram_message("/start", 501)),
@@ -524,7 +529,9 @@ async def test_food_preview_confirm_edit_summary_and_delete(
         )
     )
     assert "approximately" in bot.telegram.messages[-1].lower()
-    assert "/confirmfood 1" in bot.telegram.messages[-1]
+    keyboard = bot.telegram.message_options[-1]["reply_markup"]["inline_keyboard"]
+    assert keyboard[0][0]["callback_data"] == "nutrition:confirm:1"
+    assert keyboard[0][1]["callback_data"] == "nutrition:cancel:1"
 
     await bot._handle_command(telegram_message("/confirmfood 1", 41))
     await bot._handle_command(telegram_message("/editfood 1 1 100 g 300 20", 42))
@@ -537,6 +544,45 @@ async def test_food_preview_confirm_edit_summary_and_delete(
         assert session.query(NutritionLog).count() == 0
     finally:
         session.close()
+
+
+@pytest.mark.asyncio
+async def test_explicit_clarification_abandonment_starts_the_new_request(
+    bot_and_factory,
+):
+    bot, _ = bot_and_factory
+
+    class SwitchingAssistant:
+        def __init__(self):
+            self.cancelled = []
+            self.handled = []
+
+        def open_clarification_id(self, telegram_id):
+            assert telegram_id == 1001
+            return 81
+
+        def cancel(self, actor, pending_id):
+            self.cancelled.append((actor.telegram_id, pending_id))
+            return AssistantReply("Cancelled", "cancelled")
+
+        def handle(self, actor, text, *, update_id, review_required=False):
+            self.handled.append((actor.telegram_id, text, update_id))
+            return AssistantReply("Here are your notes.", "completed")
+
+        def answer_clarification(self, *args, **kwargs):
+            raise AssertionError("the abandoned clarification must not be answered")
+
+    assistant = SwitchingAssistant()
+    bot.bounded_assistant = assistant
+    reply = await bot._interpret(
+        telegram_message("Forget that and just show me all my notes", 46),
+        "Forget that and just show me all my notes",
+        update_id=9046,
+    )
+
+    assert reply.text == "Here are your notes."
+    assert assistant.cancelled == [(1001, 81)]
+    assert assistant.handled == [(1001, "show me all my notes", 9046)]
 
 
 @pytest.mark.asyncio

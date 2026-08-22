@@ -50,6 +50,26 @@ class CreateNutritionAction(StrictAction):
     text: str = Field(min_length=1, max_length=10_000)
     meal_name: str | None = Field(default=None, min_length=1, max_length=128)
     timezone: str = Field(default="UTC", min_length=1, max_length=64)
+    calories: Decimal | None = Field(
+        default=None,
+        ge=0,
+        max_digits=12,
+        decimal_places=2,
+    )
+    protein_grams: Decimal | None = Field(
+        default=None,
+        ge=0,
+        max_digits=12,
+        decimal_places=3,
+    )
+
+    @model_validator(mode="after")
+    def manual_macros_are_a_complete_pair(self):
+        if (self.calories is None) != (self.protein_grams is None):
+            raise ValueError(
+                "User-supplied calories and protein must be provided together"
+            )
+        return self
 
 
 class CreateGoalAction(StrictAction):
@@ -64,6 +84,21 @@ class QueryAction(StrictAction):
     kind: Literal["query"]
     query_type: Literal["today", "week", "spending", "nutrition", "goals"]
     timezone: str = Field(default="UTC", min_length=1, max_length=64)
+    start_date: date | None = None
+    end_date: date | None = None
+    search: str | None = Field(default=None, min_length=1, max_length=200)
+    ranking: Literal["highest", "lowest"] | None = None
+
+    @model_validator(mode="after")
+    def query_period_is_ordered(self):
+        if self.start_date and self.end_date and self.end_date < self.start_date:
+            raise ValueError("end_date cannot be before start_date")
+        if self.query_type != "spending" and any(
+            value is not None
+            for value in (self.start_date, self.end_date, self.search, self.ranking)
+        ):
+            raise ValueError("Spending filters are only valid for spending queries")
+        return self
 
 
 RecordType = Literal[

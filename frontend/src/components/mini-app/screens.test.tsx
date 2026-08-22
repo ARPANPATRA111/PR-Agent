@@ -5,7 +5,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   AccountDeletionScreen,
   GoalsScreen,
+  MoneyScreen,
   NotesScreen,
+  NutritionScreen,
   SettingsScreen,
   VaultScreen,
   WorkLogsScreen,
@@ -174,6 +176,105 @@ describe('important Mini App forms', () => {
     expect(await screen.findByText('Improve voice-native tracking.')).toBeInTheDocument();
     expect(screen.getByText(/0 \/ 20 scenarios/)).toBeInTheDocument();
     expect(posted).toMatchObject({ description: 'Improve voice-native tracking.' });
+  });
+
+  it('shows historical transactions first and makes categories visible', async () => {
+    const requestedUrls: string[] = [];
+    const timestamp = new Date().toISOString();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (urlValue: string) => {
+        const url = String(urlValue);
+        requestedUrls.push(url);
+        if (url.includes('/ledger/summary')) return jsonResponse([]);
+        return jsonResponse([
+          {
+            id: 7,
+            version: 1,
+            direction: 'expense',
+            amount_minor: 29900,
+            currency: 'INR',
+            category: 'Bills',
+            description: 'Mobile data recharge',
+            transaction_at_utc: timestamp,
+            user_local_date: '2026-07-05',
+            timezone: 'Asia/Kolkata',
+            capture_source: 'telegram_text',
+            created_at: timestamp,
+            updated_at: timestamp,
+          },
+        ]);
+      }),
+    );
+    const user = userEvent.setup();
+    render(<MoneyScreen />);
+
+    expect(await screen.findByText('Mobile data recharge')).toBeInTheDocument();
+    expect(screen.getByText('Bills')).toBeInTheDocument();
+    expect(requestedUrls.some((url) => url.endsWith('/api/v2/ledger?limit=100'))).toBe(true);
+
+    await user.click(screen.getByRole('button', { name: 'One month' }));
+    await waitFor(() =>
+      expect(requestedUrls.some((url) => url.includes('start_date='))).toBe(true),
+    );
+  });
+
+  it('shows a previous-day meal in recent history instead of appearing empty', async () => {
+    const timestamp = new Date().toISOString();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (urlValue: string) => {
+        const url = String(urlValue);
+        if (url.includes('/nutrition/summary')) {
+          return jsonResponse({
+            start_date: '2026-08-22',
+            end_date: '2026-08-22',
+            confirmed_meals: 0,
+            unestimated_meals: 0,
+            total_calories: '0',
+            total_protein_grams: '0',
+            total_carbohydrate_grams: '0',
+            total_fat_grams: '0',
+            average_daily_calories: '0',
+            average_daily_protein_grams: '0',
+            calorie_target: null,
+            protein_target_grams: null,
+          });
+        }
+        return jsonResponse([
+          {
+            id: 8,
+            version: 2,
+            meal_name: 'Dinner',
+            logged_at_utc: timestamp,
+            user_local_date: '2026-08-21',
+            timezone: 'Asia/Kolkata',
+            original_text: 'Two rotis and dal',
+            status: 'confirmed',
+            total_calories: '430',
+            total_protein_grams: '18',
+            total_carbohydrate_grams: '60',
+            total_fat_grams: '10',
+            estimation_source: 'reference:test',
+            overall_confidence: '0.8',
+            visible_assumptions: [],
+            provider_metadata: {},
+            clarification_question: null,
+            confirmed_by_user: true,
+            user_modified: false,
+            items: [],
+            created_at: timestamp,
+            updated_at: timestamp,
+          },
+        ]);
+      }),
+    );
+
+    render(<NutritionScreen />);
+
+    expect(await screen.findByText('Two rotis and dal')).toBeInTheDocument();
+    expect(screen.getByText('2026-08-21')).toBeInTheDocument();
+    expect(screen.getByText(/latest 100 meals across all dates/i)).toBeInTheDocument();
   });
 
   it('requires typed, checked, and final confirmation for account deletion', async () => {
