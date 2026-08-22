@@ -154,6 +154,7 @@ class BoundedAssistant:
         *,
         update_id: int,
         review_required: bool = False,
+        quota_reserved: bool = False,
     ) -> AssistantReply:
         text = text.strip()
         if not text or len(text) > self.max_input_length:
@@ -221,7 +222,13 @@ class BoundedAssistant:
                 review_required=review_required,
             )
         try:
-            owner_id, run_id, default_timezone = self._start_run(actor, text, update_id)
+            owner_id, run_id, default_timezone = self._start_run(
+                actor,
+                text,
+                update_id,
+                consume_ai_quota=not quota_reserved,
+                provider_used=True,
+            )
         except GlobalQuotaExceeded:
             return AssistantReply(
                 "I am at capacity right now and cannot interpret new requests "
@@ -454,6 +461,8 @@ class BoundedAssistant:
         actor: ActorContext,
         pending_id: int,
         answer: str,
+        *,
+        quota_reserved: bool = False,
     ) -> AssistantReply:
         pending = self._load_pending(actor.telegram_id, pending_id)
         if pending is None:
@@ -478,14 +487,23 @@ class BoundedAssistant:
             "clarification_round": pending.version,
             "final_round": pending.version >= self.MAX_CLARIFICATION_ROUNDS,
         }
-        try:
-            self._consume_ai_quota(pending.owner_id)
-        except QuotaExceeded:
-            return AssistantReply(
-                "Your daily assistant limit has been reached.",
-                "rejected",
-                pending_id=pending_id,
-            )
+        if not quota_reserved:
+            try:
+                self._consume_ai_quota(pending.owner_id)
+            except GlobalQuotaExceeded:
+                return AssistantReply(
+                    "I am at capacity right now and cannot interpret new requests "
+                    "today. Slash commands still work, and this resets at midnight "
+                    "UTC.",
+                    "rejected",
+                    pending_id=pending_id,
+                )
+            except QuotaExceeded:
+                return AssistantReply(
+                    "Your daily assistant limit has been reached.",
+                    "rejected",
+                    pending_id=pending_id,
+                )
         try:
             proposal = AgentProposal.model_validate(
                 self.provider.classify(answer.strip(), context=context)
@@ -840,7 +858,10 @@ class BoundedAssistant:
         update_id: int,
         *,
         consume_ai_quota: bool = True,
+        provider_used: bool | None = None,
     ) -> tuple[int, int, str]:
+        if provider_used is None:
+            provider_used = consume_ai_quota
         with self.session_factory() as session:
             service = DomainServices(session)
             owner = service.ensure_owner(
@@ -864,8 +885,8 @@ class BoundedAssistant:
             default_timezone = service.get_schedule_preferences(owner.id)["timezone"]
             run = AgentRun(
                 owner_id=owner.id,
-                provider=(self.provider.provider_name if consume_ai_quota else "local"),
-                model=(self.provider.model_name[:128] if consume_ai_quota else "vault"),
+                provider=(self.provider.provider_name if provider_used else "local"),
+                model=(self.provider.model_name[:128] if provider_used else "vault"),
                 input_hash=sha256(text.encode("utf-8")).hexdigest(),
                 original_update_id=update_id,
             )
@@ -875,11 +896,17 @@ class BoundedAssistant:
 
     def _consume_ai_quota(self, owner_id: int) -> None:
         with self.session_factory() as session:
-            QuotaService(session).require(
+            quotas = QuotaService(session)
+            quotas.require(
                 owner_id,
                 "ai_classifications",
                 limit=self.daily_ai_limit,
             )
+            if self.global_daily_ai_limit > 0:
+                quotas.require_global(
+                    "ai_classifications",
+                    limit=self.global_daily_ai_limit,
+                )
             session.commit()
 
     def _apply_proposal(

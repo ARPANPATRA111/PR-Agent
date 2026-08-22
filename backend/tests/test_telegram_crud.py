@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import bot as bot_module
 from bot import BotHandler
 from assistant import AssistantReply
 from config import settings
@@ -18,6 +19,7 @@ from public_models import (
     NutritionLog,
     PublicBase,
     PublicUser,
+    RateLimitBucket,
     Reminder,
     TrackedGoal,
     WorkLog,
@@ -87,6 +89,28 @@ def telegram_message(text: str, message_id: int = 1) -> TelegramMessage:
                 "username": "public_user",
             },
             "text": text,
+        }
+    )
+
+
+def telegram_voice(message_id: int = 1) -> TelegramMessage:
+    return TelegramMessage.model_validate(
+        {
+            "message_id": message_id,
+            "date": int(datetime.now(timezone.utc).timestamp()),
+            "chat": {"id": 9001, "type": "private"},
+            "from": {
+                "id": 1001,
+                "first_name": "Public",
+                "username": "public_user",
+            },
+            "voice": {
+                "file_id": f"voice-{message_id}",
+                "file_unique_id": f"unique-{message_id}",
+                "duration": 10,
+                "mime_type": "audio/ogg",
+                "file_size": 4096,
+            },
         }
     )
 
@@ -315,6 +339,59 @@ async def test_explicit_crud_commands_work_with_ai_provider_down(bot_and_factory
 
 
 @pytest.mark.asyncio
+async def test_help_lists_only_the_enabled_public_command_surface(
+    bot_and_factory,
+    monkeypatch,
+):
+    bot, _ = bot_and_factory
+    monkeypatch.setattr(settings, "vault_enabled", False)
+
+    await bot._cmd_help(telegram_message("/help", 49))
+
+    help_text = bot.telegram.messages[-1]
+    assert "/expense AMOUNT CURRENCY DESCRIPTION" in help_text
+    assert "/remind once YYYY-MM-DD HH:MM TIMEZONE TEXT" in help_text
+    assert "25-request daily allowance" in help_text
+    assert "voice is stopped before transcription" in help_text
+    assert "Free staging availability" not in help_text
+    assert "/vault" not in help_text
+    for internal_command in (
+        "/confirmfood",
+        "/answeragent",
+        "/confirmagent",
+        "/cancelagent",
+        "/deleteaccount",
+        "/resetmydata",
+    ):
+        assert internal_command not in help_text
+
+    monkeypatch.setattr(settings, "vault_enabled", True)
+    await bot._cmd_help(telegram_message("/help", 50))
+    assert "/vault" in bot.telegram.messages[-1]
+
+
+@pytest.mark.asyncio
+async def test_telegram_menu_hides_the_vault_until_it_is_enabled(monkeypatch):
+    client = bot_module.TelegramClient("test-token")
+    published: list[list[dict[str, str]]] = []
+
+    async def publish(method, endpoint, *, json=None, **kwargs):
+        del method, kwargs
+        assert endpoint == "setMyCommands"
+        published.append((json or {})["commands"])
+        return {"ok": True}
+
+    monkeypatch.setattr(client, "_request_with_retry", publish)
+    monkeypatch.setattr(settings, "vault_enabled", False)
+    await client.set_my_commands()
+    assert "vault" not in {item["command"] for item in published[-1]}
+
+    monkeypatch.setattr(settings, "vault_enabled", True)
+    await client.set_my_commands()
+    assert "vault" in {item["command"] for item in published[-1]}
+
+
+@pytest.mark.asyncio
 async def test_plain_text_fails_closed_when_bounded_assistant_is_disabled(
     bot_and_factory,
     monkeypatch,
@@ -421,6 +498,62 @@ async def test_plain_text_uses_only_bounded_assistant_context(
     assert text == "Completed the login screen"
     assert update_id == 501
     assert bot.telegram.messages[-1] == "Safe action completed."
+
+
+@pytest.mark.asyncio
+async def test_daily_ai_limit_blocks_voice_before_transcription(
+    bot_and_factory,
+    monkeypatch,
+):
+    bot, factory = bot_and_factory
+    transcriptions: list[str] = []
+
+    class VoiceAssistant:
+        def open_clarification_id(self, telegram_id):
+            assert telegram_id == 1001
+            return None
+
+        def open_confirmation_id(self, telegram_id):
+            assert telegram_id == 1001
+            return None
+
+        def handle(
+            self,
+            actor,
+            text,
+            *,
+            update_id,
+            review_required=False,
+            quota_reserved=False,
+        ):
+            assert actor.telegram_id == 1001
+            assert review_required is True
+            assert quota_reserved is True
+            return AssistantReply(f"Recorded {text}", "completed")
+
+    async def transcribe(file_id, token):
+        del token
+        transcriptions.append(file_id)
+        return "a voice note"
+
+    bot.bounded_assistant = VoiceAssistant()
+    monkeypatch.setattr(bot_module, "transcribe_telegram_voice", transcribe)
+    monkeypatch.setattr(settings, "ai_agent_enabled", True)
+    monkeypatch.setattr(settings, "quotas_enabled", True)
+    monkeypatch.setattr(settings, "per_user_daily_ai_limit", 1)
+    monkeypatch.setattr(settings, "global_daily_ai_limit", 0)
+
+    await bot._handle_bounded_voice(telegram_voice(601), update_id=9601)
+    await bot._handle_bounded_voice(telegram_voice(602), update_id=9602)
+
+    assert transcriptions == ["voice-601"]
+    assert "usage limit" in bot.telegram.messages[-1].lower()
+    with factory() as session:
+        buckets = {
+            row.scope: row.request_count for row in session.query(RateLimitBucket)
+        }
+    assert buckets["ai_classifications"] == 1
+    assert buckets["voice_units"] == 1
 
 
 @pytest.mark.asyncio

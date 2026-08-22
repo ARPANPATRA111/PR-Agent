@@ -238,24 +238,27 @@ class TelegramClient:
         surface keeps working when typed; showing forty entries to a new user
         only obscures that the bot is meant to be spoken to.
         """
+        commands = [
+            {"command": "start", "description": "What I can do"},
+            {"command": "today", "description": "What I did today"},
+            {"command": "week", "description": "This week so far"},
+            {"command": "spending", "description": "Money in and out"},
+            {"command": "notes", "description": "My notes"},
+            {"command": "reminders", "description": "My reminders"},
+            {"command": "goals", "description": "My goals"},
+            {"command": "settings", "description": "Preferences"},
+            {"command": "privacy", "description": "How your data is used"},
+            {"command": "help", "description": "All commands"},
+        ]
+        if settings.vault_enabled:
+            commands.insert(
+                7,
+                {"command": "vault", "description": "Encrypted private facts"},
+            )
         return await self._request_with_retry(
             "POST",
             "setMyCommands",
-            json={
-                "commands": [
-                    {"command": "start", "description": "What I can do"},
-                    {"command": "today", "description": "What I did today"},
-                    {"command": "week", "description": "This week so far"},
-                    {"command": "spending", "description": "Money in and out"},
-                    {"command": "notes", "description": "My notes"},
-                    {"command": "reminders", "description": "My reminders"},
-                    {"command": "goals", "description": "My goals"},
-                    {"command": "vault", "description": "Encrypted private facts"},
-                    {"command": "settings", "description": "Preferences"},
-                    {"command": "privacy", "description": "How your data is used"},
-                    {"command": "help", "description": "All commands"},
-                ]
-            },
+            json={"commands": commands},
         )
 
     async def delete_webhook(self) -> dict:
@@ -1158,6 +1161,7 @@ class BotHandler(DeterministicCommandMixin):
         *,
         update_id: int,
         review_required: bool = False,
+        quota_reserved: bool = False,
     ) -> AssistantReply:
         """Continue an open question when one is waiting, else start fresh."""
         assistant = self._get_bounded_assistant()
@@ -1175,18 +1179,25 @@ class BotHandler(DeterministicCommandMixin):
                         "Okay, I dropped that request. Nothing was saved.",
                         "cancelled",
                     )
+                handle_options = {
+                    "update_id": update_id,
+                    "review_required": review_required,
+                }
+                if quota_reserved:
+                    handle_options["quota_reserved"] = True
                 return await asyncio.to_thread(
                     assistant.handle,
                     actor,
                     replacement,
-                    update_id=update_id,
-                    review_required=review_required,
+                    **handle_options,
                 )
+            clarification_options = {"quota_reserved": True} if quota_reserved else {}
             return await asyncio.to_thread(
                 assistant.answer_clarification,
                 actor,
                 pending_id,
                 text,
+                **clarification_options,
             )
         confirmation_id = await asyncio.to_thread(
             assistant.open_confirmation_id,
@@ -1196,12 +1207,17 @@ class BotHandler(DeterministicCommandMixin):
         if confirmation_id is not None and confirmation is not None:
             handler = assistant.confirm if confirmation else assistant.cancel
             return await asyncio.to_thread(handler, actor, confirmation_id)
+        handle_options = {
+            "update_id": update_id,
+            "review_required": review_required,
+        }
+        if quota_reserved:
+            handle_options["quota_reserved"] = True
         return await asyncio.to_thread(
             assistant.handle,
             actor,
             text,
-            update_id=update_id,
-            review_required=review_required,
+            **handle_options,
         )
 
     @staticmethod
@@ -1259,11 +1275,7 @@ class BotHandler(DeterministicCommandMixin):
                 file_size=spoken.file_size,
                 mime_type=spoken.mime_type,
             )
-            await asyncio.to_thread(
-                self._consume_voice_quota,
-                message,
-            )
-        except (ValueError, QuotaExceeded) as exc:
+        except ValueError as exc:
             await self.telegram.send_message(
                 message.chat.get("id"),
                 str(exc),
@@ -1273,6 +1285,17 @@ class BotHandler(DeterministicCommandMixin):
             await self.telegram.send_message(
                 message.chat.get("id"),
                 "Voice interpretation is disabled. Use /help for commands.",
+            )
+            return
+        try:
+            await asyncio.to_thread(
+                self._consume_voice_quota,
+                message,
+            )
+        except QuotaExceeded as exc:
+            await self.telegram.send_message(
+                message.chat.get("id"),
+                str(exc),
             )
             return
         await self.telegram.send_typing_action(message.chat.get("id"))
@@ -1305,6 +1328,7 @@ class BotHandler(DeterministicCommandMixin):
                     transcript,
                     update_id=update_id,
                     review_required=True,
+                    quota_reserved=True,
                 )
                 await self._send_assistant_reply(message.chat.get("id"), reply)
             except ProviderUnavailable:
@@ -1336,6 +1360,7 @@ class BotHandler(DeterministicCommandMixin):
                     )
 
     def _consume_voice_quota(self, message: TelegramMessage) -> None:
+        """Atomically reserve every provider-backed allowance before upload."""
         spoken = message.spoken_audio
         if message.from_user is None or spoken is None:
             raise ValueError("Voice identity is missing.")
@@ -1346,12 +1371,23 @@ class BotHandler(DeterministicCommandMixin):
                 last_name=message.from_user.last_name,
                 username=message.from_user.username,
             )
-            QuotaService(session).require(
+            quotas = QuotaService(session)
+            quotas.require(
                 owner.id,
                 "voice_units",
                 limit=daily_voice_unit_limit(),
                 units=voice_quota_units(spoken.duration),
             )
+            quotas.require(
+                owner.id,
+                "ai_classifications",
+                limit=settings.per_user_daily_ai_limit,
+            )
+            if settings.global_daily_ai_limit > 0:
+                quotas.require_global(
+                    "ai_classifications",
+                    limit=settings.global_daily_ai_limit,
+                )
 
     async def _v2_answer_agent(self, message: TelegramMessage) -> None:
         parts = (message.text or "").split(maxsplit=2)

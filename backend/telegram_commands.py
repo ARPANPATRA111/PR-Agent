@@ -150,48 +150,36 @@ class DeterministicCommandMixin:
         )
 
     async def _cmd_help(self, message: TelegramMessage) -> None:
-        availability = (
-            "\n\n⚠️ <b>Free staging availability:</b> This deployment can "
-            "sleep when inactive. Telegram commands wake it automatically, but "
-            "the first response may be delayed. Reminders and Sunday summaries "
-            "are best-effort and may arrive late while it is sleeping."
-            if settings.inline_staging_worker_enabled
-            else ""
-        )
+        account_commands = "/settings · /export · /privacy"
+        if settings.vault_enabled:
+            account_commands += " · /vault"
         await self.telegram.send_message(
             message.chat.get("id"),
-            "<b>Commands</b>\n\n"
-            "You rarely need these. Just speak or type naturally — ask me to "
-            "show, find, add, or delete anything, and I will confirm before "
-            "saving. Commands are the fallback when the assistant is "
-            "unavailable.\n\n"
-            "<b>Work:</b> /log, /logs, /editlog, /deletelog\n"
-            "<b>Notes:</b> /note, /notes, /editnote, /pin, /deletenote\n"
-            "<b>Money:</b> /expense, /income, /ledger, /editledger, "
-            "/deleteledger\n"
-            "<b>Goals:</b> /goal, /goals, /editgoal, /goalprogress, "
-            "/completegoal, /pausegoal, /deletegoal\n"
-            "<b>Reminders:</b> /remind, /reminders, /editreminder, "
-            "/pausereminder, /resumereminder, /deletereminder\n\n"
-            "<b>Food:</b> /food, /nutrition, /confirmfood, /savefoodnote, "
-            "/editfood, /deletefood, /nutritiontargets\n\n"
-            "<b>Assistant follow-up:</b> /answeragent, /confirmagent, "
-            "/cancelagent\n\n"
-            "<b>Analytics and privacy:</b> /today, /week, /spending, "
-            "/settings, /vault, /export, /deleteaccount\n\n"
-            "/spending reports income and expenses for the current month. "
-            "/nutrition lists today's meal estimates and totals. Times default "
-            "to Asia/Kolkata for this deployment. Processed chat messages are "
-            "removed after about two days unless you pin them; the welcome "
-            "message stays. Natural-language requests are limited to 25 per "
-            "account per day, while direct slash commands remain available.\n\n"
+            "<b>PR-Agent help</b>\n\n"
+            "Speak or type naturally. Use these reliable shortcuts when you "
+            "want an exact action.\n\n"
+            "<b>Capture</b>\n"
+            "/log TEXT\n"
+            "/note TEXT\n"
+            "/expense AMOUNT CURRENCY DESCRIPTION\n"
+            "/income AMOUNT CURRENCY DESCRIPTION\n"
+            "/goal TEXT\n"
+            "/food FOOD\n"
+            "/remind once YYYY-MM-DD HH:MM TIMEZONE TEXT\n\n"
+            "<b>Review</b>\n"
+            "/today · /week · /logs · /notes · /ledger\n"
+            "/spending · /nutrition · /goals · /reminders\n\n"
+            "<b>Account</b>\n"
+            f"{account_commands}\n\n"
             "Examples:\n"
-            "<code>/log Finished tenant-isolation tests</code>\n"
-            "<code>/note Ask HR about relocation</code>\n"
-            "<code>/expense 240 INR dinner</code>\n"
-            "<code>/income 5000 INR freelance payment</code>\n"
-            "<code>/remind once 2026-08-10 19:00 Asia/Kolkata Submit assignment</code>"
-            + availability,
+            "<code>/log Finished release testing</code>\n"
+            "<code>/note Submit scholarship form</code>\n"
+            "<code>/expense 240 INR dinner</code>\n\n"
+            "Natural-language text and voice requests share a 25-request daily "
+            "allowance. At the limit, voice is stopped before transcription. "
+            "Slash commands remain available. Processed chat messages are "
+            "removed after about two days unless pinned; saved records remain "
+            "in the dashboard.",
         )
 
     def _run_domain(self, message: TelegramMessage, operation):
