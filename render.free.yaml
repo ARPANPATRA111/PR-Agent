@@ -147,6 +147,9 @@ services:
         value: https://pr-agent-r24-staging-api.onrender.com
     routes:
       - type: rewrite
+        source: /privacy
+        destination: /privacy.html
+      - type: rewrite
         source: /*
         destination: /index.html
     headers:

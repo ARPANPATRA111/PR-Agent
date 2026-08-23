@@ -71,6 +71,14 @@ def test_deployment_diagnostic_checks_pre_bot_profile(monkeypatch):
     frontend = "https://pr-agent-r24-staging-web.onrender.com"
 
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/privacy":
+            return httpx.Response(
+                200,
+                text=(
+                    "Effective 23 August 2026. Records are queued after 40 hours "
+                    "and vault values are never edited."
+                ),
+            )
         if request.url.path == "/health":
             return httpx.Response(200, json={"status": "healthy"})
         if request.url.path == "/ready":
@@ -122,6 +130,7 @@ def test_deployment_diagnostic_checks_pre_bot_profile(monkeypatch):
         "webhook_auth=pass",
         "api_schema_private=pass",
         "frontend=pass",
+        "privacy=pass",
         "route_refresh=pass",
         "cors=pass",
         "delivery_metrics=skip(no token)",

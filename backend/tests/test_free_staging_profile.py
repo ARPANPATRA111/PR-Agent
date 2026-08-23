@@ -23,6 +23,14 @@ def test_free_blueprint_contains_only_free_api_and_static_site():
     assert services[1]["runtime"] == "static"
     assert "plan" not in services[1]
     assert services[0]["dockerCommand"] == "python render_start.py"
+    assert services[1]["routes"] == [
+        {
+            "type": "rewrite",
+            "source": "/privacy",
+            "destination": "/privacy.html",
+        },
+        {"type": "rewrite", "source": "/*", "destination": "/index.html"},
+    ]
     assert (REPOSITORY_ROOT / "backend" / "render_start.py").is_file()
     assert (REPOSITORY_ROOT / "backend" / "Dockerfile").is_file()
     assert (REPOSITORY_ROOT / "backend" / "migrations").is_dir()
@@ -124,6 +132,11 @@ def test_production_blueprint_keeps_dedicated_worker():
     services = load_yaml("render.yaml")["projects"][0]["environments"][0]["services"]
     assert any(service["type"] == "worker" for service in services)
     frontend = next(service for service in services if service["name"].endswith("-web"))
+    assert frontend["routes"][0] == {
+        "type": "rewrite",
+        "source": "/privacy",
+        "destination": "/privacy.html",
+    }
     headers = {item["name"]: item["value"] for item in frontend["headers"]}
     assert "X-Frame-Options" not in headers
     assert (

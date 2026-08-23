@@ -93,6 +93,13 @@ def verify(
             raise RuntimeError("frontend frame policy blocks Telegram Web")
         results.append("frontend=pass")
 
+        privacy = client.get(f"{frontend_url}/privacy")
+        require(privacy, 200, "privacy notice")
+        for disclosure in ("Effective 23 August 2026", "40 hours", "never edited"):
+            if disclosure not in privacy.text:
+                raise RuntimeError("deployed privacy notice is stale or misrouted")
+        results.append("privacy=pass")
+
         route_refresh = client.get(f"{frontend_url}/settings")
         require(route_refresh, 200, "frontend route refresh")
         results.append("route_refresh=pass")
