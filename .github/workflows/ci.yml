@@ -119,9 +119,9 @@ jobs:
           pnpm typecheck
           pnpm test
           pnpm build
-      - name: JavaScript production dependency audit
+      - name: JavaScript dependency audit
         working-directory: frontend
-        run: pnpm audit --prod --audit-level high
+        run: pnpm audit --audit-level high
       - name: Browser tests
         working-directory: frontend
         run: |
