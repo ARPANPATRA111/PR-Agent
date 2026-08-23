@@ -423,6 +423,7 @@ def test_last_week_work_query_uses_the_complete_previous_week(assistant_db):
             [
                 WorkLog(
                     owner_id=owner_id,
+                    public_id=1,
                     original_text="Completed the previous-week launch review",
                     logged_at_utc=datetime(2026, 8, 12, 10, tzinfo=UTC),
                     user_local_date=datetime(2026, 8, 12).date(),
@@ -431,6 +432,7 @@ def test_last_week_work_query_uses_the_complete_previous_week(assistant_db):
                 ),
                 WorkLog(
                     owner_id=owner_id,
+                    public_id=2,
                     original_text="Current-week task must stay out",
                     logged_at_utc=datetime(2026, 8, 19, 10, tzinfo=UTC),
                     user_local_date=datetime(2026, 8, 19).date(),
@@ -479,6 +481,7 @@ def test_nutrition_advice_reads_only_the_requested_last_48_hours(assistant_db):
             [
                 NutritionLog(
                     owner_id=owner_id,
+                    public_id=1,
                     meal_name="Recent paneer lunch",
                     logged_at_utc=datetime(2026, 8, 22, 12, tzinfo=UTC),
                     user_local_date=datetime(2026, 8, 22).date(),
@@ -492,6 +495,7 @@ def test_nutrition_advice_reads_only_the_requested_last_48_hours(assistant_db):
                 ),
                 NutritionLog(
                     owner_id=owner_id,
+                    public_id=2,
                     meal_name="Old meal outside range",
                     logged_at_utc=datetime(2026, 8, 20, 10, tzinfo=UTC),
                     user_local_date=datetime(2026, 8, 20).date(),

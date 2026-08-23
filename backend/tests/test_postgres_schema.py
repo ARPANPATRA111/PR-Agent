@@ -120,11 +120,11 @@ def test_postgres_precision_timezone_constraints_and_indexes():
         connection.execute(
             text("""
                 INSERT INTO ledger_entries (
-                    owner_id, direction, amount_minor, currency, description,
+                    owner_id, public_id, direction, amount_minor, currency, description,
                     transaction_at_utc, user_local_date, timezone,
                     capture_source, idempotency_key
                 ) VALUES (
-                    :owner_id, 'expense', 12550, 'INR', 'Dinner',
+                    :owner_id, 1, 'expense', 12550, 'INR', 'Dinner',
                     :logged_at, DATE '2026-07-31', 'Asia/Kolkata',
                     'test', 'postgres-ledger-1'
                 )
@@ -134,11 +134,11 @@ def test_postgres_precision_timezone_constraints_and_indexes():
         nutrition_id = connection.execute(
             text("""
                 INSERT INTO nutrition_logs (
-                    owner_id, logged_at_utc, user_local_date, timezone,
+                    owner_id, public_id, logged_at_utc, user_local_date, timezone,
                     original_text, total_calories, total_protein_grams,
                     estimation_source, overall_confidence
                 ) VALUES (
-                    :owner_id, :logged_at, DATE '2026-07-31', 'Asia/Kolkata',
+                    :owner_id, 1, :logged_at, DATE '2026-07-31', 'Asia/Kolkata',
                     '50 g paneer', 132.50, 9.375, 'test', 0.8750
                 )
                 RETURNING id
@@ -179,11 +179,11 @@ def test_postgres_precision_timezone_constraints_and_indexes():
             connection.execute(
                 text("""
                     INSERT INTO ledger_entries (
-                        owner_id, direction, amount_minor, currency,
+                        owner_id, public_id, direction, amount_minor, currency,
                         description, transaction_at_utc, user_local_date,
                         timezone, capture_source, idempotency_key
                     ) VALUES (
-                        :owner_id, 'expense', 1, 'INR', 'Duplicate', NOW(),
+                        :owner_id, 2, 'expense', 1, 'INR', 'Duplicate', NOW(),
                         CURRENT_DATE, 'UTC', 'test', 'postgres-ledger-1'
                     )
                     """),
@@ -194,11 +194,11 @@ def test_postgres_precision_timezone_constraints_and_indexes():
         with engine.begin() as connection:
             connection.execute(text("""
                     INSERT INTO ledger_entries (
-                        owner_id, direction, amount_minor, currency,
+                        owner_id, public_id, direction, amount_minor, currency,
                         description, transaction_at_utc, user_local_date,
                         timezone, capture_source
                     ) VALUES (
-                        -1, 'expense', 1, 'INR', 'No owner', NOW(),
+                        -1, 1, 'expense', 1, 'INR', 'No owner', NOW(),
                         CURRENT_DATE, 'UTC', 'test'
                     )
                     """))

@@ -246,6 +246,11 @@ class Settings(BaseSettings):
             "failover; organisation-level provider limits still apply."
         ),
     )
+    # Compatibility inputs requested for the two additional local/deployment
+    # credentials. Prefer GROQ_API_KEYS for new environments; these values are
+    # never logged and join the same deduplicated rotation pool.
+    env1: str = Field(default="", repr=False)
+    env2: str = Field(default="", repr=False)
     groq_model: str = Field(
         default="openai/gpt-oss-120b",
         description="Groq model used for bounded provider calls",

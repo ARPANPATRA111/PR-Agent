@@ -131,7 +131,7 @@ def aggregate_work_logs(
 
 @router.get("/work-logs/{record_id}", response_model=WorkLogResponse)
 def get_work_log(record_id: int, context: DomainContext = Context):
-    return context.service.get_work_log(context.owner_id, record_id)
+    return context.service.get_work_log_by_public_id(context.owner_id, record_id)
 
 
 @router.patch("/work-logs/{record_id}", response_model=WorkLogResponse)
@@ -140,7 +140,8 @@ def update_work_log(
     data: WorkLogUpdate,
     context: DomainContext = Context,
 ):
-    return context.service.update_work_log(context.owner_id, record_id, data)
+    row = context.service.get_work_log_by_public_id(context.owner_id, record_id)
+    return context.service.update_work_log(context.owner_id, row.id, data)
 
 
 @router.delete(
@@ -148,7 +149,8 @@ def update_work_log(
     status_code=status.HTTP_204_NO_CONTENT,
 )
 def delete_work_log(record_id: int, context: DomainContext = Context):
-    context.service.delete_work_log(context.owner_id, record_id)
+    row = context.service.get_work_log_by_public_id(context.owner_id, record_id)
+    context.service.delete_work_log(context.owner_id, row.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -188,7 +190,7 @@ def list_notes(
 
 @router.get("/notes/{record_id}", response_model=NoteResponse)
 def get_note(record_id: int, context: DomainContext = Context):
-    return context.service.get_note(context.owner_id, record_id)
+    return context.service.get_note_by_public_id(context.owner_id, record_id)
 
 
 @router.patch("/notes/{record_id}", response_model=NoteResponse)
@@ -197,12 +199,14 @@ def update_note(
     data: NoteUpdate,
     context: DomainContext = Context,
 ):
-    return context.service.update_note(context.owner_id, record_id, data)
+    row = context.service.get_note_by_public_id(context.owner_id, record_id)
+    return context.service.update_note(context.owner_id, row.id, data)
 
 
 @router.delete("/notes/{record_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_note(record_id: int, context: DomainContext = Context):
-    context.service.delete_note(context.owner_id, record_id)
+    row = context.service.get_note_by_public_id(context.owner_id, record_id)
+    context.service.delete_note(context.owner_id, row.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -258,7 +262,7 @@ def summarize_ledger(
 
 @router.get("/ledger/{record_id}", response_model=LedgerResponse)
 def get_ledger_entry(record_id: int, context: DomainContext = Context):
-    return context.service.get_ledger_entry(context.owner_id, record_id)
+    return context.service.get_ledger_entry_by_public_id(context.owner_id, record_id)
 
 
 @router.patch("/ledger/{record_id}", response_model=LedgerResponse)
@@ -267,12 +271,14 @@ def update_ledger_entry(
     data: LedgerUpdate,
     context: DomainContext = Context,
 ):
-    return context.service.update_ledger_entry(context.owner_id, record_id, data)
+    row = context.service.get_ledger_entry_by_public_id(context.owner_id, record_id)
+    return context.service.update_ledger_entry(context.owner_id, row.id, data)
 
 
 @router.delete("/ledger/{record_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_ledger_entry(record_id: int, context: DomainContext = Context):
-    context.service.delete_ledger_entry(context.owner_id, record_id)
+    row = context.service.get_ledger_entry_by_public_id(context.owner_id, record_id)
+    context.service.delete_ledger_entry(context.owner_id, row.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -529,7 +535,7 @@ def list_nutrition_logs(
     response_model=NutritionLogResponse,
 )
 def get_nutrition_log(record_id: int, context: DomainContext = Context):
-    return context.service.get_nutrition_log(context.owner_id, record_id)
+    return context.service.get_nutrition_log_by_public_id(context.owner_id, record_id)
 
 
 @router.post(
@@ -541,9 +547,8 @@ def confirm_nutrition_log(
     data: NutritionConfirm,
     context: DomainContext = Context,
 ):
-    return context.service.confirm_nutrition_log(
-        context.owner_id, record_id, data.version
-    )
+    row = context.service.get_nutrition_log_by_public_id(context.owner_id, record_id)
+    return context.service.confirm_nutrition_log(context.owner_id, row.id, data.version)
 
 
 @router.post(
@@ -555,7 +560,8 @@ def save_manual_nutrition(
     data: NutritionManualSave,
     context: DomainContext = Context,
 ):
-    return context.service.apply_manual_nutrition(context.owner_id, record_id, data)
+    row = context.service.get_nutrition_log_by_public_id(context.owner_id, record_id)
+    return context.service.apply_manual_nutrition(context.owner_id, row.id, data)
 
 
 @router.post(
@@ -567,8 +573,9 @@ def save_unestimated_nutrition(
     data: NutritionConfirm,
     context: DomainContext = Context,
 ):
+    row = context.service.get_nutrition_log_by_public_id(context.owner_id, record_id)
     return context.service.save_unestimated_nutrition_log(
-        context.owner_id, record_id, data.version
+        context.owner_id, row.id, data.version
     )
 
 
@@ -582,9 +589,10 @@ def update_nutrition_item(
     data: NutritionItemUpdate,
     context: DomainContext = Context,
 ):
+    row = context.service.get_nutrition_log_by_public_id(context.owner_id, record_id)
     return context.service.update_nutrition_item(
         context.owner_id,
-        record_id,
+        row.id,
         item_id,
         data,
     )
@@ -599,9 +607,10 @@ def delete_nutrition_item(
     item_id: int,
     context: DomainContext = Context,
 ):
+    row = context.service.get_nutrition_log_by_public_id(context.owner_id, record_id)
     return context.service.delete_nutrition_item(
         context.owner_id,
-        record_id,
+        row.id,
         item_id,
     )
 
@@ -614,5 +623,6 @@ def delete_nutrition_log(
     record_id: int,
     context: DomainContext = Context,
 ):
-    context.service.delete_nutrition_log(context.owner_id, record_id)
+    row = context.service.get_nutrition_log_by_public_id(context.owner_id, record_id)
+    context.service.delete_nutrition_log(context.owner_id, row.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

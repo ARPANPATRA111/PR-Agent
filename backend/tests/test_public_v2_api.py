@@ -112,6 +112,25 @@ def test_api_crud_uses_authenticated_owner_and_hides_other_records(api_client):
     assert client.delete(f"/api/v2/notes/{note['id']}").status_code == 204
 
 
+def test_api_ids_restart_per_owner_without_exposing_global_sequence(api_client):
+    client, identity = api_client
+    alice = [
+        client.post(
+            "/api/v2/work-logs", json={"original_text": f"Alice {index}"}
+        ).json()
+        for index in range(1, 5)
+    ]
+    identity["telegram_id"] = 2002
+    bob = client.post(
+        "/api/v2/work-logs",
+        json={"original_text": "Bob first"},
+    ).json()
+
+    assert [row["id"] for row in alice] == [1, 2, 3, 4]
+    assert bob["id"] == 1
+    assert client.get("/api/v2/work-logs/1").json()["original_text"] == "Bob first"
+
+
 def test_every_public_record_family_is_hidden_from_another_owner(api_client):
     """Prove isolation at the HTTP boundary, not only in service unit tests."""
     client, identity = api_client

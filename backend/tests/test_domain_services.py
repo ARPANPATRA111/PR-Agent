@@ -125,6 +125,45 @@ def test_work_log_crud_filters_aggregation_and_idempotency(services):
         service.delete_work_log(owner_a, created.id)
 
 
+def test_user_visible_ids_are_scoped_per_owner_and_record_type(services):
+    service, owner_a, owner_b = services
+    alice_logs = [
+        service.create_work_log(
+            owner_a,
+            WorkLogCreate(
+                original_text=f"Alice work {index}",
+                idempotency_key=f"alice-work-{index}",
+            ),
+        )
+        for index in range(1, 5)
+    ]
+    bob_work = service.create_work_log(
+        owner_b,
+        WorkLogCreate(original_text="Bob first work", idempotency_key="bob-work-1"),
+    )
+    bob_note = service.create_note(
+        owner_b,
+        NoteCreate(body="Bob first note", idempotency_key="bob-note-1"),
+    )
+    bob_expense = service.create_ledger_entry(
+        owner_b,
+        LedgerCreate(
+            direction="expense",
+            amount=Decimal("1"),
+            currency="INR",
+            description="Bob first expense",
+            idempotency_key="bob-expense-1",
+        ),
+    )
+
+    assert [row.public_id for row in alice_logs] == [1, 2, 3, 4]
+    assert bob_work.id > alice_logs[-1].id
+    assert bob_work.public_id == 1
+    assert bob_note.public_id == 1
+    assert bob_expense.public_id == 1
+    assert service.get_work_log_by_public_id(owner_b, 1).id == bob_work.id
+
+
 def test_note_crud_search_pin_and_cross_user_isolation(services):
     service, owner_a, owner_b = services
     note = service.create_note(

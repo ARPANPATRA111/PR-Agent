@@ -271,9 +271,9 @@ class DeterministicCommandMixin:
         )
         await self._domain_reply(
             message,
-            lambda service, owner: (lambda row: f"✅ Work log <b>#{row.id}</b> saved.")(
-                service.create_work_log(owner, data)
-            ),
+            lambda service, owner: (
+                lambda row: f"✅ Work log <b>#{row.public_id}</b> saved."
+            )(service.create_work_log(owner, data)),
         )
 
     async def _v2_list_work_logs(self, message: TelegramMessage) -> None:
@@ -282,7 +282,8 @@ class DeterministicCommandMixin:
             if not rows:
                 return "No work logs yet. Use <code>/log ...</code>."
             return "<b>Recent work logs</b>\n" + "\n".join(
-                f"• <b>#{row.id}</b> {escape(row.original_text[:120])}" for row in rows
+                f"• <b>#{row.public_id}</b> {escape(row.original_text[:120])}"
+                for row in rows
             )
 
         await self._domain_reply(message, operation)
@@ -295,13 +296,13 @@ class DeterministicCommandMixin:
         record_id, text = int(parts[1]), parts[2]
 
         def operation(service, owner):
-            current = service.get_work_log(owner, record_id)
+            current = service.get_work_log_by_public_id(owner, record_id)
             row = service.update_work_log(
                 owner,
-                record_id,
+                current.id,
                 WorkLogUpdate(version=current.version, original_text=text),
             )
-            return f"✅ Work log <b>#{row.id}</b> updated."
+            return f"✅ Work log <b>#{row.public_id}</b> updated."
 
         await self._domain_reply(message, operation)
 
@@ -310,7 +311,9 @@ class DeterministicCommandMixin:
             message,
             "deletelog",
             "work log",
-            lambda service, owner, record_id: service.delete_work_log(owner, record_id),
+            lambda service, owner, record_id: service.delete_work_log(
+                owner, service.get_work_log_by_public_id(owner, record_id).id
+            ),
         )
 
     async def _v2_create_note(self, message: TelegramMessage) -> None:
@@ -325,9 +328,9 @@ class DeterministicCommandMixin:
         )
         await self._domain_reply(
             message,
-            lambda service, owner: (lambda row: f"✅ Note <b>#{row.id}</b> saved.")(
-                service.create_note(owner, data)
-            ),
+            lambda service, owner: (
+                lambda row: f"✅ Note <b>#{row.public_id}</b> saved."
+            )(service.create_note(owner, data)),
         )
 
     async def _v2_list_notes(self, message: TelegramMessage) -> None:
@@ -338,7 +341,7 @@ class DeterministicCommandMixin:
             if not rows:
                 return "No matching notes."
             return "<b>Notes</b>\n" + "\n".join(
-                f"{'📌' if row.pinned else '•'} <b>#{row.id}</b> "
+                f"{'📌' if row.pinned else '•'} <b>#{row.public_id}</b> "
                 f"{escape(row.title[:100])}"
                 for row in rows
             )
@@ -353,13 +356,13 @@ class DeterministicCommandMixin:
         record_id, body = int(parts[1]), parts[2]
 
         def operation(service, owner):
-            current = service.get_note(owner, record_id)
+            current = service.get_note_by_public_id(owner, record_id)
             row = service.update_note(
                 owner,
-                record_id,
+                current.id,
                 NoteUpdate(version=current.version, body=body),
             )
-            return f"✅ Note <b>#{row.id}</b> updated."
+            return f"✅ Note <b>#{row.public_id}</b> updated."
 
         await self._domain_reply(message, operation)
 
@@ -370,17 +373,17 @@ class DeterministicCommandMixin:
             return
 
         def operation(service, owner):
-            current = service.get_note(owner, record_id)
+            current = service.get_note_by_public_id(owner, record_id)
             row = service.update_note(
                 owner,
-                record_id,
+                current.id,
                 NoteUpdate(
                     version=current.version,
                     pinned=not current.pinned,
                 ),
             )
             state = "pinned" if row.pinned else "unpinned"
-            return f"✅ Note <b>#{row.id}</b> {state}."
+            return f"✅ Note <b>#{row.public_id}</b> {state}."
 
         await self._domain_reply(message, operation)
 
@@ -389,7 +392,9 @@ class DeterministicCommandMixin:
             message,
             "deletenote",
             "note",
-            lambda service, owner, record_id: service.delete_note(owner, record_id),
+            lambda service, owner, record_id: service.delete_note(
+                owner, service.get_note_by_public_id(owner, record_id).id
+            ),
         )
 
     async def _v2_create_expense(self, message: TelegramMessage) -> None:
@@ -430,7 +435,7 @@ class DeterministicCommandMixin:
         await self._domain_reply(
             message,
             lambda service, owner: (
-                lambda row: f"✅ {direction.title()} <b>#{row.id}</b> saved."
+                lambda row: f"✅ {direction.title()} <b>#{row.public_id}</b> saved."
             )(service.create_ledger_entry(owner, data)),
         )
 
@@ -453,7 +458,7 @@ class DeterministicCommandMixin:
                 for item in totals
             )
             row_text = "\n".join(
-                f"• <b>#{row.id}</b> {row.direction} "
+                f"• <b>#{row.public_id}</b> {row.direction} "
                 f"{self._money_value(row.amount_minor, row.currency)} — "
                 f"{escape(row.description[:80])}"
                 for row in rows
@@ -482,10 +487,10 @@ class DeterministicCommandMixin:
             return
 
         def operation(service, owner):
-            current = service.get_ledger_entry(owner, record_id)
+            current = service.get_ledger_entry_by_public_id(owner, record_id)
             row = service.update_ledger_entry(
                 owner,
-                record_id,
+                current.id,
                 LedgerUpdate(
                     version=current.version,
                     amount=update_amount,
@@ -493,7 +498,7 @@ class DeterministicCommandMixin:
                     description=update_data[1],
                 ),
             )
-            return f"✅ Ledger entry <b>#{row.id}</b> updated."
+            return f"✅ Ledger entry <b>#{row.public_id}</b> updated."
 
         await self._domain_reply(message, operation)
 
@@ -503,7 +508,7 @@ class DeterministicCommandMixin:
             "deleteledger",
             "ledger entry",
             lambda service, owner, record_id: service.delete_ledger_entry(
-                owner, record_id
+                owner, service.get_ledger_entry_by_public_id(owner, record_id).id
             ),
         )
 
@@ -785,14 +790,14 @@ class DeterministicCommandMixin:
             if log.clarification_question:
                 return (
                     (
-                        f"❓ <b>Food draft #{log.id}</b>\n"
+                        f"❓ <b>Food draft #{log.public_id}</b>\n"
                         f"{escape(log.clarification_question)}\n\n"
                         f"Original entry preserved. Use "
-                        f"<code>/savefoodnote {log.id}</code> to keep it "
+                        f"<code>/savefoodnote {log.public_id}</code> to keep it "
                         "without estimates."
                     ),
                     log.status,
-                    log.id,
+                    log.public_id,
                 )
             lines = [
                 f"• {escape(item.normalized_name)}: "
@@ -814,7 +819,7 @@ class DeterministicCommandMixin:
             )
             return (
                 (
-                    f"<b>Food preview #{log.id}</b>\n"
+                    f"<b>Food preview #{log.public_id}</b>\n"
                     + "\n".join(lines)
                     + f"\n\nApproximately {log.total_calories} kcal, "
                     f"{log.total_protein_grams} g protein."
@@ -822,7 +827,7 @@ class DeterministicCommandMixin:
                     + f"\n\n{status_text}"
                 ),
                 log.status,
-                log.id,
+                log.public_id,
             )
 
         try:
@@ -873,10 +878,10 @@ class DeterministicCommandMixin:
             return
 
         def operation(service, owner):
-            current = service.get_nutrition_log(owner, record_id)
-            log = service.confirm_nutrition_log(owner, record_id, current.version)
+            current = service.get_nutrition_log_by_public_id(owner, record_id)
+            log = service.confirm_nutrition_log(owner, current.id, current.version)
             return (
-                f"✅ Food log <b>#{log.id}</b> confirmed at approximately "
+                f"✅ Food log <b>#{log.public_id}</b> confirmed at approximately "
                 f"{log.total_calories} kcal and "
                 f"{log.total_protein_grams} g protein."
             )
@@ -890,12 +895,13 @@ class DeterministicCommandMixin:
             return
 
         def operation(service, owner):
-            current = service.get_nutrition_log(owner, record_id)
+            current = service.get_nutrition_log_by_public_id(owner, record_id)
             log = service.save_unestimated_nutrition_log(
-                owner, record_id, current.version
+                owner, current.id, current.version
             )
             return (
-                f"✅ Food note <b>#{log.id}</b> saved without nutrition " "estimates."
+                f"✅ Food note <b>#{log.public_id}</b> saved without nutrition "
+                "estimates."
             )
 
         await self._domain_reply(message, operation)
@@ -923,10 +929,11 @@ class DeterministicCommandMixin:
             return
 
         def operation(service, owner):
-            item = service.get_nutrition_item(owner, log_id, item_id)
+            current = service.get_nutrition_log_by_public_id(owner, log_id)
+            item = service.get_nutrition_item(owner, current.id, item_id)
             log = service.update_nutrition_item(
                 owner,
-                log_id,
+                current.id,
                 item_id,
                 NutritionItemUpdate(
                     version=item.version,
@@ -937,7 +944,7 @@ class DeterministicCommandMixin:
                 ),
             )
             return (
-                f"✅ Food log <b>#{log.id}</b> updated. New approximate "
+                f"✅ Food log <b>#{log.public_id}</b> updated. New approximate "
                 f"total: {log.total_calories} kcal, "
                 f"{log.total_protein_grams} g protein."
             )
@@ -950,7 +957,7 @@ class DeterministicCommandMixin:
             "deletefood",
             "food log",
             lambda service, owner, record_id: service.delete_nutrition_log(
-                owner, record_id
+                owner, service.get_nutrition_log_by_public_id(owner, record_id).id
             ),
         )
 

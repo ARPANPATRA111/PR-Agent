@@ -83,6 +83,7 @@ def configured_groq_keys() -> list[str]:
     """Collect every configured credential, primary first, in order."""
     keys = [settings.groq_api_key]
     keys.extend(settings.groq_api_keys.split(","))
+    keys.extend((settings.env1, settings.env2))
     return [key.strip() for key in keys if key and key.strip()]
 
 

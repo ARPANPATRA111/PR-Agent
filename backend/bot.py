@@ -947,16 +947,23 @@ class BotHandler(DeterministicCommandMixin):
                 ]
             }
         elif reply.status == "nutrition_confirmation" and reply.record_id is not None:
+            if reply.pending_id is not None:
+                confirm_callback = f"agent:confirm:{reply.pending_id}"
+                cancel_callback = f"agent:cancel:{reply.pending_id}"
+            else:
+                callback_record_id = reply.public_id or reply.record_id
+                confirm_callback = f"nutrition:confirm:{callback_record_id}"
+                cancel_callback = f"nutrition:cancel:{callback_record_id}"
             reply_markup = {
                 "inline_keyboard": [
                     [
                         {
                             "text": "✅ Correct",
-                            "callback_data": (f"nutrition:confirm:{reply.record_id}"),
+                            "callback_data": confirm_callback,
                         },
                         {
                             "text": "❌ Wrong",
-                            "callback_data": (f"nutrition:cancel:{reply.record_id}"),
+                            "callback_data": cancel_callback,
                         },
                     ]
                 ]
@@ -1173,6 +1180,7 @@ class BotHandler(DeterministicCommandMixin):
         update_id: int,
         review_required: bool = False,
         quota_reserved: bool = False,
+        source: str = "text",
     ) -> AssistantReply:
         """Continue an open question when one is waiting, else start fresh."""
         assistant = self._get_bounded_assistant()
@@ -1194,6 +1202,8 @@ class BotHandler(DeterministicCommandMixin):
                     "update_id": update_id,
                     "review_required": review_required,
                 }
+                if source != "text":
+                    handle_options["source"] = source
                 if quota_reserved:
                     handle_options["quota_reserved"] = True
                 return await asyncio.to_thread(
@@ -1222,6 +1232,8 @@ class BotHandler(DeterministicCommandMixin):
             "update_id": update_id,
             "review_required": review_required,
         }
+        if source != "text":
+            handle_options["source"] = source
         if quota_reserved:
             handle_options["quota_reserved"] = True
         return await asyncio.to_thread(
@@ -1340,6 +1352,7 @@ class BotHandler(DeterministicCommandMixin):
                     update_id=update_id,
                     review_required=True,
                     quota_reserved=True,
+                    source="voice",
                 )
                 await self._send_assistant_reply(message.chat.get("id"), reply)
             except ProviderUnavailable:

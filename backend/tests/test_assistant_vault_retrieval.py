@@ -234,3 +234,42 @@ def test_save_this_into_vault_trailing_phrase_keeps_the_named_value(vault_db):
     assert review.status == "confirmation"
     assert "GitHub password" in review.text
     assert "correct-horse-42" not in review.text
+
+
+def test_voice_vault_save_is_blocked_but_voice_retrieval_remains_available(vault_db):
+    class ProviderMustNotReceiveCredential:
+        provider_name = "fake"
+        model_name = "test"
+
+        def classify(self, text, *, context=None):
+            del text, context
+            raise AssertionError("voice credentials must not reach the provider")
+
+    blocked_assistant = BoundedAssistant(
+        vault_db,
+        ProviderMustNotReceiveCredential(),
+        get_nutrition_provider("reference"),
+    )
+    blocked = blocked_assistant.handle(
+        ALICE,
+        "save my password in the vault",
+        update_id=7,
+        review_required=True,
+        source="voice",
+    )
+
+    assert blocked.status == "rejected"
+    assert "Mini App" in blocked.text
+    with vault_db() as session:
+        assert session.query(AgentPendingAction).count() == 0
+        assert session.query(PrivateFact).count() == 0
+
+    seed_fact(vault_db, ALICE, "Existing password", "stored-value")
+    retrieval = build(vault_db, "Existing password").handle(
+        ALICE,
+        "retrieve my existing password",
+        update_id=8,
+        review_required=True,
+        source="voice",
+    )
+    assert retrieval.status == "confirmation"

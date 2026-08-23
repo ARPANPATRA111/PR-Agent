@@ -35,6 +35,7 @@ PUBLIC_TABLES = {
     "invite_codes",
     "ledger_entries",
     "notes",
+    "owner_record_counters",
     "nutrition_items",
     "nutrition_logs",
     "reminder_deliveries",
@@ -192,6 +193,7 @@ def test_unique_foreign_keys_precision_timezone_and_indexes(migrated_engine):
         session.add(
             LedgerEntry(
                 owner_id=owner.id,
+                public_id=1,
                 direction="expense",
                 amount_minor=12550,
                 currency="INR",
@@ -205,6 +207,7 @@ def test_unique_foreign_keys_precision_timezone_and_indexes(migrated_engine):
         )
         nutrition = NutritionLog(
             owner_id=owner.id,
+            public_id=1,
             logged_at_utc=logged_at,
             user_local_date=date(2026, 7, 31),
             timezone="Asia/Kolkata",
@@ -242,6 +245,7 @@ def test_unique_foreign_keys_precision_timezone_and_indexes(migrated_engine):
         session.add(
             LedgerEntry(
                 owner_id=owner.id,
+                public_id=2,
                 direction="expense",
                 amount_minor=1,
                 currency="INR",
@@ -260,6 +264,7 @@ def test_unique_foreign_keys_precision_timezone_and_indexes(migrated_engine):
         session.add(
             LedgerEntry(
                 owner_id=999999,
+                public_id=1,
                 direction="expense",
                 amount_minor=1,
                 currency="INR",

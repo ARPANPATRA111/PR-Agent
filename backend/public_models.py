@@ -84,6 +84,28 @@ class PublicUser(PublicBase):
     preferences = Column(JSON, nullable=False, server_default="{}")
 
 
+class OwnerRecordCounter(PublicBase):
+    """Atomic, owner-scoped counters for identifiers shown outside the backend."""
+
+    __tablename__ = "owner_record_counters"
+
+    owner_id = Column(
+        Integer,
+        ForeignKey("app_users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    record_type = Column(String(32), primary_key=True)
+    last_value = Column(Integer, nullable=False, server_default="0")
+
+    __table_args__ = (
+        CheckConstraint("last_value >= 0", name="last_value_nonnegative"),
+        CheckConstraint(
+            "record_type IN ('work_log', 'note', 'ledger_entry', 'nutrition_log')",
+            name="record_type_supported",
+        ),
+    )
+
+
 class UserPreference(PublicBase, TimestampMixin):
     __tablename__ = "user_preferences"
 
@@ -218,6 +240,7 @@ class WorkLog(PublicBase, TimestampMixin):
     __tablename__ = "work_logs"
 
     id = Column(Integer, primary_key=True)
+    public_id = Column(Integer, nullable=False)
     owner_id = Column(
         Integer,
         ForeignKey("app_users.id", ondelete="CASCADE"),
@@ -241,6 +264,11 @@ class WorkLog(PublicBase, TimestampMixin):
             "idempotency_key",
             name="uq_work_logs_owner_id_idempotency_key",
         ),
+        UniqueConstraint(
+            "owner_id",
+            "public_id",
+            name="uq_work_logs_owner_id_public_id",
+        ),
         Index(
             "ix_work_logs_owner_id_logged_at_utc",
             "owner_id",
@@ -263,6 +291,7 @@ class Note(PublicBase, TimestampMixin):
     __tablename__ = "notes"
 
     id = Column(Integer, primary_key=True)
+    public_id = Column(Integer, nullable=False)
     owner_id = Column(
         Integer,
         ForeignKey("app_users.id", ondelete="CASCADE"),
@@ -280,6 +309,11 @@ class Note(PublicBase, TimestampMixin):
             "owner_id",
             "idempotency_key",
             name="uq_notes_owner_id_idempotency_key",
+        ),
+        UniqueConstraint(
+            "owner_id",
+            "public_id",
+            name="uq_notes_owner_id_public_id",
         ),
         Index("ix_notes_owner_id_pinned", "owner_id", "pinned"),
         Index("ix_notes_owner_id_updated_at", "owner_id", "updated_at"),
@@ -403,6 +437,7 @@ class LedgerEntry(PublicBase, TimestampMixin):
     __tablename__ = "ledger_entries"
 
     id = Column(Integer, primary_key=True)
+    public_id = Column(Integer, nullable=False)
     owner_id = Column(
         Integer,
         ForeignKey("app_users.id", ondelete="CASCADE"),
@@ -434,6 +469,11 @@ class LedgerEntry(PublicBase, TimestampMixin):
             "idempotency_key",
             name="uq_ledger_entries_owner_id_idempotency_key",
         ),
+        UniqueConstraint(
+            "owner_id",
+            "public_id",
+            name="uq_ledger_entries_owner_id_public_id",
+        ),
         Index(
             "ix_ledger_entries_owner_id_transaction_at_utc",
             "owner_id",
@@ -457,6 +497,7 @@ class NutritionLog(PublicBase, TimestampMixin):
     __tablename__ = "nutrition_logs"
 
     id = Column(Integer, primary_key=True)
+    public_id = Column(Integer, nullable=False)
     owner_id = Column(
         Integer,
         ForeignKey("app_users.id", ondelete="CASCADE"),
@@ -529,6 +570,11 @@ class NutritionLog(PublicBase, TimestampMixin):
             "owner_id",
             "idempotency_key",
             name="uq_nutrition_logs_owner_id_idempotency_key",
+        ),
+        UniqueConstraint(
+            "owner_id",
+            "public_id",
+            name="uq_nutrition_logs_owner_id_public_id",
         ),
         Index(
             "ix_nutrition_logs_owner_id_logged_at_utc",

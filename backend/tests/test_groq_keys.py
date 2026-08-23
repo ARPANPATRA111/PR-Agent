@@ -13,6 +13,14 @@ from groq_keys import (
 )
 
 
+@pytest.fixture(autouse=True)
+def clear_compatibility_keys(monkeypatch):
+    # A developer may have ENV1/ENV2 in the ignored root .env. Tests explicitly
+    # opt in so real credentials never affect deterministic pool assertions.
+    monkeypatch.setattr(settings, "env1", "")
+    monkeypatch.setattr(settings, "env2", "")
+
+
 class RateLimitError(Exception):
     def __init__(self, status_code=429, body=None):
         super().__init__("rate limited")
@@ -106,6 +114,15 @@ def test_an_ordinary_failure_is_not_a_rate_limit():
 def test_configuration_collects_primary_and_extra_keys(monkeypatch):
     monkeypatch.setattr(settings, "groq_api_key", "primary")
     monkeypatch.setattr(settings, "groq_api_keys", "second, third ,")
+
+    assert configured_groq_keys() == ["primary", "second", "third"]
+
+
+def test_configuration_accepts_env1_and_env2_compatibility_keys(monkeypatch):
+    monkeypatch.setattr(settings, "groq_api_key", "primary")
+    monkeypatch.setattr(settings, "groq_api_keys", "")
+    monkeypatch.setattr(settings, "env1", "second")
+    monkeypatch.setattr(settings, "env2", "third")
 
     assert configured_groq_keys() == ["primary", "second", "third"]
 

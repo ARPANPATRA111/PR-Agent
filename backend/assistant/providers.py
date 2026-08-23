@@ -91,8 +91,9 @@ The top-level object must contain exactly:
 
 Return one array item per intention. When the user expresses two or more
 independent intentions, split each into its own action, preserve all
-user-supplied details, and return no more than five actions. A note plus an
-expense is two actions.
+user-supplied details, keep the actions in the same order the user expressed
+them, and return no more than five actions. A note plus an expense is two
+actions.
 
 The action.kind must be exactly one of:
 create_work_log, create_note, create_ledger_entry, create_reminder,

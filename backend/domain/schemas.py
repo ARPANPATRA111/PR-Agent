@@ -7,6 +7,7 @@ from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import (
+    AliasChoices,
     BaseModel,
     ConfigDict,
     Field,
@@ -53,6 +54,12 @@ class RecordResponse(StrictSchema):
     version: int
     created_at: datetime
     updated_at: datetime
+
+
+class OwnerScopedRecordResponse(RecordResponse):
+    """Expose the tenant-local id while keeping the public API field as ``id``."""
+
+    id: int = Field(validation_alias=AliasChoices("public_id", "id"))
 
 
 def _reject_control_characters(value: str) -> str:
@@ -165,7 +172,7 @@ class WorkLogUpdate(VersionedUpdate):
     )
 
 
-class WorkLogResponse(RecordResponse):
+class WorkLogResponse(OwnerScopedRecordResponse):
     original_text: str
     cleaned_text: str | None
     category: str | None
@@ -205,7 +212,7 @@ class NoteUpdate(VersionedUpdate):
     )
 
 
-class NoteResponse(RecordResponse):
+class NoteResponse(OwnerScopedRecordResponse):
     title: str
     body: str
     tags: list[str]
@@ -286,7 +293,7 @@ class LedgerUpdate(VersionedUpdate):
     )
 
 
-class LedgerResponse(RecordResponse):
+class LedgerResponse(OwnerScopedRecordResponse):
     direction: str
     amount_minor: int
     currency: str
@@ -603,7 +610,7 @@ class NutritionItemResponse(RecordResponse):
     user_modified: bool
 
 
-class NutritionLogResponse(RecordResponse):
+class NutritionLogResponse(OwnerScopedRecordResponse):
     meal_name: str | None
     logged_at_utc: datetime
     user_local_date: date

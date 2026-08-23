@@ -12,11 +12,11 @@ from pathlib import Path
 from sqlalchemy import MetaData, Table, create_engine, inspect, select
 from sqlalchemy.orm import Session
 
-
 BACKEND_DIR = Path(__file__).resolve().parents[1] / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
 
 from config import settings  # noqa: E402
+from domain.services import DomainServices  # noqa: E402
 from public_models import PublicUser, WorkLog  # noqa: E402
 
 
@@ -71,9 +71,11 @@ def main() -> int:
         owner_by_telegram: dict[int, PublicUser] = {}
         for row in user_rows:
             telegram_id = int(row["telegram_id"])
-            public_user = session.query(PublicUser).filter_by(
-                telegram_id=telegram_id
-            ).one_or_none()
+            public_user = (
+                session.query(PublicUser)
+                .filter_by(telegram_id=telegram_id)
+                .one_or_none()
+            )
             if public_user is None:
                 public_user = PublicUser(
                     telegram_id=telegram_id,
@@ -90,9 +92,11 @@ def main() -> int:
         counters["legacy_entries"] = len(entry_rows)
         for row in entry_rows:
             legacy_id = int(row["id"])
-            existing = session.query(WorkLog.id).filter_by(
-                legacy_raw_entry_id=legacy_id
-            ).scalar()
+            existing = (
+                session.query(WorkLog.id)
+                .filter_by(legacy_raw_entry_id=legacy_id)
+                .scalar()
+            )
             if existing is not None:
                 counters["work_logs_existing"] += 1
                 continue
@@ -115,6 +119,9 @@ def main() -> int:
             timezone_name = preferences.get("timezone", "UTC")
             work_log = WorkLog(
                 owner_id=owner.id,
+                public_id=DomainServices(session)._allocate_public_id(
+                    owner.id, "work_log"
+                ),
                 original_text=row.get("transcript") or "",
                 cleaned_text=row.get("transcript") or "",
                 logged_at_utc=timestamp,
@@ -133,9 +140,11 @@ def main() -> int:
                 )
 
         session.flush()
-        mapped_count = session.query(WorkLog).filter(
-            WorkLog.legacy_raw_entry_id.is_not(None)
-        ).count()
+        mapped_count = (
+            session.query(WorkLog)
+            .filter(WorkLog.legacy_raw_entry_id.is_not(None))
+            .count()
+        )
         if mapped_count < counters["legacy_entries"]:
             raise RuntimeError(
                 f"Backfill validation failed: {mapped_count} mapped for "

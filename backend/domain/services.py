@@ -11,7 +11,7 @@ from decimal import Decimal
 from typing import Any, TypeVar
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import func, or_, update
+from sqlalchemy import func, or_, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -268,6 +268,21 @@ class DomainServices:
                 raise
             return existing
 
+    def _allocate_public_id(self, owner_id: int, record_type: str) -> int:
+        """Atomically allocate a stable sequence number inside one owner/type."""
+        value = self.session.execute(
+            text(
+                "INSERT INTO owner_record_counters "
+                "(owner_id, record_type, last_value) "
+                "VALUES (:owner_id, :record_type, 1) "
+                "ON CONFLICT (owner_id, record_type) DO UPDATE "
+                "SET last_value = owner_record_counters.last_value + 1 "
+                "RETURNING last_value"
+            ),
+            {"owner_id": owner_id, "record_type": record_type},
+        ).scalar_one()
+        return int(value)
+
     @staticmethod
     def _require_owned(
         session: Session,
@@ -283,6 +298,45 @@ class DomainServices:
         if record is None:
             raise RecordNotFound()
         return record
+
+    @staticmethod
+    def _require_owned_public(
+        session: Session,
+        model: type[ModelT],
+        owner_id: int,
+        public_id: int,
+    ) -> ModelT:
+        record = (
+            session.query(model)
+            .filter(model.public_id == public_id, model.owner_id == owner_id)
+            .one_or_none()
+        )
+        if record is None:
+            raise RecordNotFound()
+        return record
+
+    def resolve_public_record_id(
+        self,
+        owner_id: int,
+        record_type: str,
+        public_id: int,
+    ) -> int:
+        """Resolve an external owner-scoped id to its private database key."""
+        models = {
+            "work_log": WorkLog,
+            "note": Note,
+            "ledger_entry": LedgerEntry,
+            "nutrition_log": NutritionLog,
+        }
+        model = models.get(record_type)
+        if model is None:
+            return public_id
+        return self._require_owned_public(
+            self.session,
+            model,
+            owner_id,
+            public_id,
+        ).id
 
     def _versioned_update(
         self,
@@ -372,6 +426,7 @@ class DomainServices:
         )
         record = WorkLog(
             owner_id=owner_id,
+            public_id=self._allocate_public_id(owner_id, "work_log"),
             original_text=data.original_text,
             cleaned_text=data.cleaned_text,
             category=data.category.lower() if data.category else None,
@@ -392,6 +447,9 @@ class DomainServices:
 
     def get_work_log(self, owner_id: int, record_id: int) -> WorkLog:
         return self._require_owned(self.session, WorkLog, owner_id, record_id)
+
+    def get_work_log_by_public_id(self, owner_id: int, public_id: int) -> WorkLog:
+        return self._require_owned_public(self.session, WorkLog, owner_id, public_id)
 
     def list_work_logs(
         self,
@@ -519,6 +577,7 @@ class DomainServices:
         title = data.title or data.body.splitlines()[0][:80]
         record = Note(
             owner_id=owner_id,
+            public_id=self._allocate_public_id(owner_id, "note"),
             title=title,
             body=data.body,
             tags=data.tags,
@@ -530,6 +589,9 @@ class DomainServices:
 
     def get_note(self, owner_id: int, record_id: int) -> Note:
         return self._require_owned(self.session, Note, owner_id, record_id)
+
+    def get_note_by_public_id(self, owner_id: int, public_id: int) -> Note:
+        return self._require_owned_public(self.session, Note, owner_id, public_id)
 
     def list_notes(
         self,
@@ -606,6 +668,7 @@ class DomainServices:
         )
         record = LedgerEntry(
             owner_id=owner_id,
+            public_id=self._allocate_public_id(owner_id, "ledger_entry"),
             direction=data.direction,
             amount_minor=amount_to_minor(data.amount, data.currency),
             currency=data.currency,
@@ -623,6 +686,13 @@ class DomainServices:
 
     def get_ledger_entry(self, owner_id: int, record_id: int) -> LedgerEntry:
         return self._require_owned(self.session, LedgerEntry, owner_id, record_id)
+
+    def get_ledger_entry_by_public_id(
+        self, owner_id: int, public_id: int
+    ) -> LedgerEntry:
+        return self._require_owned_public(
+            self.session, LedgerEntry, owner_id, public_id
+        )
 
     def list_ledger_entries(
         self,
@@ -1144,6 +1214,7 @@ class DomainServices:
         )
         record = NutritionLog(
             owner_id=owner_id,
+            public_id=self._allocate_public_id(owner_id, "nutrition_log"),
             meal_name=data.meal_name,
             logged_at_utc=logged_at,
             user_local_date=logged_at.astimezone(ZoneInfo(data.timezone)).date(),
@@ -1347,6 +1418,15 @@ class DomainServices:
         record_id: int,
     ) -> NutritionLog:
         return self._require_owned(self.session, NutritionLog, owner_id, record_id)
+
+    def get_nutrition_log_by_public_id(
+        self,
+        owner_id: int,
+        public_id: int,
+    ) -> NutritionLog:
+        return self._require_owned_public(
+            self.session, NutritionLog, owner_id, public_id
+        )
 
     def list_nutrition_logs(
         self,

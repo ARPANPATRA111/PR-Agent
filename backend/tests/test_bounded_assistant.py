@@ -15,6 +15,7 @@ from assistant.providers import (
 )
 from assistant.schemas import AgentProposal
 from nutrition.providers import get_nutrition_provider
+from domain.schemas import NoteCreate
 from domain.services import DomainServices
 from public_models import (
     AgentAction,
@@ -488,8 +489,11 @@ def test_query_cannot_include_another_tenant(assistant_db):
             },
         ),
     )
-    alice_assistant.handle(ALICE, "Alice work", update_id=18)
-    bob_assistant.handle(BOB, "Bob work", update_id=19)
+    alice_saved = alice_assistant.handle(ALICE, "Alice work", update_id=18)
+    bob_saved = bob_assistant.handle(BOB, "Bob work", update_id=19)
+    assert "Work log #1 saved" in alice_saved.text
+    assert "Work log #1 saved" in bob_saved.text
+    assert alice_saved.record_id != bob_saved.record_id
     result = bob_assistant.handle(BOB, "What did I do today?", update_id=20)
     assert "Bob private" in result.text
     assert "Alice private" not in result.text
@@ -512,6 +516,13 @@ def test_pending_confirmation_expires_without_action(assistant_db):
         pending_ttl_minutes=5,
         clock=lambda: current[0],
     )
+    with assistant_db() as session:
+        owner = DomainServices(session).ensure_owner(
+            telegram_id=ALICE.telegram_id,
+            first_name=ALICE.first_name,
+        )
+        DomainServices(session).create_note(owner.id, NoteCreate(body="temporary"))
+        session.commit()
     pending = assistant.handle(ALICE, "delete note 1", update_id=21)
     current[0] += timedelta(minutes=6)
     assert assistant.confirm(ALICE, pending.pending_id).status == "expired"
@@ -768,6 +779,66 @@ def test_multi_intent_review_confirms_all_actions_together(assistant_db):
     with assistant_db() as session:
         assert session.query(Note).count() == 1
         assert session.query(LedgerEntry).count() == 1
+
+
+def test_multi_intent_resumes_report_after_food_confirmation(assistant_db):
+    assistant = build_assistant(
+        assistant_db,
+        FakeProvider(
+            {
+                "confidence": 0.99,
+                "actions": [
+                    {
+                        "kind": "create_ledger_entry",
+                        "direction": "expense",
+                        "amount": "250",
+                        "currency": "INR",
+                        "description": "team lunch",
+                    },
+                    {
+                        "kind": "create_nutrition_log",
+                        "text": "50 g paneer",
+                        "meal_name": "Lunch",
+                        "timezone": "UTC",
+                    },
+                    {
+                        "kind": "query",
+                        "query_type": "spending",
+                        "timezone": "UTC",
+                    },
+                ],
+            }
+        ),
+    )
+
+    review = assistant.handle(
+        ALICE,
+        "Log 250 INR for lunch, log 50 g paneer, then show spending this week",
+        update_id=412,
+        review_required=True,
+        source="voice",
+    )
+    first_stage = assistant.confirm(ALICE, review.pending_id)
+
+    assert first_stage.status == "nutrition_confirmation"
+    assert first_stage.pending_id == review.pending_id
+    assert "Food preview" in first_stage.text
+    assert "spending for" not in first_stage.text.lower()
+    with assistant_db() as session:
+        assert session.query(LedgerEntry).count() == 1
+        assert session.query(NutritionLog).one().status == "draft"
+        assert (
+            session.get(AgentPendingAction, review.pending_id).state == "confirmation"
+        )
+
+    final = assistant.confirm(ALICE, review.pending_id)
+
+    assert final.status == "completed"
+    assert "Food log #1 confirmed" in final.text
+    assert "ledger summary" in final.text.lower()
+    with assistant_db() as session:
+        assert session.query(NutritionLog).one().status == "confirmed"
+        assert session.get(AgentPendingAction, review.pending_id).state == "executed"
 
 
 def test_mighty_voice_intent_confirms_four_independent_actions_together(assistant_db):

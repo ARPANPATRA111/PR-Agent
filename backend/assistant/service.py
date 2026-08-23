@@ -110,7 +110,10 @@ class AssistantReply:
     text: str
     status: str
     record_type: str | None = None
+    # Private database key used only by backend audit/continuation logic.
     record_id: int | None = None
+    # Stable owner-scoped id that may safely be shown or placed in callbacks.
+    public_id: int | None = None
     pending_id: int | None = None
     # Candidate (record_id, label) pairs the caller should render as choices
     # when a spoken reference matched more than one record.
@@ -155,6 +158,7 @@ class BoundedAssistant:
         update_id: int,
         review_required: bool = False,
         quota_reserved: bool = False,
+        source: str = "text",
     ) -> AssistantReply:
         text = text.strip()
         if not text or len(text) > self.max_input_length:
@@ -174,6 +178,14 @@ class BoundedAssistant:
         existing = self._existing_reply(actor.telegram_id, idempotency_key)
         if existing is not None:
             return existing
+        if source == "voice" and self._looks_like_vault_save(text):
+            return AssistantReply(
+                "For your security, credentials and other vault items cannot be "
+                "saved from a voice message. Open the Mini App and add the item "
+                "in Vault instead. You can still ask me by voice to retrieve an "
+                "existing vault item.",
+                "rejected",
+            )
         try:
             vault_capture = self._parse_vault_capture(text)
         except (ValidationError, ValueError) as exc:
@@ -401,6 +413,22 @@ class BoundedAssistant:
                 normalized,
             )
         )
+
+    @staticmethod
+    def _looks_like_vault_save(text: str) -> bool:
+        """Detect voice requests that could place sensitive material in the vault."""
+        normalized = " ".join(text.casefold().split())
+        save_request = re.search(
+            r"\b(?:save|store|add|put|keep|remember|record)\b",
+            normalized,
+        )
+        sensitive_target = re.search(
+            r"\b(?:vault|credential|password|passcode|pin|api\s*key|secret|"
+            r"access\s*token|bank\s*account|account\s*number|ifsc|aadhaar|"
+            r"social\s*security)\b",
+            normalized,
+        )
+        return bool(save_request and sensitive_target)
 
     @staticmethod
     def _parse_manual_nutrition(text: str) -> dict[str, Decimal | str] | None:
@@ -652,6 +680,8 @@ class BoundedAssistant:
             )
         if self._expire_if_needed(pending):
             return AssistantReply("That confirmation has expired.", "expired")
+        if pending.proposed_arguments.get("kind") == "batch_continuation":
+            return self._resume_batch(pending, confirm_nutrition=True)
         if pending.proposed_arguments.get("kind") == "batch":
             return self._confirm_batch(pending)
         if pending.proposed_arguments.get("kind") == "delete_many_snapshot":
@@ -718,13 +748,12 @@ class BoundedAssistant:
                 run.status = "completed"
                 run.completed_at_utc = self.clock()
             session.commit()
-        return AssistantReply(
-            f"{proposal.action.record_type.replace('_', ' ').title()} "
-            f"#{proposal.action.record_id} deleted.",
-            "completed",
-            proposal.action.record_type,
-            proposal.action.record_id,
-        )
+            return AssistantReply(
+                f"{proposal.action.record_type.replace('_', ' ').title()} " "deleted.",
+                "completed",
+                proposal.action.record_type,
+                proposal.action.record_id,
+            )
 
     def _confirm_batch(self, pending: AgentPendingAction) -> AssistantReply:
         raw_actions = pending.proposed_arguments.get("actions")
@@ -759,58 +788,180 @@ class BoundedAssistant:
                 )
                 if current is None:
                     return AssistantReply("That review is already closed.", "completed")
-                service = DomainServices(session)
-                results: list[str] = []
-                nutrition_reply: AssistantReply | None = None
-                for index, action in enumerate(actions, start=1):
-                    if isinstance(action, DeleteRecordAction):
-                        try:
-                            self._delete_record(service, current.owner_id, action)
-                            results.append(
-                                f"{action.record_type.replace('_', ' ').title()} "
-                                f"#{action.record_id} deleted."
-                            )
-                        except RecordNotFound:
-                            results.append(
-                                f"{action.record_type.replace('_', ' ').title()} "
-                                f"#{action.record_id} was already absent."
-                            )
-                        continue
-                    reply = self._execute_tool(
-                        service,
-                        current.owner_id,
-                        f"{current.idempotency_key}:{index}",
-                        action,
-                    )
-                    results.append(reply.text)
-                    if reply.status == "nutrition_confirmation":
-                        nutrition_reply = reply
-                current.state = "executed"
-                current.resolved_at_utc = self.clock()
-                self._update_action(
+                return self._execute_batch_segment(
                     session,
-                    current.owner_id,
-                    current.idempotency_key,
-                    status="executed",
+                    current,
+                    actions,
+                    start_index=1,
+                    leading_results=[],
                 )
-                run = session.get(AgentRun, current.run_id)
-                if run:
-                    run.status = "completed"
-                    run.completed_at_utc = self.clock()
-                session.commit()
         except (DomainError, ValueError) as exc:
             return AssistantReply(escape(str(exc)), "failed", pending_id=pending.id)
-        text = "Confirmed and saved:\n" + "\n".join(
-            f"{index}. {result}" for index, result in enumerate(results, start=1)
-        )
-        if nutrition_reply is not None:
+
+    def _resume_batch(
+        self,
+        pending: AgentPendingAction,
+        *,
+        confirm_nutrition: bool,
+    ) -> AssistantReply:
+        """Resolve the current food preview, then resume the ordered intent queue."""
+        stored = pending.proposed_arguments or {}
+        nutrition_id = stored.get("nutrition_record_id")
+        raw_actions = stored.get("remaining_actions")
+        next_index = stored.get("next_index")
+        if (
+            not isinstance(nutrition_id, int)
+            or nutrition_id <= 0
+            or not isinstance(raw_actions, list)
+            or not isinstance(next_index, int)
+            or next_index <= 0
+        ):
             return AssistantReply(
-                text,
-                "nutrition_confirmation",
-                "nutrition_log",
-                nutrition_reply.record_id,
+                "The stored continuation is no longer valid.", "failed"
             )
-        return AssistantReply(text, "completed")
+        try:
+            actions = [
+                AgentProposal.model_validate(
+                    {"confidence": 1, "action": raw_action}
+                ).proposed_actions[0]
+                for raw_action in raw_actions
+            ]
+        except ValidationError:
+            return AssistantReply(
+                "The stored continuation is no longer valid.", "failed"
+            )
+
+        try:
+            with self.session_factory() as session:
+                current = (
+                    session.query(AgentPendingAction)
+                    .filter(
+                        AgentPendingAction.id == pending.id,
+                        AgentPendingAction.owner_id == pending.owner_id,
+                        AgentPendingAction.state == "confirmation",
+                    )
+                    .with_for_update()
+                    .one_or_none()
+                )
+                if current is None:
+                    return AssistantReply("That review is already closed.", "completed")
+                # Re-read after taking the lock so a duplicate button tap cannot
+                # confirm an older preview after the queue has already advanced.
+                current_values = current.proposed_arguments or {}
+                if (
+                    current_values.get("kind") != "batch_continuation"
+                    or current_values.get("nutrition_record_id") != nutrition_id
+                ):
+                    return AssistantReply(
+                        "That food review is already closed.", "completed"
+                    )
+                service = DomainServices(session)
+                row = service.get_nutrition_log(current.owner_id, nutrition_id)
+                if confirm_nutrition:
+                    row = service.confirm_nutrition_log(
+                        current.owner_id,
+                        row.id,
+                        row.version,
+                    )
+                    result = (
+                        f"Food log #{row.public_id} confirmed: approximately "
+                        f"{row.total_calories} kcal and "
+                        f"{row.total_protein_grams} g protein."
+                    )
+                else:
+                    public_id = row.public_id
+                    if row.status == "draft":
+                        service.delete_nutrition_log(current.owner_id, row.id)
+                    result = (
+                        f"Food preview #{public_id} discarded. Nothing was counted."
+                    )
+                return self._execute_batch_segment(
+                    session,
+                    current,
+                    actions,
+                    start_index=next_index,
+                    leading_results=[result],
+                )
+        except (DomainError, RecordNotFound, ValueError) as exc:
+            return AssistantReply(escape(str(exc)), "failed", pending_id=pending.id)
+
+    def _execute_batch_segment(
+        self,
+        session: Session,
+        current: AgentPendingAction,
+        actions: list,
+        *,
+        start_index: int,
+        leading_results: list[str],
+    ) -> AssistantReply:
+        """Execute in order, durably pausing at the next nutrition review."""
+        service = DomainServices(session)
+        results = list(leading_results)
+        for offset, action in enumerate(actions):
+            index = start_index + offset
+            if isinstance(action, DeleteRecordAction):
+                noun = action.record_type.replace("_", " ").title()
+                try:
+                    self._delete_record(service, current.owner_id, action)
+                    results.append(f"{noun} deleted.")
+                except RecordNotFound:
+                    results.append(f"{noun} was already absent.")
+                continue
+            reply = self._execute_tool(
+                service,
+                current.owner_id,
+                f"{current.idempotency_key}:{index}",
+                action,
+            )
+            if reply.status == "nutrition_confirmation":
+                current.proposed_arguments = {
+                    "kind": "batch_continuation",
+                    "nutrition_record_id": reply.record_id,
+                    "next_index": index + 1,
+                    "remaining_actions": [
+                        remaining.model_dump(mode="json")
+                        for remaining in actions[offset + 1 :]
+                    ],
+                }
+                current.prompt = "A food preview is waiting for Correct or Wrong."
+                current.version += 1
+                run = session.get(AgentRun, current.run_id)
+                if run:
+                    run.status = "confirmation"
+                    run.completed_at_utc = self.clock()
+                session.commit()
+                prefix = (
+                    "Completed so far:\n" + "\n".join(results) + "\n\n"
+                    if results
+                    else ""
+                )
+                return AssistantReply(
+                    prefix + reply.text,
+                    "nutrition_confirmation",
+                    "nutrition_log",
+                    reply.record_id,
+                    public_id=reply.public_id,
+                    pending_id=current.id,
+                )
+            results.append(reply.text)
+
+        current.state = "executed"
+        current.resolved_at_utc = self.clock()
+        self._update_action(
+            session,
+            current.owner_id,
+            current.idempotency_key,
+            status="executed",
+        )
+        run = session.get(AgentRun, current.run_id)
+        if run:
+            run.status = "completed"
+            run.completed_at_utc = self.clock()
+        session.commit()
+        return AssistantReply(
+            "Completed:\n" + "\n\n".join(results) if results else "Completed.",
+            "completed",
+        )
 
     def confirm_nutrition_preview(
         self,
@@ -822,13 +973,14 @@ class BoundedAssistant:
             service = DomainServices(session)
             try:
                 owner = service.get_owner_by_telegram_id(actor.telegram_id)
-                current = service.get_nutrition_log(owner.id, record_id)
+                current = service.get_nutrition_log_by_public_id(owner.id, record_id)
                 if current.status == "confirmed":
                     return AssistantReply(
                         "That meal was already confirmed.",
                         "completed",
                         "nutrition_log",
                         current.id,
+                        public_id=current.public_id,
                     )
                 row = service.confirm_nutrition_log(
                     owner.id,
@@ -842,12 +994,13 @@ class BoundedAssistant:
                 )
             session.commit()
             return AssistantReply(
-                f"Food log #{row.id} confirmed: approximately "
+                f"Food log #{row.public_id} confirmed: approximately "
                 f"{row.total_calories} kcal and "
                 f"{row.total_protein_grams} g protein.",
                 "completed",
                 "nutrition_log",
                 row.id,
+                public_id=row.public_id,
             )
 
     def cancel_nutrition_preview(
@@ -860,7 +1013,7 @@ class BoundedAssistant:
             service = DomainServices(session)
             try:
                 owner = service.get_owner_by_telegram_id(actor.telegram_id)
-                current = service.get_nutrition_log(owner.id, record_id)
+                current = service.get_nutrition_log_by_public_id(owner.id, record_id)
                 if current.status != "draft":
                     return AssistantReply(
                         "Only an unconfirmed food preview can be discarded.",
@@ -882,6 +1035,8 @@ class BoundedAssistant:
         pending = self._load_pending(actor.telegram_id, pending_id)
         if pending is None:
             return AssistantReply("Pending action not found.", "rejected")
+        if pending.proposed_arguments.get("kind") == "batch_continuation":
+            return self._resume_batch(pending, confirm_nutrition=False)
         with self.session_factory() as session:
             current = (
                 session.query(AgentPendingAction)
@@ -1785,7 +1940,23 @@ class BoundedAssistant:
                 continue
             record_type, record_id, search, ordinal = reference
             if record_id:
-                resolved.append(action)
+                try:
+                    with self.session_factory() as session:
+                        internal_id = DomainServices(session).resolve_public_record_id(
+                            owner_id,
+                            record_type,
+                            record_id,
+                        )
+                except RecordNotFound:
+                    noun = record_type.replace("_", " ")
+                    return actions, self._reject(
+                        owner_id,
+                        run_id,
+                        idempotency_key,
+                        action.kind,
+                        f"I could not find {noun} #{record_id} in your account.",
+                    )
+                resolved.append(self._with_resolved_id(action, internal_id))
                 continue
             with self.session_factory() as session:
                 candidates = self._reference_candidates(
@@ -2315,10 +2486,11 @@ class BoundedAssistant:
                 ),
             )
             return AssistantReply(
-                f"Work log #{row.id} saved.",
+                f"Work log #{row.public_id} saved.",
                 "completed",
                 "work_log",
                 row.id,
+                public_id=row.public_id,
             )
         if isinstance(action, CreateNoteAction):
             row = service.create_note(
@@ -2332,10 +2504,11 @@ class BoundedAssistant:
                 ),
             )
             return AssistantReply(
-                f"Note #{row.id} saved.",
+                f"Note #{row.public_id} saved.",
                 "completed",
                 "note",
                 row.id,
+                public_id=row.public_id,
             )
         if isinstance(action, CreateLedgerAction):
             row = service.create_ledger_entry(
@@ -2351,11 +2524,12 @@ class BoundedAssistant:
                 ),
             )
             return AssistantReply(
-                f"{action.direction.title()} #{row.id} saved as "
+                f"{action.direction.title()} #{row.public_id} saved as "
                 f"{action.amount} {row.currency}.",
                 "completed",
                 "ledger_entry",
                 row.id,
+                public_id=row.public_id,
             )
         if isinstance(action, CreateReminderAction):
             row = service.create_reminder(
@@ -2417,7 +2591,7 @@ class BoundedAssistant:
                 )
             if row.clarification_question:
                 text = (
-                    f"Food draft #{row.id} saved. "
+                    f"Food draft #{row.public_id} saved. "
                     f"{escape(row.clarification_question)}"
                 )
             else:
@@ -2433,7 +2607,7 @@ class BoundedAssistant:
                     f"\n\n<b>Assumptions</b>\n{assumptions}" if assumptions else ""
                 )
                 text = (
-                    f"<b>Food preview #{row.id}</b>\n"
+                    f"<b>Food preview #{row.public_id}</b>\n"
                     f"You said: {escape(action.text)}\n\n"
                     f"{item_lines}\n\n"
                     f"Total: approximately {row.total_calories} kcal and "
@@ -2446,7 +2620,13 @@ class BoundedAssistant:
                 if row.status == "confirmed" or row.clarification_question
                 else "nutrition_confirmation"
             )
-            return AssistantReply(text, status, "nutrition_log", row.id)
+            return AssistantReply(
+                text,
+                status,
+                "nutrition_log",
+                row.id,
+                public_id=row.public_id,
+            )
         if isinstance(action, CreateGoalAction):
             row = service.create_goal(
                 owner_id,
@@ -2765,7 +2945,8 @@ class BoundedAssistant:
             limit=action.limit,
         )
         return "work logs", [
-            f"• #{row.id} · {row.user_local_date} — {self._clip(row.original_text)}"
+            f"• #{row.public_id} · {row.user_local_date} — "
+            f"{self._clip(row.original_text)}"
             for row in rows
         ]
 
@@ -2789,7 +2970,7 @@ class BoundedAssistant:
             return created_at.astimezone(zone).date()
 
         return "notes", [
-            f"• #{row.id} · {local_created_date(row)} "
+            f"• #{row.public_id} · {local_created_date(row)} "
             f"{'📌 ' if row.pinned else ''}"
             f"{self._clip(row.title, 60)} — {self._clip(row.body, 110)}"
             for row in rows
@@ -2827,7 +3008,7 @@ class BoundedAssistant:
             limit=action.limit,
         )
         return "ledger entries", [
-            f"• #{row.id} · {row.user_local_date} — {row.direction} "
+            f"• #{row.public_id} · {row.user_local_date} — {row.direction} "
             f"{row.currency} {self._major_amount(row.amount_minor, row.currency)}"
             f" — {self._clip(row.description, 90)}"
             for row in rows
@@ -2843,7 +3024,7 @@ class BoundedAssistant:
             limit=action.limit,
         )
         return "food logs", [
-            f"• #{row.id} · {row.user_local_date} [{row.status}] "
+            f"• #{row.public_id} · {row.user_local_date} [{row.status}] "
             f"{self._clip(row.meal_name or row.original_text, 90)} — "
             f"approximately {row.total_calories} kcal, "
             f"{row.total_protein_grams} g protein"
