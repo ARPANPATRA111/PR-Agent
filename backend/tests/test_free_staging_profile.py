@@ -44,6 +44,18 @@ def test_free_blueprint_contains_only_free_api_and_static_site():
     assert environment["MESSAGE_CLEANUP_DELAY_SECONDS"] == "144000"
     assert environment["QUOTAS_ENABLED"] == "true"
     assert environment["PER_USER_DAILY_AI_LIMIT"] == "100"
+    frontend_headers = {item["name"]: item["value"] for item in services[1]["headers"]}
+    assert "X-Frame-Options" not in frontend_headers
+    assert frontend_headers["X-Permitted-Cross-Domain-Policies"] == "none"
+    csp = frontend_headers["Content-Security-Policy"]
+    for directive in (
+        "default-src 'self'",
+        "object-src 'none'",
+        "frame-ancestors https://web.telegram.org",
+        "https://telegram.org",
+        "https://pr-agent-r24-staging-api.onrender.com",
+    ):
+        assert directive in csp
     secret_entries = {
         item["key"]: item
         for item in services[0]["envVars"]
@@ -111,6 +123,13 @@ def test_free_blueprint_structurally_rejects_billable_resources():
 def test_production_blueprint_keeps_dedicated_worker():
     services = load_yaml("render.yaml")["projects"][0]["environments"][0]["services"]
     assert any(service["type"] == "worker" for service in services)
+    frontend = next(service for service in services if service["name"].endswith("-web"))
+    headers = {item["name"]: item["value"] for item in frontend["headers"]}
+    assert "X-Frame-Options" not in headers
+    assert (
+        "https://pr-agent-staging-api.onrender.com"
+        in headers["Content-Security-Policy"]
+    )
 
 
 def test_registered_commands_include_manual_food_and_exclude_legacy_reports():

@@ -41,6 +41,7 @@ def verify(
     expected_revision: str,
     monitoring_token: str = "",
 ) -> list[str]:
+    del expected_revision  # Revision details are intentionally not public.
     results: list[str] = []
     with httpx.Client(timeout=30, follow_redirects=True) as client:
         health = client.get(f"{api_url}/health")
@@ -52,27 +53,17 @@ def verify(
         ready = client.get(f"{api_url}/ready")
         require(ready, 200, "readiness")
         payload = ready.json()
-        if payload.get("migration_revision") != expected_revision:
-            raise RuntimeError("database migration revision does not match")
-        if payload.get("environment") != "staging" or payload.get("debug") is not False:
-            raise RuntimeError("staging environment or debug state is unsafe")
-        components = payload.get("components", {})
-        expected = {
-            "telegram": "disabled",
-            "telegram_delivery": "awaiting_telegram",
-            "ai": "disabled",
-            "nutrition_provider": "disabled",
-            "message_cleanup": "disabled",
-        }
-        if any(components.get(key) != value for key, value in expected.items()):
-            raise RuntimeError(
-                "pre-bot component state does not match the free profile"
-            )
+        if payload != {"status": "ready"}:
+            raise RuntimeError("readiness endpoint exposes unexpected details")
         results.append("readiness=pass")
 
         webhook = client.post(f"{api_url}/webhook", json={"update_id": 1})
-        require(webhook, 503, "disabled webhook")
-        results.append("telegram_disabled=pass")
+        require(webhook, 401, "unauthenticated webhook")
+        results.append("webhook_auth=pass")
+
+        for path in ("/docs", "/redoc", "/openapi.json"):
+            require(client.get(f"{api_url}{path}"), 404, f"private schema {path}")
+        results.append("api_schema_private=pass")
 
         frontend = client.get(frontend_url)
         require(frontend, 200, "frontend")
@@ -83,10 +74,23 @@ def verify(
             "x-content-type-options": "nosniff",
             "referrer-policy": "no-referrer",
             "permissions-policy": "camera=(), geolocation=(), microphone=()",
+            "x-permitted-cross-domain-policies": "none",
         }
         for name, value in expected_headers.items():
             if frontend.headers.get(name) != value:
                 raise RuntimeError(f"frontend security header is missing: {name}")
+        csp = frontend.headers.get("content-security-policy", "")
+        required_directives = (
+            "default-src 'self'",
+            "object-src 'none'",
+            "frame-ancestors https://web.telegram.org",
+            "https://telegram.org",
+            api_url,
+        )
+        if any(directive not in csp for directive in required_directives):
+            raise RuntimeError("frontend Content-Security-Policy is incomplete")
+        if frontend.headers.get("x-frame-options"):
+            raise RuntimeError("frontend frame policy blocks Telegram Web")
         results.append("frontend=pass")
 
         route_refresh = client.get(f"{frontend_url}/settings")

@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple, Generator
@@ -373,24 +374,30 @@ class MemoryManager:
         ]
 
         with self.engine.connect() as conn:
+            from sqlalchemy import inspect
+
+            inspector = inspect(conn)
             for table, column, col_type in migrations:
                 try:
-                    if self.is_postgres:
-                        result = conn.execute(
-                            text(
-                                f"SELECT column_name FROM information_schema.columns "
-                                f"WHERE table_name = '{table}' AND column_name = '{column}'"
-                            )
-                        )
-                        exists = result.fetchone() is not None
-                    else:
-                        result = conn.execute(text(f"PRAGMA table_info({table})"))
-                        columns = [row[1] for row in result.fetchall()]
-                        exists = column in columns
+                    # SQLAlchemy's inspector performs the metadata lookup with
+                    # dialect-safe quoting. The identifiers below come from the
+                    # closed migration list above and are validated before the
+                    # one DDL statement that necessarily contains identifiers.
+                    if not re.fullmatch(r"[a-z_][a-z0-9_]*", table) or not re.fullmatch(
+                        r"[a-z_][a-z0-9_]*", column
+                    ):
+                        raise RuntimeError("Unsafe compatibility migration identifier")
+                    columns = {item["name"] for item in inspector.get_columns(table)}
+                    exists = column in columns
 
                     if not exists:
                         conn.execute(
-                            text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+                            # The regex above constrains both identifiers and
+                            # column types are selected from the closed list.
+                            text(  # nosec B608
+                                f'ALTER TABLE "{table}" ADD COLUMN '
+                                f'"{column}" {col_type}'
+                            )
                         )
                         logger.info(f"Added column {column} to {table}")
                 except Exception as e:

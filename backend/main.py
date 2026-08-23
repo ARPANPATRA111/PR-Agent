@@ -222,8 +222,13 @@ app = FastAPI(
     description="Invite-only multi-user Telegram tracking assistant",
     version="2.0.0-security-preview",
     lifespan=lifespan,
-    docs_url=None if settings.app_env == "production" else "/docs",
-    redoc_url=None if settings.app_env == "production" else "/redoc",
+    # Interactive schemas are useful locally, but they unnecessarily publish
+    # the complete private API surface on an internet-facing deployment.
+    docs_url="/docs" if settings.app_env in {"development", "test"} else None,
+    redoc_url="/redoc" if settings.app_env in {"development", "test"} else None,
+    openapi_url=(
+        "/openapi.json" if settings.app_env in {"development", "test"} else None
+    ),
 )
 
 from rate_limiter import setup_rate_limiting, limiter, RATE_LIMITS
@@ -282,7 +287,11 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Permissions-Policy"] = "camera=(), geolocation=(), microphone=()"
-    if request.url.path.startswith("/api/"):
+    if request.url.path.startswith("/api/") or request.url.path in {
+        "/ready",
+        "/health",
+        "/internal/metrics",
+    }:
         response.headers["Cache-Control"] = "no-store"
     if settings.session_cookie_secure:
         response.headers["Strict-Transport-Security"] = (
@@ -406,58 +415,12 @@ async def readiness_check():
             status_code=503,
             content={"status": "not_ready", "database": "unavailable"},
         )
-    try:
-        revision = session.execute(
-            text("SELECT version_num FROM alembic_version")
-        ).scalar_one_or_none()
-    except Exception:
-        revision = "unversioned"
     finally:
         session.close()
-    return {
-        "status": "ready",
-        "database": "connected",
-        "migration_revision": revision,
-        "environment": settings.app_env,
-        "debug": settings.debug,
-        "components": {
-            "telegram": (
-                "enabled" if settings.telegram_integration_enabled else "disabled"
-            ),
-            "telegram_delivery": getattr(
-                app.state,
-                "telegram_delivery_status",
-                "disabled",
-            ),
-            "ai": "enabled" if settings.ai_agent_enabled else "disabled",
-            "nutrition_provider": settings.nutrition_provider,
-            "message_cleanup": (
-                "enabled" if settings.message_cleanup_enabled else "disabled"
-            ),
-            "keep_alive": getattr(app.state, "keep_alive_status", "disabled"),
-            # Exposed so configuration questions can be answered without the
-            # hosting dashboard: whether daily caps apply, and how many
-            # provider credentials the rotation actually picked up. Counts and
-            # flags only; no credential material.
-            "daily_quotas": "enforced" if settings.quotas_enabled else "unlimited",
-            "access": "invite_only" if settings.invite_only else "public",
-            "groq_credentials": _configured_groq_credential_count(),
-            "privacy_policy": (
-                "published"
-                if settings.privacy_policy_url.startswith("https://")
-                else "unset"
-            ),
-        },
-    }
-
-
-def _configured_groq_credential_count() -> int:
-    try:
-        from groq_keys import configured_groq_keys
-
-        return len(configured_groq_keys())
-    except Exception:
-        return 0
+    # Platform probes need only a binary answer. Configuration, migration and
+    # provider details belong in authenticated operational tooling, not in a
+    # public fingerprinting endpoint.
+    return {"status": "ready"}
 
 
 @app.get("/internal/metrics", tags=["Operations"])

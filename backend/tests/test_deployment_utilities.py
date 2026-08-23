@@ -76,21 +76,12 @@ def test_deployment_diagnostic_checks_pre_bot_profile(monkeypatch):
         if request.url.path == "/ready":
             return httpx.Response(
                 200,
-                json={
-                    "migration_revision": module.EXPECTED_REVISION,
-                    "environment": "staging",
-                    "debug": False,
-                    "components": {
-                        "telegram": "disabled",
-                        "telegram_delivery": "awaiting_telegram",
-                        "ai": "disabled",
-                        "nutrition_provider": "disabled",
-                        "message_cleanup": "disabled",
-                    },
-                },
+                json={"status": "ready"},
             )
         if request.url.path == "/webhook":
-            return httpx.Response(503)
+            return httpx.Response(401)
+        if request.url.path in {"/docs", "/redoc", "/openapi.json"}:
+            return httpx.Response(404)
         if request.method == "OPTIONS":
             return httpx.Response(
                 200,
@@ -103,6 +94,12 @@ def test_deployment_diagnostic_checks_pre_bot_profile(monkeypatch):
                 "X-Content-Type-Options": "nosniff",
                 "Referrer-Policy": "no-referrer",
                 "Permissions-Policy": "camera=(), geolocation=(), microphone=()",
+                "X-Permitted-Cross-Domain-Policies": "none",
+                "Content-Security-Policy": (
+                    "default-src 'self'; object-src 'none'; "
+                    "frame-ancestors https://web.telegram.org; script-src 'self' "
+                    "https://telegram.org; connect-src 'self' " + api
+                ),
             },
         )
 
@@ -122,7 +119,8 @@ def test_deployment_diagnostic_checks_pre_bot_profile(monkeypatch):
     assert results == [
         "health=pass",
         "readiness=pass",
-        "telegram_disabled=pass",
+        "webhook_auth=pass",
+        "api_schema_private=pass",
         "frontend=pass",
         "route_refresh=pass",
         "cors=pass",

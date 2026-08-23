@@ -8,7 +8,7 @@
 # -----------------------------------------------------------------------------
 # Stage 1: Builder
 # -----------------------------------------------------------------------------
-FROM python:3.12-slim AS builder
+FROM python:3.12.14-slim-trixie@sha256:2c941e860699f878900b0edc2403613c234d4b32eda3cc9fa7036991a2a63c4a AS builder
 
 WORKDIR /app
 
@@ -32,18 +32,17 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # -----------------------------------------------------------------------------
 # Stage 2: Runtime
 # -----------------------------------------------------------------------------
-FROM python:3.12-slim AS runtime
+FROM python:3.12.14-slim-trixie@sha256:2c941e860699f878900b0edc2403613c234d4b32eda3cc9fa7036991a2a63c4a AS runtime
 
 # Labels
 LABEL version="2.0.0"
 LABEL description="Invite-only Telegram tracking assistant"
 
-# Install runtime dependencies only
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+# Apply current distribution security updates. Voice files are sent directly to
+# the configured transcription provider, so no media processor is needed here.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
 RUN groupadd -r appgroup && useradd -r -g appgroup appuser
@@ -53,6 +52,14 @@ WORKDIR /app
 # Copy virtual environment from builder
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
+
+# Package installers are not needed at runtime. Removing them also removes
+# vendored build-only parsers from the production attack surface.
+RUN rm -rf \
+    /usr/local/lib/python3.12/site-packages/pip* \
+    /usr/local/bin/pip* \
+    /opt/venv/lib/python3.12/site-packages/pip* \
+    /opt/venv/bin/pip*
 
 # Copy application code
 COPY --chown=appuser:appgroup . .
@@ -74,7 +81,7 @@ EXPOSE 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8000/ready || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready', timeout=5).read()" || exit 1
 
 # Run the application
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

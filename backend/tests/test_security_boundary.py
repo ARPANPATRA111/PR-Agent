@@ -95,6 +95,14 @@ def bearer_headers(
     return {"Authorization": f"Bearer {token}"}
 
 
+def test_public_readiness_is_minimal_and_not_cacheable(secure_app):
+    app, _, _ = secure_app
+    response = TestClient(app).get("/ready")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready"}
+    assert response.headers["cache-control"] == "no-store"
+
+
 def test_telegram_init_data_accepts_valid_signature(monkeypatch):
     monkeypatch.setattr(settings, "telegram_bot_token", TEST_BOT_TOKEN)
     result = validate_telegram_init_data(signed_init_data(101))
