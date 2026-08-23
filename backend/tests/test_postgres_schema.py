@@ -13,9 +13,11 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
+from assistant import ActorContext, BoundedAssistant
 from domain.schemas import ReminderCreate, WorkLogCreate
 from domain.services import DomainServices
 from durable_worker import DurableDeliveryStore
+from nutrition.providers import get_nutrition_provider
 from privacy import PrivacyService
 from public_models import (
     AccountDeletionAudit,
@@ -31,6 +33,36 @@ pytestmark = pytest.mark.skipif(
     not POSTGRES_TEST_URL,
     reason="POSTGRES_TEST_URL is required for PostgreSQL integration tests",
 )
+
+
+class _StaticIntentProvider:
+    provider_name = "postgres-regression"
+    model_name = "static"
+
+    def classify(self, _text, *, context=None):
+        return {
+            "confidence": 0.99,
+            "actions": [
+                {
+                    "kind": "create_ledger_entry",
+                    "direction": "expense",
+                    "amount": "250",
+                    "currency": "INR",
+                    "description": "team lunch",
+                },
+                {
+                    "kind": "create_nutrition_log",
+                    "text": "50 g paneer",
+                    "meal_name": "Lunch",
+                    "timezone": "UTC",
+                },
+                {
+                    "kind": "query",
+                    "query_type": "spending",
+                    "timezone": "UTC",
+                },
+            ],
+        }
 
 
 def test_00_postgres_legacy_upgrade_preserves_rows():
@@ -217,6 +249,39 @@ def test_postgres_precision_timezone_constraints_and_indexes():
             for index in inspector.get_indexes(table_name)
             if index["column_names"]
         )
+
+
+def test_postgres_multi_intent_resumes_after_food_confirmation():
+    """The durable confirmation queue must use PostgreSQL-valid SQL."""
+    engine = create_engine(POSTGRES_TEST_URL, pool_pre_ping=True)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    actor = ActorContext(telegram_id=9_876_543_219, first_name="Queue Test")
+    with engine.begin() as connection:
+        connection.execute(
+            text("DELETE FROM app_users WHERE telegram_id = :telegram_id"),
+            {"telegram_id": actor.telegram_id},
+        )
+
+    assistant = BoundedAssistant(
+        factory,
+        _StaticIntentProvider(),
+        get_nutrition_provider("reference"),
+    )
+    review = assistant.handle(
+        actor,
+        "Log lunch expense, log paneer, then show spending this week",
+        update_id=9_001,
+        review_required=True,
+        source="voice",
+    )
+    first_stage = assistant.confirm(actor, review.pending_id)
+    assert first_stage.status == "nutrition_confirmation"
+
+    final = assistant.confirm(actor, review.pending_id)
+
+    assert final.status == "completed"
+    assert "ledger summary" in final.text.lower()
+    engine.dispose()
 
 
 def test_two_postgres_workers_claim_one_occurrence():

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
+
+from database_migrations import upgrade_database_schema
 
 
 def validated_port() -> str:
@@ -14,15 +15,13 @@ def validated_port() -> str:
     return value
 
 
-def main() -> None:
-    port = validated_port()
-    subprocess.run(
-        [sys.executable, "-m", "alembic", "upgrade", "head"],
-        check=True,
-    )
-    os.execvp(
-        "uvicorn",
-        [
+def main(command: list[str] | None = None) -> None:
+    """Migrate, then execute either the container command or the web server."""
+    upgrade_database_schema()
+    target = list(command or [])
+    if not target:
+        port = validated_port()
+        target = [
             "uvicorn",
             "main:app",
             "--host",
@@ -31,9 +30,9 @@ def main() -> None:
             port,
             "--workers",
             "1",
-        ],
-    )
+        ]
+    os.execvp(target[0], target)
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

@@ -85,6 +85,32 @@ def test_disabled_lifespan_retains_pending_work_and_never_builds_client(monkeypa
     assert pending == ["reminder-1"]
 
 
+def test_staging_lifespan_migrates_before_opening_storage(monkeypatch):
+    import main
+
+    events = []
+    monkeypatch.setattr(
+        main,
+        "upgrade_database_schema",
+        lambda: events.append("migrated"),
+    )
+    monkeypatch.setattr(
+        main,
+        "get_memory_manager",
+        lambda: events.append("storage") or Mock(),
+    )
+    monkeypatch.setattr(settings, "app_env", "staging")
+    monkeypatch.setattr(settings, "public_v2_enabled", True)
+    monkeypatch.setattr(settings, "inline_staging_worker_enabled", False)
+    monkeypatch.setattr(settings, "telegram_integration_enabled", False)
+    monkeypatch.setattr(settings, "keep_alive_enabled", False)
+
+    with TestClient(main.app):
+        pass
+
+    assert events == ["migrated", "storage"]
+
+
 def test_disabled_webhook_and_mini_app_auth_do_not_touch_telegram(monkeypatch):
     import main
 

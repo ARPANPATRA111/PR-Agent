@@ -8,18 +8,15 @@ import render_start
 
 
 def test_render_start_migrates_then_execs_uvicorn(monkeypatch):
-    run = Mock()
+    migrate = Mock()
     execvp = Mock()
     monkeypatch.setenv("PORT", "12345")
-    monkeypatch.setattr(render_start.subprocess, "run", run)
+    monkeypatch.setattr(render_start, "upgrade_database_schema", migrate)
     monkeypatch.setattr(render_start.os, "execvp", execvp)
 
     render_start.main()
 
-    run.assert_called_once_with(
-        [render_start.sys.executable, "-m", "alembic", "upgrade", "head"],
-        check=True,
-    )
+    migrate.assert_called_once_with()
     execvp.assert_called_once_with(
         "uvicorn",
         [
@@ -33,6 +30,18 @@ def test_render_start_migrates_then_execs_uvicorn(monkeypatch):
             "1",
         ],
     )
+
+
+def test_render_start_migrates_then_execs_supplied_container_command(monkeypatch):
+    migrate = Mock()
+    execvp = Mock()
+    monkeypatch.setattr(render_start, "upgrade_database_schema", migrate)
+    monkeypatch.setattr(render_start.os, "execvp", execvp)
+
+    render_start.main(["python", "worker.py"])
+
+    migrate.assert_called_once_with()
+    execvp.assert_called_once_with("python", ["python", "worker.py"])
 
 
 @pytest.mark.parametrize("value", ["", "abc", "0", "65536"])

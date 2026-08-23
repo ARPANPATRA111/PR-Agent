@@ -14,7 +14,10 @@ services:
     rootDir: backend
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    dockerCommand: python render_start.py
+    # The image ENTRYPOINT performs migrations before executing this command.
+    # The application lifespan repeats the idempotent check in case a hosted
+    # service retains a dashboard-level command that bypasses the image CMD.
+    dockerCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1
     healthCheckPath: /ready
     autoDeployTrigger: commit
     envVars:
@@ -84,13 +87,6 @@ services:
       # still applies. Leave blank until keys are generated, then paste them
       # into the Render dashboard as a masked value.
       - key: GROQ_API_KEYS
-        sync: false
-      # Backward-compatible names for the two test credentials. They join the
-      # same deduplicated round-robin pool as GROQ_API_KEYS and are never
-      # returned by an endpoint or written to logs.
-      - key: ENV1
-        sync: false
-      - key: ENV2
         sync: false
       # Public URL of the hosted privacy policy. The bot links it from /start
       # and /privacy. Leave blank until the policy is hosted; the bot then

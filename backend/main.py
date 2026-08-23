@@ -55,6 +55,7 @@ from domain.errors import DomainError
 from domain.services import DomainServices
 from telegram_cleanup import queue_telegram_message
 from observability import operational_snapshot, runtime_metrics
+from database_migrations import upgrade_database_schema
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -114,6 +115,16 @@ async def lifespan(app: FastAPI):
     app.state.telegram_delivery_status = "disabled"
     app.state.keep_alive_status = "disabled"
     try:
+        # The tracked Docker entrypoint already migrates first. Keep this
+        # second, idempotent guard because hosted Docker services can retain a
+        # dashboard-level command that bypasses the image's default command.
+        # Without it, new code can appear healthy while callbacks fail against
+        # the previous schema.
+        if settings.app_env in {"staging", "production"}:
+            logger.info("Verifying database migrations before accepting traffic")
+            await asyncio.to_thread(upgrade_database_schema)
+            logger.info("Database migration check completed")
+
         memory = get_memory_manager()
         logger.info("Memory manager initialized")
 

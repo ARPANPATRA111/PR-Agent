@@ -81,7 +81,9 @@ EXPOSE 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready', timeout=5).read()" || exit 1
+    CMD python -c "import os, urllib.request; port=os.environ.get('PORT', '8000'); urllib.request.urlopen(f'http://localhost:{port}/ready', timeout=5).read()" || exit 1
 
-# Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# Every container command (web or worker) passes through the migration guard.
+# render_start.py executes an explicitly supplied command after migrating, or
+# starts Uvicorn itself when the image is launched without one.
+ENTRYPOINT ["python", "render_start.py"]
