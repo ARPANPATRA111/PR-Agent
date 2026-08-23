@@ -99,6 +99,94 @@ function formatDecimal(value: string): string {
   return value.includes('.') ? value.replace(/\.?0+$/, '') : value;
 }
 
+type HistoryRangeMode = 'all' | 'day' | 'week' | 'month';
+
+function historyDateRange(
+  mode: HistoryRangeMode,
+  selectedDate: string,
+  selectedMonth: string,
+): { startDate: string; endDate: string } | null {
+  if (mode === 'all') return null;
+  if (mode === 'day') return { startDate: selectedDate, endDate: selectedDate };
+  if (mode === 'month') {
+    const [year, month] = selectedMonth.split('-').map(Number);
+    return {
+      startDate: `${selectedMonth}-01`,
+      endDate: localDate(new Date(year, month, 0)),
+    };
+  }
+  const anchor = new Date(`${selectedDate}T12:00:00`);
+  const monday = new Date(anchor);
+  monday.setDate(anchor.getDate() - ((anchor.getDay() + 6) % 7));
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  return { startDate: localDate(monday), endDate: localDate(sunday) };
+}
+
+function HistoryRangePicker({
+  label,
+  mode,
+  onModeChange,
+  selectedDate,
+  onDateChange,
+  selectedMonth,
+  onMonthChange,
+}: {
+  label: string;
+  mode: HistoryRangeMode;
+  onModeChange: (mode: HistoryRangeMode) => void;
+  selectedDate: string;
+  onDateChange: (value: string) => void;
+  selectedMonth: string;
+  onMonthChange: (value: string) => void;
+}) {
+  return (
+    <div className="mb-4 rounded-xl border bg-card p-3">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" aria-label={`${label} history range`}>
+        {([
+          ['all', 'All'],
+          ['day', 'Day'],
+          ['week', 'Week'],
+          ['month', 'Month'],
+        ] as const).map(([value, text]) => (
+          <button
+            key={value}
+            type="button"
+            className={mode === value ? buttonClassName : secondaryButtonClassName}
+            onClick={() => onModeChange(value)}
+          >
+            {text}
+          </button>
+        ))}
+      </div>
+      {mode === 'day' || mode === 'week' ? (
+        <label className="mt-3 flex items-center justify-between gap-3 text-sm">
+          <span className="font-medium">{mode === 'day' ? 'Day' : 'Week containing'}</span>
+          <input
+            type="date"
+            aria-label={`${label} reporting date`}
+            value={selectedDate}
+            onChange={(event) => onDateChange(event.target.value)}
+            className="min-h-11 rounded-lg border bg-background px-3 text-sm"
+          />
+        </label>
+      ) : null}
+      {mode === 'month' ? (
+        <label className="mt-3 flex items-center justify-between gap-3 text-sm">
+          <span className="font-medium">Month</span>
+          <input
+            type="month"
+            aria-label={`${label} reporting month`}
+            value={selectedMonth}
+            onChange={(event) => onMonthChange(event.target.value)}
+            className="min-h-11 rounded-lg border bg-background px-3 text-sm"
+          />
+        </label>
+      ) : null}
+    </div>
+  );
+}
+
 function Card({
   children,
   className = '',
@@ -245,9 +333,16 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 export function WorkLogsScreen() {
+  const [rangeMode, setRangeMode] = useState<HistoryRangeMode>('all');
+  const [selectedDate, setSelectedDate] = useState(localDate());
+  const [selectedMonth, setSelectedMonth] = useState(localDate().slice(0, 7));
+  const range = historyDateRange(rangeMode, selectedDate, selectedMonth);
+  const rangeQuery = range
+    ? `start_date=${range.startDate}&end_date=${range.endDate}&`
+    : '';
   const resource = useApiResource(
-    () => fetchAPI<WorkLog[]>('/api/v2/work-logs?limit=100'),
-    '',
+    () => fetchAPI<WorkLog[]>(`/api/v2/work-logs?${rangeQuery}limit=100`),
+    `${rangeMode}:${selectedDate}:${selectedMonth}`,
   );
   const [text, setText] = useState('');
   const [category, setCategory] = useState('');
@@ -315,6 +410,15 @@ export function WorkLogsScreen() {
         description="Review your progress history and activity patterns."
         action={<button type="button" className={buttonClassName} onClick={() => { setEditing(null); setText(''); setCategory(''); setTags(''); setDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" aria-hidden />Add</button>}
       />
+      <HistoryRangePicker
+        label="Work"
+        mode={rangeMode}
+        onModeChange={setRangeMode}
+        selectedDate={selectedDate}
+        onDateChange={setSelectedDate}
+        selectedMonth={selectedMonth}
+        onMonthChange={setSelectedMonth}
+      />
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader><DialogTitle>{editing ? 'Edit work log' : 'Add work log'}</DialogTitle><DialogDescription>Capture a completed task, learning, or blocker.</DialogDescription></DialogHeader>
@@ -372,7 +476,10 @@ export function WorkLogsScreen() {
       </form>
         </DialogContent>
       </Dialog>
-      <ResourceList resource={resource} emptyLabel="No work logs yet.">
+      <ResourceList
+        resource={resource}
+        emptyLabel={rangeMode === 'all' ? 'No work logs yet.' : 'No work logs in this period.'}
+      >
         {(resource.data || []).map((record) => (
           <Card key={record.id}>
             <p className="whitespace-pre-wrap break-words text-sm">
@@ -405,9 +512,16 @@ export function WorkLogsScreen() {
 }
 
 export function NotesScreen() {
+  const [rangeMode, setRangeMode] = useState<HistoryRangeMode>('all');
+  const [selectedDate, setSelectedDate] = useState(localDate());
+  const [selectedMonth, setSelectedMonth] = useState(localDate().slice(0, 7));
+  const range = historyDateRange(rangeMode, selectedDate, selectedMonth);
+  const rangeQuery = range
+    ? `start_date=${range.startDate}&end_date=${range.endDate}&timezone=${encodeURIComponent(localTimezone)}&`
+    : '';
   const resource = useApiResource(
-    () => fetchAPI<Note[]>('/api/v2/notes?limit=100'),
-    '',
+    () => fetchAPI<Note[]>(`/api/v2/notes?${rangeQuery}limit=100`),
+    `${rangeMode}:${selectedDate}:${selectedMonth}`,
   );
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -474,6 +588,15 @@ export function NotesScreen() {
   return (
     <>
       <ScreenHeading title="Notes" description="Searchable private notes, with important items pinned first." action={<button type="button" className={buttonClassName} onClick={() => { setEditing(null); setTitle(''); setBody(''); setTags(''); setDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" aria-hidden />Add</button>} />
+      <HistoryRangePicker
+        label="Notes"
+        mode={rangeMode}
+        onModeChange={setRangeMode}
+        selectedDate={selectedDate}
+        onDateChange={setSelectedDate}
+        selectedMonth={selectedMonth}
+        onMonthChange={setSelectedMonth}
+      />
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader><DialogTitle>{editing ? 'Edit note' : 'Add note'}</DialogTitle><DialogDescription>Keep a private thought, reference, or follow-up.</DialogDescription></DialogHeader>
@@ -514,7 +637,10 @@ export function NotesScreen() {
       </form>
         </DialogContent>
       </Dialog>
-      <ResourceList resource={resource} emptyLabel="No notes yet.">
+      <ResourceList
+        resource={resource}
+        emptyLabel={rangeMode === 'all' ? 'No notes yet.' : 'No notes in this period.'}
+      >
         {(resource.data || []).map((record) => (
           <Card key={record.id}>
             <div className="flex items-start gap-2">
@@ -531,6 +657,9 @@ export function NotesScreen() {
                     Tags: {record.tags.join(', ')}
                   </p>
                 ) : null}
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Saved {formatDateTime(record.created_at)}
+                </p>
               </div>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -1030,20 +1159,39 @@ export function MoneyScreen() {
         emptyLabel="No transactions yet."
       >
         {(resource.data?.entries || []).map((record) => (
-          <Card key={record.id}>
+          <Card
+            key={record.id}
+            className={
+              record.direction === 'income'
+                ? 'border-emerald-500/40 bg-emerald-500/5'
+                : 'border-red-500/40 bg-red-500/5'
+            }
+          >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h2 className="break-words font-semibold">
                   {record.description}
                 </h2>
-                <p className="text-sm text-muted-foreground">
-                  {record.direction} · {record.user_local_date}
+                <p
+                  className={`text-sm font-medium ${
+                    record.direction === 'income'
+                      ? 'text-emerald-700 dark:text-emerald-400'
+                      : 'text-red-700 dark:text-red-400'
+                  }`}
+                >
+                  {record.direction === 'income' ? 'Income' : 'Expense'} · {record.user_local_date}
                 </p>
                 <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${ledgerCategoryClass(record.category)}`}>
                   {record.category || 'Uncategorized'}
                 </span>
               </div>
-              <p className="shrink-0 font-semibold">
+              <p
+                className={`shrink-0 font-semibold ${
+                  record.direction === 'income'
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-red-600 dark:text-red-400'
+                }`}
+              >
                 {moneyValue(record.amount_minor, record.currency)}
               </p>
             </div>
@@ -2158,7 +2306,7 @@ const privateFactLabels: Record<PrivateFactType, string> = {
   bank_account: 'Bank account',
   ifsc: 'IFSC code',
   academic_score: 'Academic score / CGPA',
-  other_permitted: 'Other permitted fact',
+  other_permitted: 'Any other private secret',
 };
 
 export function VaultScreen() {
@@ -2256,11 +2404,11 @@ export function VaultScreen() {
         }
       />
       <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
-        <p className="font-semibold">Keep authentication secrets elsewhere.</p>
+        <p className="font-semibold">Encrypted, create-only storage.</p>
         <p className="mt-1 text-muted-foreground">
-          Passwords, OTPs, PINs, CVVs, card numbers, recovery phrases, private
-          keys, and full Aadhaar numbers are not accepted. Secret values never
-          go to the AI or voice transcription. A value enters Telegram only
+          You can store passwords and other private values. Entries cannot be
+          edited: delete and create a replacement instead. Mini App values are
+          encrypted before database storage. A value enters Telegram only
           after you confirm a masked match, and that reply is auto-deleted.
         </p>
       </div>

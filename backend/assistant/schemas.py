@@ -82,10 +82,20 @@ class CreateGoalAction(StrictAction):
 
 class QueryAction(StrictAction):
     kind: Literal["query"]
-    query_type: Literal["today", "week", "spending", "nutrition", "goals"]
+    query_type: Literal[
+        "today",
+        "week",
+        "work",
+        "notes",
+        "spending",
+        "nutrition",
+        "nutrition_advice",
+        "goals",
+    ]
     timezone: str = Field(default="UTC", min_length=1, max_length=64)
     start_date: date | None = None
     end_date: date | None = None
+    lookback_hours: int | None = Field(default=None, ge=1, le=8_760)
     search: str | None = Field(default=None, min_length=1, max_length=200)
     ranking: Literal["highest", "lowest"] | None = None
 
@@ -93,11 +103,17 @@ class QueryAction(StrictAction):
     def query_period_is_ordered(self):
         if self.start_date and self.end_date and self.end_date < self.start_date:
             raise ValueError("end_date cannot be before start_date")
-        if self.query_type != "spending" and any(
-            value is not None
-            for value in (self.start_date, self.end_date, self.search, self.ranking)
+        if self.lookback_hours is not None and (
+            self.start_date is not None or self.end_date is not None
         ):
-            raise ValueError("Spending filters are only valid for spending queries")
+            raise ValueError("Use either a date range or lookback_hours, not both")
+        if self.query_type not in {"work", "notes", "nutrition", "nutrition_advice"}:
+            if self.lookback_hours is not None:
+                raise ValueError("lookback_hours is not valid for this query")
+        if self.query_type != "spending" and any(
+            value is not None for value in (self.search, self.ranking)
+        ):
+            raise ValueError("Search and ranking are only valid for spending queries")
         return self
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 FactType = Literal[
     "aadhaar_last4",
@@ -16,15 +16,9 @@ FactType = Literal[
     "other_permitted",
 ]
 
-PROHIBITED_LABEL = re.compile(
-    r"\b(password|passcode|otp|one[ -]?time password|pin|cvv|cvc|card number|"
-    r"private key|seed phrase|recovery code|full aadhaar)\b",
-    re.IGNORECASE,
-)
-
 
 class VaultFactInput(BaseModel):
-    """A permitted vault value before it is encrypted by trusted code."""
+    """A private vault value before it is encrypted by trusted code."""
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -33,24 +27,11 @@ class VaultFactInput(BaseModel):
     value: str = Field(min_length=1, max_length=2_000)
     notes: str | None = Field(default=None, max_length=500)
 
-    @field_validator("label")
-    @classmethod
-    def label_is_safe(cls, value: str) -> str:
-        if PROHIBITED_LABEL.search(value):
-            raise ValueError("This kind of secret is not supported")
-        if re.search(r"\d{6,}", value) or re.search(
-            r"\b[A-Z]{4}0[A-Z0-9]{6}\b", value.upper()
-        ):
-            raise ValueError("Put the private value in the encrypted value field")
-        return value
-
     @model_validator(mode="after")
     def value_matches_type(self):
         compact = re.sub(r"[\s-]", "", self.value)
         if self.fact_type == "aadhaar_last4" and not re.fullmatch(r"\d{4}", compact):
             raise ValueError("Only the last four Aadhaar digits are accepted")
-        if self.fact_type == "other_permitted" and re.fullmatch(r"\d{12}", compact):
-            raise ValueError("Full Aadhaar numbers are not accepted")
         if self.fact_type == "ifsc":
             normalized = compact.upper()
             if not re.fullmatch(r"[A-Z]{4}0[A-Z0-9]{6}", normalized):
@@ -67,8 +48,6 @@ class VaultFactInput(BaseModel):
                     "Enter a bank account identifier with 6 to 34 characters"
                 )
             self.value = normalized
-        if "-----BEGIN" in self.value.upper():
-            raise ValueError("Private keys are not accepted")
         return self
 
 

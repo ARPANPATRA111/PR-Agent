@@ -110,7 +110,8 @@ including the ones you set to null or to an empty list):
 - create_nutrition_log: kind, text, meal_name, timezone, calories,
   protein_grams
 - create_goal: kind, title, description, target_value, unit
-- query: kind, query_type, timezone, start_date, end_date, search, ranking
+- query: kind, query_type, timezone, start_date, end_date, lookback_hours,
+  search, ranking
 - list_records: kind, record_type, search, tag, status, start_date, end_date,
   limit, timezone
 - smalltalk: kind, answer
@@ -131,10 +132,20 @@ same rules as deletion below.
 
 CHOOSING BETWEEN RETRIEVAL KINDS
 
-query returns a prepared summary. Its query_type must be today, week, spending,
-nutrition, or goals. Use it for "what did I do today", "how much did I spend
-this month", "what did I eat today". For a spending query, resolve a named
-period into start_date and end_date from current_utc and default_timezone.
+query returns a prepared summary from the user's own database. Its query_type
+must be today, week, work, notes, spending, nutrition, nutrition_advice, or
+goals. Use work or notes with a resolved period for questions such as "what did
+I do last week" or "summarise the notes I made yesterday". Use nutrition for a
+food/totals review and nutrition_advice when the user asks what to improve,
+change, or do better based on logged meals. "Based on the last 48 hours, what
+should I improve?" is nutrition_advice with lookback_hours 48. This advice is
+about meal balance and logging only, never diagnosis or medication advice.
+
+Resolve a named calendar period into start_date and end_date from current_utc
+and default_timezone for work, notes, spending, and nutrition queries. Use
+lookback_hours only when the user explicitly asks for a rolling number of
+hours; otherwise set it to null. "Last week" means the complete previous
+Monday-through-Sunday period, not the current week. For a spending query,
 "Last month" must use the first and last date of the previous calendar month;
 never silently substitute this month. Put the distinguishing expense words in
 search when the user asks for a total such as "how much did I spend on mobile
@@ -257,7 +268,7 @@ Use delete_many_records only when the user clearly asks to delete every record
 of exactly one tracker type, such as "delete all notes". Set scope to "all".
 Never use it for "delete all my data", "reset my account", or wording that
 spans multiple record types; return unsupported and tell the user to type the
-exact command `/resetmydata DELETE MY ACCOUNT`. Voice or natural language must
+exact command `/deleteaccount DELETE MY ACCOUNT`. Voice or natural language must
 never reset an account.
 
 PRIVATE VAULT RETRIEVAL

@@ -75,7 +75,7 @@ class DeterministicCommandMixin:
             )
         pin_tip = (
             "\n\n📌 <b>One-time tip:</b> Pin this chat in Telegram now. I remove "
-            "processed messages after about two days to keep things tidy, and "
+            "processed messages after about 40 hours to keep things tidy, and "
             "pinning the conversation keeps PR-Agent easy to find."
             if show_pin_tip and settings.message_cleanup_enabled
             else ""
@@ -143,14 +143,14 @@ class DeterministicCommandMixin:
             "other user can read it.\n"
             "• Voice notes are transcribed by a third-party provider and the "
             "audio is not kept afterwards.\n"
-            "• Processed chat messages are removed after about two days unless "
+            "• Processed chat messages are removed after about 40 hours unless "
             "you pin them. The welcome message stays.\n"
             "• /export downloads everything held about you.\n"
             "• /deleteaccount permanently erases it." + link,
         )
 
     async def _cmd_help(self, message: TelegramMessage) -> None:
-        account_commands = "/settings · /export · /privacy"
+        account_commands = "/settings · /export · /deleteaccount · /privacy"
         if settings.vault_enabled:
             account_commands += " · /vault"
         await self.telegram.send_message(
@@ -175,10 +175,11 @@ class DeterministicCommandMixin:
             "<code>/log Finished release testing</code>\n"
             "<code>/note Submit scholarship form</code>\n"
             "<code>/expense 240 INR dinner</code>\n\n"
-            "Natural-language text and voice requests share a 25-request daily "
+            f"Natural-language text and voice requests share a "
+            f"{settings.per_user_daily_ai_limit}-request daily "
             "allowance. At the limit, voice is stopped before transcription. "
             "Slash commands remain available. Processed chat messages are "
-            "removed after about two days unless pinned; saved records remain "
+            "removed after about 40 hours unless pinned; saved records remain "
             "in the dashboard.",
         )
 

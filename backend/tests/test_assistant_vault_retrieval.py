@@ -178,3 +178,59 @@ def test_explicit_voice_style_vault_save_is_encrypted_before_review(vault_db):
         )
         assert payload["value"] == "+919876543210"
         assert session.query(PrivateFactAudit).one().channel == "telegram"
+
+
+def test_natural_i_want_to_save_password_phrase_uses_local_encrypted_capture(vault_db):
+    class ProviderMustNotSeeSecret:
+        provider_name = "forbidden"
+        model_name = "forbidden"
+
+        def classify(self, text, *, context=None):
+            del text, context
+            raise AssertionError("vault values must not reach the intent provider")
+
+    assistant = BoundedAssistant(
+        vault_db,
+        ProviderMustNotSeeSecret(),
+        get_nutrition_provider("reference"),
+    )
+    review = assistant.handle(
+        ALICE,
+        "I want to save my GitHub password as correct-horse-42 into my vault",
+        update_id=5,
+        review_required=True,
+    )
+
+    assert review.status == "confirmation"
+    assert "correct-horse-42" not in review.text
+    assistant.confirm(ALICE, review.pending_id)
+    with vault_db() as session:
+        row = session.query(PrivateFact).one()
+        assert row.label == "GitHub password"
+        payload = VaultCipher(KEYS).decrypt(
+            ciphertext=row.ciphertext,
+            nonce=row.nonce,
+            key_id=row.key_id,
+            owner_id=row.owner_id,
+            record_uuid=row.record_uuid,
+            fact_type=row.fact_type,
+        )
+        assert payload["value"] == "correct-horse-42"
+
+
+def test_save_this_into_vault_trailing_phrase_keeps_the_named_value(vault_db):
+    assistant = BoundedAssistant(
+        vault_db,
+        FakeProvider({"confidence": 1, "actions": []}),
+        get_nutrition_provider("reference"),
+    )
+
+    review = assistant.handle(
+        ALICE,
+        "My GitHub password is correct-horse-42; I want to save this into my vault",
+        update_id=6,
+    )
+
+    assert review.status == "confirmation"
+    assert "GitHub password" in review.text
+    assert "correct-horse-42" not in review.text

@@ -357,7 +357,7 @@ def test_direct_account_reset_request_is_still_refused_without_provider_call(
     )
 
     assert reply.status == "rejected"
-    assert "/resetmydata DELETE MY ACCOUNT" in reply.text
+    assert "/deleteaccount DELETE MY ACCOUNT" in reply.text
     assert provider.contexts == []
 
 
@@ -770,6 +770,69 @@ def test_multi_intent_review_confirms_all_actions_together(assistant_db):
         assert session.query(LedgerEntry).count() == 1
 
 
+def test_mighty_voice_intent_confirms_four_independent_actions_together(assistant_db):
+    assistant = build_assistant(
+        assistant_db,
+        FakeProvider(
+            {
+                "confidence": 0.97,
+                "actions": [
+                    {
+                        "kind": "create_work_log",
+                        "text": "Finished the weekly release checklist",
+                        "category": "delivery",
+                        "tags": ["release"],
+                    },
+                    {
+                        "kind": "create_note",
+                        "title": "Follow-up",
+                        "body": "Ask Riya for the signed document",
+                        "tags": ["admin"],
+                    },
+                    {
+                        "kind": "create_ledger_entry",
+                        "direction": "expense",
+                        "amount": "275",
+                        "currency": "INR",
+                        "description": "team lunch",
+                        "category": "food",
+                    },
+                    {
+                        "kind": "create_reminder",
+                        "title": "Send the release update",
+                        "schedule_type": "once",
+                        "start_at_local": "2026-08-24T09:30:00",
+                        "timezone": "Asia/Kolkata",
+                        "weekday": None,
+                    },
+                ],
+            }
+        ),
+    )
+
+    review = assistant.handle(
+        ALICE,
+        "I finished the release checklist. Note that I need Riya's signed "
+        "document, record 275 rupees for lunch, and remind me tomorrow at "
+        "9:30 to send the update.",
+        update_id=411,
+        review_required=True,
+    )
+
+    assert review.status == "confirmation"
+    assert all(
+        label in review.text
+        for label in ("1. Work log", "2. Note", "3. Expense", "4. Reminder")
+    )
+    confirmed = assistant.confirm(ALICE, review.pending_id)
+    assert confirmed.status == "completed"
+    with assistant_db() as session:
+        assert session.query(WorkLog).count() == 1
+        assert session.query(Note).count() == 1
+        assert session.query(LedgerEntry).count() == 1
+        assert session.query(Reminder).count() == 1
+
+
 def test_wrong_voice_review_cancels_without_writes(assistant_db):
     assistant = build_assistant(
         assistant_db,
@@ -830,4 +893,7 @@ def test_versioned_evaluation_corpus_covers_security_and_ambiguity():
         "greeting",
         "capability_question",
         "external_action_still_refused",
+        "mighty_intent_four_actions",
+        "nutrition_advice_48_hours",
+        "work_last_week",
     } <= names

@@ -1,4 +1,4 @@
-"""Mini App-only API for end-to-end masked, application-encrypted personal facts."""
+"""Create-only API for masked, application-encrypted personal facts."""
 
 from __future__ import annotations
 
@@ -7,12 +7,12 @@ from datetime import datetime, timezone
 from typing import Annotated, Generator, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from auth import TokenData, get_current_user
 from config import settings
-from domain.errors import ConcurrentUpdate, RecordNotFound
+from domain.errors import RecordNotFound
 from domain.services import DomainServices
 from memory import get_memory_manager
 from public_models import PrivateFact, PrivateFactAudit
@@ -28,10 +28,6 @@ class StrictSchema(BaseModel):
 
 class FactCreate(VaultFactInput):
     acknowledge_sensitive_storage: Literal[True]
-
-
-class FactUpdate(FactCreate):
-    version: int = Field(ge=1)
 
 
 class FactMasked(StrictSchema):
@@ -169,30 +165,6 @@ def create_fact(data: FactCreate, context: Context):
     context.session.add(row)
     context.session.flush()
     _audit(context, row, "create")
-    return _masked(row)
-
-
-@router.put("/{record_id}", response_model=FactMasked)
-def update_fact(record_id: int, data: FactUpdate, context: Context):
-    _require_recent_auth(context.current_user)
-    row = _owned(context, record_id)
-    if row.version != data.version:
-        raise ConcurrentUpdate()
-    encrypted = _cipher().encrypt(
-        {"value": data.value, "notes": data.notes},
-        owner_id=context.owner_id,
-        record_uuid=row.record_uuid,
-        fact_type=data.fact_type,
-    )
-    row.fact_type = data.fact_type
-    row.label = data.label
-    row.masked_value = _mask(data.fact_type, data.value)
-    row.ciphertext = encrypted.ciphertext
-    row.nonce = encrypted.nonce
-    row.key_id = encrypted.key_id
-    row.version += 1
-    _audit(context, row, "update")
-    context.session.flush()
     return _masked(row)
 
 

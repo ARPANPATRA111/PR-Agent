@@ -247,6 +247,7 @@ class TelegramClient:
             {"command": "reminders", "description": "My reminders"},
             {"command": "goals", "description": "My goals"},
             {"command": "settings", "description": "Preferences"},
+            {"command": "deleteaccount", "description": "Delete all my data"},
             {"command": "privacy", "description": "How your data is used"},
             {"command": "help", "description": "All commands"},
         ]
@@ -807,7 +808,7 @@ class BotHandler(DeterministicCommandMixin):
                     "/settings": self._v2_settings_link,
                     "/vault": self._v2_vault_link,
                     "/export": self._v2_export_link,
-                    "/deleteaccount": self._v2_delete_account_link,
+                    "/deleteaccount": self._v2_reset_my_data,
                     "/privacy": self._cmd_privacy,
                 }
             )
@@ -832,18 +833,28 @@ class BotHandler(DeterministicCommandMixin):
             )
 
     async def _v2_reset_my_data(self, message: TelegramMessage) -> None:
-        """Hidden typed-only account reset with a second human confirmation."""
+        """Typed-only account reset with a second human confirmation."""
         if not settings.public_v2_enabled or message.from_user is None:
             await self.telegram.send_message(
                 message.chat.get("id"),
                 "This command is not available here.",
             )
             return
-        if (message.text or "") != "/resetmydata DELETE MY ACCOUNT":
+        supplied = message.text or ""
+        valid_phrases = {
+            "/deleteaccount DELETE MY ACCOUNT",
+            "/resetmydata DELETE MY ACCOUNT",
+        }
+        if supplied not in valid_phrases:
+            command = (
+                "/deleteaccount"
+                if supplied.startswith("/deleteaccount")
+                else "/resetmydata"
+            )
             await self.telegram.send_message(
                 message.chat.get("id"),
                 "Nothing was deleted. If you intentionally want a full reset, type "
-                "<code>/resetmydata DELETE MY ACCOUNT</code> exactly.",
+                f"<code>{command} DELETE MY ACCOUNT</code> exactly.",
             )
             return
         await self.telegram.send_message(

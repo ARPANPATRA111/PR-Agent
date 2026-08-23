@@ -28,10 +28,13 @@ from public_models import (
     AgentPendingAction,
     AgentRun,
     ApplicationSession,
+    InviteCode,
+    Note,
     PublicBase,
     PublicUser,
     PrivateFact,
     PrivateFactAudit,
+    RateLimitBucket,
     TelegramMessage,
     WorkLog,
 )
@@ -296,6 +299,60 @@ def test_account_deletion_removes_public_legacy_search_and_sessions(privacy_db):
             )
             is False
         )
+
+
+def test_account_deletion_does_not_depend_on_database_cascades(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'no-fk-cascade.db'}")
+    PublicBase.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with factory() as session:
+        owner = DomainServices(session).ensure_owner(
+            telegram_id=303,
+            first_name="Cascade-independent",
+        )
+        DomainServices(session).create_note(
+            owner.id,
+            NoteCreate(body="must disappear", idempotency_key="delete-me"),
+        )
+        session.add(
+            RateLimitBucket(
+                subject_key=f"owner:{owner.id}",
+                scope="ai_classifications",
+                window_start=datetime.now(UTC),
+                request_count=1,
+            )
+        )
+        session.add(
+            InviteCode(
+                code_hash="a" * 64,
+                created_by_owner_id=owner.id,
+                claimed_by_owner_id=owner.id,
+            )
+        )
+        session.commit()
+        owner_id = owner.id
+
+    with factory() as session:
+        assert PrivacyService(session).delete_account(
+            owner_id,
+            303,
+            audit_secret="test-audit-secret-at-least-32-characters",
+        )
+        session.commit()
+
+    with factory() as session:
+        assert session.get(PublicUser, owner_id) is None
+        assert session.query(Note).filter(Note.owner_id == owner_id).count() == 0
+        assert (
+            session.query(RateLimitBucket)
+            .filter(RateLimitBucket.subject_key == f"owner:{owner_id}")
+            .count()
+            == 0
+        )
+        invite = session.query(InviteCode).one()
+        assert invite.created_by_owner_id is None
+        assert invite.claimed_by_owner_id is None
+    engine.dispose()
 
 
 @pytest.mark.asyncio

@@ -53,13 +53,15 @@ services:
       - key: MESSAGE_CLEANUP_ENABLED
         value: "true"
       - key: MESSAGE_CLEANUP_DELAY_SECONDS
-        value: "172800"
+        value: "144000"
       # Public natural-language usage is capped per Telegram account. Direct
       # slash commands remain available after the daily AI allowance is used.
       - key: QUOTAS_ENABLED
         value: "true"
       - key: PER_USER_DAILY_AI_LIMIT
-        value: "25"
+        # Temporary staging headroom for the current acceptance-test cycle.
+        # Restore this to 25 before opening the bot to broader public use.
+        value: "100"
       - key: PER_USER_DAILY_NUTRITION_LIMIT
         value: "100"
       - key: PER_USER_DAILY_SUMMARY_LIMIT

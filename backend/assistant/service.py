@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from difflib import SequenceMatcher
 from hashlib import sha256
@@ -166,7 +166,7 @@ class BoundedAssistant:
             return AssistantReply(
                 "For safety, voice and ordinary chat can never erase your whole "
                 "account. If you intend a permanent reset, type "
-                "<code>/resetmydata DELETE MY ACCOUNT</code> exactly; I will still "
+                "<code>/deleteaccount DELETE MY ACCOUNT</code> exactly; I will still "
                 "ask for one final tap.",
                 "rejected",
             )
@@ -288,7 +288,7 @@ class BoundedAssistant:
         normalized = " ".join(text.casefold().split())
         rewritten = []
         for action in proposal.proposed_actions:
-            if not isinstance(action, QueryAction) or action.query_type != "spending":
+            if not isinstance(action, (QueryAction, ListRecordsAction)):
                 rewritten.append(action)
                 continue
             updates = {}
@@ -296,7 +296,41 @@ class BoundedAssistant:
                 zone = ZoneInfo(action.timezone or default_timezone)
             except Exception:
                 zone = ZoneInfo(default_timezone)
+                updates["timezone"] = default_timezone
             today = self.clock().astimezone(zone).date()
+            rolling = re.search(
+                r"\b(?:last|past|previous)\s+(?P<hours>\d{1,4})\s*hours?\b",
+                normalized,
+            )
+            if isinstance(action, QueryAction) and rolling:
+                hours = min(int(rolling.group("hours")), 8_760)
+                if action.query_type in {
+                    "work",
+                    "notes",
+                    "nutrition",
+                    "nutrition_advice",
+                }:
+                    updates.update(
+                        lookback_hours=hours,
+                        start_date=None,
+                        end_date=None,
+                    )
+            if "last week" in normalized:
+                current_week_start = today - timedelta(days=today.weekday())
+                updates.update(
+                    start_date=current_week_start - timedelta(days=7),
+                    end_date=current_week_start - timedelta(days=1),
+                )
+                if isinstance(action, QueryAction) and action.query_type in {
+                    "today",
+                    "week",
+                }:
+                    updates["query_type"] = "work"
+            elif "this week" in normalized:
+                updates.update(
+                    start_date=today - timedelta(days=today.weekday()),
+                    end_date=today,
+                )
             if "last month" in normalized:
                 previous_end = today.replace(day=1) - timedelta(days=1)
                 updates.update(
@@ -305,12 +339,32 @@ class BoundedAssistant:
                 )
             elif "this month" in normalized:
                 updates.update(start_date=today.replace(day=1), end_date=today)
-            if action.ranking is None:
+            elif "yesterday" in normalized:
+                yesterday = today - timedelta(days=1)
+                updates.update(start_date=yesterday, end_date=yesterday)
+            if (
+                isinstance(action, QueryAction)
+                and action.query_type == "nutrition"
+                and re.search(
+                    r"\b(?:suggest|recommend|advice|improve|better|change)\b",
+                    normalized,
+                )
+            ):
+                updates["query_type"] = "nutrition_advice"
+            if (
+                isinstance(action, QueryAction)
+                and action.query_type == "spending"
+                and action.ranking is None
+            ):
                 if re.search(r"\b(?:most|highest|maximum)\b", normalized):
                     updates["ranking"] = "highest"
                 elif re.search(r"\b(?:least|lowest|minimum)\b", normalized):
                     updates["ranking"] = "lowest"
-            if action.search is None:
+            if (
+                isinstance(action, QueryAction)
+                and action.query_type == "spending"
+                and action.search is None
+            ):
                 match = re.search(
                     r"\b(?:spend|spent)\s+on\s+(?P<search>.+?)\s+"
                     r"(?:this|last)\s+month\b",
@@ -1248,14 +1302,30 @@ class BoundedAssistant:
             return None
 
         body = text.strip().rstrip(" .")
+        # Support natural lead-ins such as "I want to save..." as well as the
+        # terse imperative form. Keeping this parser local means a typed secret
+        # is encrypted without being sent through the intent model.
         body = re.sub(
-            r"^(?:please\s+)?(?:save|store|remember)\s+",
+            r"^(?:please\s+)?(?:(?:i\s+)?(?:want|need|would\s+like)\s+"
+            r"(?:you\s+)?to\s+)?(?:save|store|remember)\s+",
+            "",
+            body,
+            flags=re.IGNORECASE,
+        )
+        # "My GitHub password is ..., save this into my vault" is a common
+        # dictation shape. Remove only the explicit trailing command, leaving
+        # the label and value intact for the closed parser below.
+        body = re.sub(
+            r"[,.;:\s]+(?:please\s+)?(?:(?:i\s+)?(?:want|need|would\s+like)\s+"
+            r"(?:you\s+)?to\s+)?(?:save|store|remember)\s+(?:this|it)\s+"
+            r"(?:in|into|to)\s+(?:(?:my|the)\s+)?vault$",
             "",
             body,
             flags=re.IGNORECASE,
         )
         body = re.sub(
-            r"^(?:this\s+)?(?:in|into|to)\s+(?:(?:my|the)\s+)?vault[,\s]*",
+            r"^(?:this\s+)?(?:in|into|to)\s+(?:(?:my|the)\s+)?vault"
+            r"(?:\s*[:,-]\s*|\s+)",
             "",
             body,
             flags=re.IGNORECASE,
@@ -1266,12 +1336,24 @@ class BoundedAssistant:
             body,
             flags=re.IGNORECASE,
         ).strip(" ,")
+        body = re.sub(
+            r"\s+(?:in|into|to)\s+(?:(?:my|the)\s+)?vault\s+as\s+",
+            " as ",
+            body,
+            flags=re.IGNORECASE,
+        )
 
         match = re.match(
             r"^(?:my\s+)?(?P<label>.+?)\s+(?:is|as|equals?)\s+(?P<value>.+)$",
             body,
             flags=re.IGNORECASE,
         )
+        if match is None:
+            match = re.match(
+                r"^(?:my\s+)?(?P<label>.+?)\s*:\s*(?P<value>.+)$",
+                body,
+                flags=re.IGNORECASE,
+            )
         if match is None:
             known_label = re.match(
                 r"^(?:my\s+)?(?P<label>(?:mobile|phone|telephone|contact)\s+"
@@ -2693,10 +2775,22 @@ class BoundedAssistant:
             search=action.search,
             tag=action.tag,
             pinned=True if action.status == "pinned" else None,
+            start_date=action.start_date,
+            end_date=action.end_date,
+            timezone_name=action.timezone,
             limit=action.limit,
         )
+        zone = ZoneInfo(action.timezone)
+
+        def local_created_date(row: Note) -> date:
+            created_at = row.created_at
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=UTC)
+            return created_at.astimezone(zone).date()
+
         return "notes", [
-            f"• #{row.id} {'📌 ' if row.pinned else ''}"
+            f"• #{row.id} · {local_created_date(row)} "
+            f"{'📌 ' if row.pinned else ''}"
             f"{self._clip(row.title, 60)} — {self._clip(row.body, 110)}"
             for row in rows
         ]
@@ -2787,33 +2881,72 @@ class BoundedAssistant:
             "summaries",
             limit=self.daily_summary_limit,
         )
-        today = self.clock().astimezone(ZoneInfo(action.timezone)).date()
-        if action.query_type == "today":
+        now_utc = self.clock().astimezone(UTC)
+        today = now_utc.astimezone(ZoneInfo(action.timezone)).date()
+        rolling_start = (
+            now_utc - timedelta(hours=action.lookback_hours)
+            if action.lookback_hours is not None
+            else None
+        )
+        if action.query_type in {"today", "week", "work"}:
+            if action.query_type == "today":
+                start = end = today
+                period = "today"
+            elif action.query_type == "week":
+                start = action.start_date or today - timedelta(days=today.weekday())
+                end = action.end_date or today
+                period = (
+                    "this week"
+                    if action.start_date is None and action.end_date is None
+                    else f"{start.isoformat()} to {end.isoformat()}"
+                )
+            else:
+                start = action.start_date or today
+                end = action.end_date or today
+                period = (
+                    f"the last {action.lookback_hours} hours"
+                    if rolling_start is not None
+                    else f"{start.isoformat()} to {end.isoformat()}"
+                )
             rows = service.list_work_logs(
                 owner_id,
-                start_date=today,
-                end_date=today,
-                limit=20,
-            )
-            return (
-                "No work logged today."
-                if not rows
-                else "Today: "
-                + "; ".join(escape(row.original_text[:120]) for row in rows)
-            )
-        if action.query_type == "week":
-            start = today - timedelta(days=today.weekday())
-            rows = service.list_work_logs(
-                owner_id,
-                start_date=start,
-                end_date=today,
+                start_date=None if rolling_start else start,
+                end_date=None if rolling_start else end,
+                start_at_utc=rolling_start,
+                end_at_utc=now_utc if rolling_start else None,
                 limit=50,
             )
             return (
-                "No work logged this week."
+                f"No work logged for {period}."
                 if not rows
-                else "This week: "
+                else f"Work for {period}: "
                 + "; ".join(escape(row.original_text[:120]) for row in rows)
+            )
+        if action.query_type == "notes":
+            start = action.start_date or today
+            end = action.end_date or today
+            period = (
+                f"the last {action.lookback_hours} hours"
+                if rolling_start is not None
+                else f"{start.isoformat()} to {end.isoformat()}"
+            )
+            rows = service.list_notes(
+                owner_id,
+                start_date=None if rolling_start else start,
+                end_date=None if rolling_start else end,
+                timezone_name=action.timezone,
+                start_at_utc=rolling_start,
+                end_at_utc=now_utc if rolling_start else None,
+                limit=50,
+            )
+            return (
+                f"No notes saved for {period}."
+                if not rows
+                else f"Notes for {period}: "
+                + "; ".join(
+                    f"{escape(row.title[:60])}: {escape(row.body[:120])}"
+                    for row in rows
+                )
             )
         if action.query_type == "spending":
             start = action.start_date or today.replace(day=1)
@@ -2880,18 +3013,38 @@ class BoundedAssistant:
                 f"income {self._major_amount(row['income_minor'], row['currency'])}"
                 for row in totals
             )
-        if action.query_type == "nutrition":
-            summary = service.summarize_nutrition(owner_id, today, today)
+        if action.query_type in {"nutrition", "nutrition_advice"}:
+            start = action.start_date or today
+            end = action.end_date or today
+            period = (
+                f"the last {action.lookback_hours} hours"
+                if rolling_start is not None
+                else (
+                    "today"
+                    if start == today and end == today
+                    else f"{start.isoformat()} to {end.isoformat()}"
+                )
+            )
             meals = service.list_nutrition_logs(
                 owner_id,
-                start_date=today,
-                end_date=today,
+                start_date=None if rolling_start else start,
+                end_date=None if rolling_start else end,
+                start_at_utc=rolling_start,
+                end_at_utc=now_utc if rolling_start else None,
                 status="confirmed",
-                limit=50,
+                limit=100,
             )
             if not meals:
-                return "No confirmed food logs today."
-            lines = ["Today's food:"]
+                return f"No confirmed food logs for {period}."
+            calories = sum(
+                (meal.total_calories for meal in meals),
+                Decimal("0"),
+            )
+            protein = sum(
+                (meal.total_protein_grams for meal in meals),
+                Decimal("0"),
+            )
+            lines = [f"Confirmed food for {period}:"]
             for meal in reversed(meals):
                 label = meal.meal_name or meal.original_text
                 lines.append(
@@ -2900,9 +3053,61 @@ class BoundedAssistant:
                     f"{meal.total_protein_grams} g protein"
                 )
             lines.append(
-                f"Total: approximately {summary['total_calories']} kcal, "
-                f"{summary['total_protein_grams']} g protein."
+                f"Total: approximately {calories} kcal and {protein} g protein "
+                f"across {len(meals)} meal{'s' if len(meals) != 1 else ''}."
             )
+            if action.query_type == "nutrition_advice":
+                days = (
+                    Decimal(action.lookback_hours) / Decimal("24")
+                    if action.lookback_hours is not None
+                    else Decimal((end - start).days + 1)
+                )
+                daily_calories = calories / days
+                daily_protein = protein / days
+                preferences = service.get_nutrition_preferences(owner_id)
+                suggestions = [
+                    "Keep portions and drinks in the log so the comparison is complete."
+                ]
+                if preferences.protein_target_grams is not None:
+                    if daily_protein < preferences.protein_target_grams * Decimal(
+                        "0.85"
+                    ):
+                        suggestions.append(
+                            "Your logged protein averaged approximately "
+                            f"{daily_protein.quantize(Decimal('0.1'))} g/day versus "
+                            f"your {preferences.protein_target_grams} g target; "
+                            "consider adding a protein-rich item to meals."
+                        )
+                    else:
+                        suggestions.append(
+                            "Your logged protein is close to or above your saved "
+                            "target; "
+                            "focus on consistency and variety."
+                        )
+                else:
+                    suggestions.append(
+                        "Set a protein target in Settings if you want a "
+                        "target-based comparison."
+                    )
+                if preferences.calorie_target is not None and (
+                    daily_calories < preferences.calorie_target * Decimal("0.70")
+                    or daily_calories > preferences.calorie_target * Decimal("1.30")
+                ):
+                    suggestions.append(
+                        "Logged calories differ substantially from your saved target; "
+                        "first check for missing meals or portion errors before "
+                        "changing intake."
+                    )
+                suggestions.append(
+                    "Aim for a varied mix of vegetables or fruit, fibre-rich foods, "
+                    "and hydration where those are not already covered."
+                )
+                lines.append("Suggestions based on those logs:")
+                lines.extend(f"• {escape(value)}" for value in suggestions)
+                lines.append(
+                    "These are general logging and meal-balance suggestions, "
+                    "not medical advice."
+                )
             return "\n".join(lines)
         goals = service.list_goals(owner_id, status="active", limit=20)
         return (

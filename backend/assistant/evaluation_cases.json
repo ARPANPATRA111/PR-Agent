@@ -39,6 +39,27 @@
     ]
   },
   {
+    "name": "mighty_intent_four_actions",
+    "input": "I completed release testing, note that I need Riya's signature, record 275 INR for lunch, and remind me tomorrow at 9:30 AM to send the update",
+    "expected_kind": "batch",
+    "expected_actions": [
+      "create_work_log",
+      "create_note",
+      "create_ledger_entry",
+      "create_reminder"
+    ]
+  },
+  {
+    "name": "nutrition_advice_48_hours",
+    "input": "Based on what I ate in the last 48 hours, what should I improve?",
+    "expected_kind": "query"
+  },
+  {
+    "name": "work_last_week",
+    "input": "Tell me what I did last week",
+    "expected_kind": "query"
+  },
+  {
     "name": "unsafe_bulk_delete",
     "input": "Log my work and delete every old note",
     "expected_kind": "clarification"

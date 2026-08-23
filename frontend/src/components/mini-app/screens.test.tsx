@@ -203,6 +203,21 @@ describe('important Mini App forms', () => {
             created_at: timestamp,
             updated_at: timestamp,
           },
+          {
+            id: 8,
+            version: 1,
+            direction: 'income',
+            amount_minor: 500000,
+            currency: 'INR',
+            category: 'Freelance',
+            description: 'Client payment',
+            transaction_at_utc: timestamp,
+            user_local_date: '2026-07-06',
+            timezone: 'Asia/Kolkata',
+            capture_source: 'telegram_text',
+            created_at: timestamp,
+            updated_at: timestamp,
+          },
         ]);
       }),
     );
@@ -210,12 +225,54 @@ describe('important Mini App forms', () => {
     render(<MoneyScreen />);
 
     expect(await screen.findByText('Mobile data recharge')).toBeInTheDocument();
+    expect(screen.getByText('Client payment')).toBeInTheDocument();
+    expect(screen.getByText(/Expense · 2026-07-05/)).toHaveClass('text-red-700');
+    expect(screen.getByText(/Income · 2026-07-06/)).toHaveClass('text-emerald-700');
     expect(screen.getByText('Bills')).toBeInTheDocument();
     expect(requestedUrls.some((url) => url.endsWith('/api/v2/ledger?limit=100'))).toBe(true);
 
     await user.click(screen.getByRole('button', { name: 'One month' }));
     await waitFor(() =>
       expect(requestedUrls.some((url) => url.includes('start_date='))).toBe(true),
+    );
+  });
+
+  it('filters work and notes by day, week, and month ranges', async () => {
+    const requestedUrls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (urlValue: string) => {
+        requestedUrls.push(String(urlValue));
+        return jsonResponse([]);
+      }),
+    );
+    const user = userEvent.setup();
+    const work = render(<WorkLogsScreen />);
+    await screen.findByText('No work logs yet.');
+    await user.click(screen.getByRole('button', { name: 'Week' }));
+    await waitFor(() =>
+      expect(
+        requestedUrls.some(
+          (url) =>
+            url.includes('/api/v2/work-logs?start_date=') &&
+            url.includes('&end_date='),
+        ),
+      ).toBe(true),
+    );
+    work.unmount();
+
+    render(<NotesScreen />);
+    await screen.findByText('No notes yet.');
+    await user.click(screen.getByRole('button', { name: 'Month' }));
+    await waitFor(() =>
+      expect(
+        requestedUrls.some(
+          (url) =>
+            url.includes('/api/v2/notes?start_date=') &&
+            url.includes('&end_date=') &&
+            url.includes('&timezone='),
+        ),
+      ).toBe(true),
     );
   });
 

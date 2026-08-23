@@ -243,12 +243,12 @@ async def test_hidden_reset_requires_phrase_and_final_owned_callback(
     monkeypatch.setattr(settings, "invite_only", False)
     await bot._handle_command(telegram_message("/note Keep briefly", 70))
 
-    await bot._handle_command(telegram_message("/resetmydata", 71))
+    await bot._handle_command(telegram_message("/deleteaccount", 71))
     assert "Nothing was deleted" in bot.telegram.messages[-1]
     with factory() as session:
         assert session.query(Note).count() == 1
 
-    await bot._handle_command(telegram_message("/resetmydata DELETE MY ACCOUNT", 72))
+    await bot._handle_command(telegram_message("/deleteaccount DELETE MY ACCOUNT", 72))
     keyboard = bot.telegram.message_options[-1]["reply_markup"]["inline_keyboard"]
     assert keyboard[0][0]["callback_data"] == "account:reset:1001"
     with factory() as session:
@@ -351,7 +351,8 @@ async def test_help_lists_only_the_enabled_public_command_surface(
     help_text = bot.telegram.messages[-1]
     assert "/expense AMOUNT CURRENCY DESCRIPTION" in help_text
     assert "/remind once YYYY-MM-DD HH:MM TIMEZONE TEXT" in help_text
-    assert "25-request daily allowance" in help_text
+    assert f"{settings.per_user_daily_ai_limit}-request daily allowance" in help_text
+    assert "about 40 hours" in help_text
     assert "voice is stopped before transcription" in help_text
     assert "Free staging availability" not in help_text
     assert "/vault" not in help_text
@@ -360,7 +361,6 @@ async def test_help_lists_only_the_enabled_public_command_surface(
         "/answeragent",
         "/confirmagent",
         "/cancelagent",
-        "/deleteaccount",
         "/resetmydata",
     ):
         assert internal_command not in help_text

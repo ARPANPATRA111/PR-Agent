@@ -6,9 +6,9 @@ PostgreSQL cannot prevent the suspension. This loop instead issues a real HTTP
 request to the service's own public URL, which travels through the platform
 edge and resets the idle timer the same way user traffic does.
 
-The loop can only keep an already-running process awake. It cannot wake a
-service that has already slept, because nothing is running to send the request.
-An external scheduled ping remains necessary for that; see docs/KEEP_ALIVE.md.
+The loop keeps an active deployment warm before the ordinary idle deadline.
+Administrative suspension still has to be reversed in the Render dashboard;
+an external ping cannot override it. See docs/KEEP_ALIVE.md.
 """
 
 from __future__ import annotations

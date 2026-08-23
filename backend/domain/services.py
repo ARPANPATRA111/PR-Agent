@@ -9,7 +9,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, TypeVar
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import func, or_, update
 from sqlalchemy.exc import IntegrityError
@@ -76,6 +76,36 @@ def local_datetime_to_utc(value: datetime, timezone_name: str) -> datetime:
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+def local_date_bounds_utc(
+    start_date: date | None,
+    end_date: date | None,
+    timezone_name: str,
+) -> tuple[datetime | None, datetime | None]:
+    """Convert inclusive local dates into an exclusive UTC timestamp range."""
+    if start_date and end_date and end_date < start_date:
+        raise DomainError("end_date cannot be before start_date.")
+    try:
+        start = (
+            local_datetime_to_utc(
+                datetime.combine(start_date, datetime.min.time()),
+                timezone_name,
+            )
+            if start_date
+            else None
+        )
+        end = (
+            local_datetime_to_utc(
+                datetime.combine(end_date + timedelta(days=1), datetime.min.time()),
+                timezone_name,
+            )
+            if end_date
+            else None
+        )
+    except ZoneInfoNotFoundError as exc:
+        raise DomainError("Enter a valid IANA timezone.") from exc
+    return start, end
 
 
 def amount_to_minor(amount: Decimal, currency: str) -> int:
@@ -369,6 +399,8 @@ class DomainServices:
         *,
         start_date: date | None = None,
         end_date: date | None = None,
+        start_at_utc: datetime | None = None,
+        end_at_utc: datetime | None = None,
         tag: str | None = None,
         category: str | None = None,
         search: str | None = None,
@@ -380,6 +412,10 @@ class DomainServices:
             query = query.filter(WorkLog.user_local_date >= start_date)
         if end_date:
             query = query.filter(WorkLog.user_local_date <= end_date)
+        if start_at_utc:
+            query = query.filter(WorkLog.logged_at_utc >= start_at_utc)
+        if end_at_utc:
+            query = query.filter(WorkLog.logged_at_utc <= end_at_utc)
         if category:
             query = query.filter(WorkLog.category == category.lower())
         if search:
@@ -502,10 +538,28 @@ class DomainServices:
         search: str | None = None,
         tag: str | None = None,
         pinned: bool | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        timezone_name: str = "UTC",
+        start_at_utc: datetime | None = None,
+        end_at_utc: datetime | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[Note]:
         query = self.session.query(Note).filter(Note.owner_id == owner_id)
+        date_start_at_utc, date_end_at_utc = local_date_bounds_utc(
+            start_date,
+            end_date,
+            timezone_name,
+        )
+        if date_start_at_utc:
+            query = query.filter(Note.created_at >= date_start_at_utc)
+        if date_end_at_utc:
+            query = query.filter(Note.created_at < date_end_at_utc)
+        if start_at_utc:
+            query = query.filter(Note.created_at >= start_at_utc)
+        if end_at_utc:
+            query = query.filter(Note.created_at <= end_at_utc)
         if search:
             pattern = f"%{search[:200]}%"
             query = query.filter(
@@ -1300,6 +1354,8 @@ class DomainServices:
         *,
         start_date: date | None = None,
         end_date: date | None = None,
+        start_at_utc: datetime | None = None,
+        end_at_utc: datetime | None = None,
         status: str | None = None,
         limit: int = 50,
         offset: int = 0,
@@ -1311,6 +1367,10 @@ class DomainServices:
             query = query.filter(NutritionLog.user_local_date >= start_date)
         if end_date:
             query = query.filter(NutritionLog.user_local_date <= end_date)
+        if start_at_utc:
+            query = query.filter(NutritionLog.logged_at_utc >= start_at_utc)
+        if end_at_utc:
+            query = query.filter(NutritionLog.logged_at_utc <= end_at_utc)
         if status:
             query = query.filter(NutritionLog.status == status)
         return (

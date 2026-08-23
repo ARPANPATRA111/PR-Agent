@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import create_engine, event
@@ -13,7 +14,7 @@ from assistant import ActorContext, BoundedAssistant
 from domain.schemas import GoalCreate, LedgerCreate, NoteCreate, WorkLogCreate
 from domain.services import DomainServices
 from nutrition.providers import get_nutrition_provider
-from public_models import AgentPendingAction, Note, PublicBase
+from public_models import AgentPendingAction, Note, NutritionLog, PublicBase, WorkLog
 
 UTC = timezone.utc
 
@@ -413,6 +414,131 @@ def test_listing_work_logs_respects_a_date_window(assistant_db):
     reply = assistant.handle(ALICE, "what did I log today", update_id=9)
 
     assert "Shipped the tenant isolation tests" in reply.text
+
+
+def test_last_week_work_query_uses_the_complete_previous_week(assistant_db):
+    owner_id = seed_owner(assistant_db, ALICE)
+    with assistant_db() as session:
+        session.add_all(
+            [
+                WorkLog(
+                    owner_id=owner_id,
+                    original_text="Completed the previous-week launch review",
+                    logged_at_utc=datetime(2026, 8, 12, 10, tzinfo=UTC),
+                    user_local_date=datetime(2026, 8, 12).date(),
+                    timezone="Asia/Kolkata",
+                    capture_source="test",
+                ),
+                WorkLog(
+                    owner_id=owner_id,
+                    original_text="Current-week task must stay out",
+                    logged_at_utc=datetime(2026, 8, 19, 10, tzinfo=UTC),
+                    user_local_date=datetime(2026, 8, 19).date(),
+                    timezone="Asia/Kolkata",
+                    capture_source="test",
+                ),
+            ]
+        )
+        session.commit()
+    assistant = build_assistant(
+        assistant_db,
+        FakeProvider(
+            {
+                "confidence": 0.99,
+                "actions": [
+                    {
+                        "kind": "query",
+                        "query_type": "week",
+                        "timezone": "Asia/Kolkata",
+                        "start_date": None,
+                        "end_date": None,
+                        "lookback_hours": None,
+                        "search": None,
+                        "ranking": None,
+                    }
+                ],
+            }
+        ),
+        clock=lambda: datetime(2026, 8, 23, 12, tzinfo=UTC),
+    )
+
+    reply = assistant.handle(ALICE, "tell me what I did last week", update_id=91)
+
+    assert "previous-week launch review" in reply.text
+    assert "Current-week task" not in reply.text
+    assert "2026-08-10 to 2026-08-16" in reply.text
+
+
+def test_nutrition_advice_reads_only_the_requested_last_48_hours(assistant_db):
+    owner_id = seed_owner(assistant_db, ALICE)
+    with assistant_db() as session:
+        preference = DomainServices(session).get_nutrition_preferences(owner_id)
+        preference.protein_target_grams = Decimal("90")
+        preference.calorie_target = Decimal("2200")
+        session.add_all(
+            [
+                NutritionLog(
+                    owner_id=owner_id,
+                    meal_name="Recent paneer lunch",
+                    logged_at_utc=datetime(2026, 8, 22, 12, tzinfo=UTC),
+                    user_local_date=datetime(2026, 8, 22).date(),
+                    timezone="Asia/Kolkata",
+                    original_text="paneer lunch",
+                    status="confirmed",
+                    total_calories=Decimal("700"),
+                    total_protein_grams=Decimal("35"),
+                    estimation_source="test",
+                    confirmed_by_user=True,
+                ),
+                NutritionLog(
+                    owner_id=owner_id,
+                    meal_name="Old meal outside range",
+                    logged_at_utc=datetime(2026, 8, 20, 10, tzinfo=UTC),
+                    user_local_date=datetime(2026, 8, 20).date(),
+                    timezone="Asia/Kolkata",
+                    original_text="old meal",
+                    status="confirmed",
+                    total_calories=Decimal("2000"),
+                    total_protein_grams=Decimal("100"),
+                    estimation_source="test",
+                    confirmed_by_user=True,
+                ),
+            ]
+        )
+        session.commit()
+    assistant = build_assistant(
+        assistant_db,
+        FakeProvider(
+            {
+                "confidence": 0.99,
+                "actions": [
+                    {
+                        "kind": "query",
+                        "query_type": "nutrition",
+                        "timezone": "Asia/Kolkata",
+                        "start_date": None,
+                        "end_date": None,
+                        "lookback_hours": 48,
+                        "search": None,
+                        "ranking": None,
+                    }
+                ],
+            }
+        ),
+        clock=lambda: datetime(2026, 8, 23, 12, tzinfo=UTC),
+    )
+
+    reply = assistant.handle(
+        ALICE,
+        "Based on what I ate in the last 48 hours, what should I improve?",
+        update_id=92,
+    )
+
+    assert "Recent paneer lunch" in reply.text
+    assert "Old meal outside range" not in reply.text
+    assert "700" in reply.text
+    assert "Suggestions based on those logs" in reply.text
+    assert "protein" in reply.text.lower()
 
 
 def test_listing_limit_is_capped_by_the_schema(assistant_db):

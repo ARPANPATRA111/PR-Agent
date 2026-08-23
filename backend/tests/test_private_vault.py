@@ -126,7 +126,7 @@ def test_vault_is_tenant_scoped_and_requires_recent_auth(monkeypatch):
     engine.dispose()
 
 
-def test_vault_rejects_full_aadhaar_and_unsupported_secrets(monkeypatch):
+def test_vault_accepts_arbitrary_secrets_but_keeps_typed_validation(monkeypatch):
     client, identity, factory, engine = _client(monkeypatch)
     base = {"acknowledge_sensitive_storage": True}
     full_aadhaar = client.post(
@@ -147,7 +147,7 @@ def test_vault_rejects_full_aadhaar_and_unsupported_secrets(monkeypatch):
             "value": "not-safe-here",
         },
     )
-    assert full_aadhaar.status_code == password.status_code == 422
+    assert full_aadhaar.status_code == password.status_code == 201
     leaked_label = client.post(
         "/api/v2/private-facts",
         json={
@@ -157,7 +157,28 @@ def test_vault_rejects_full_aadhaar_and_unsupported_secrets(monkeypatch):
             "value": "safe-value-field",
         },
     )
-    assert leaked_label.status_code == 422
+    assert leaked_label.status_code == 201
+    typed_aadhaar = client.post(
+        "/api/v2/private-facts",
+        json={
+            **base,
+            "fact_type": "aadhaar_last4",
+            "label": "Aadhaar last digits",
+            "value": "123456789012",
+        },
+    )
+    assert typed_aadhaar.status_code == 422
+
+    # Vault records are intentionally create-only. Replacing a value requires
+    # deleting the old item and creating a new encrypted record.
+    record_id = password.json()["id"]
+    assert (
+        client.put(
+            f"/api/v2/private-facts/{record_id}",
+            json={**password.json(), **base, "value": "changed"},
+        ).status_code
+        == 405
+    )
     engine.dispose()
 
 

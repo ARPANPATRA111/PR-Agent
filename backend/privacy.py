@@ -13,7 +13,7 @@ import secrets
 from typing import Any
 import zipfile
 
-from sqlalchemy import inspect, or_
+from sqlalchemy import delete as sql_delete, inspect, or_
 from sqlalchemy.orm import Session
 
 from domain.errors import RecordNotFound
@@ -37,10 +37,12 @@ from public_models import (
     AgentRun,
     ApplicationSession,
     DigestDelivery,
+    InviteCode,
     LedgerEntry,
     Note,
     NutritionItem,
     NutritionLog,
+    PublicBase,
     PublicUser,
     ProcessedTelegramUpdate,
     RateLimitBucket,
@@ -431,6 +433,25 @@ class PrivacyService:
             existing_audit.deletion_id = secrets.token_urlsafe(24)
             existing_audit.deleted_at_utc = datetime.now(UTC)
             existing_audit.legacy_rows_removed = legacy_removed
+        # Delete every owner-scoped public-v2 row explicitly, child tables
+        # first. PostgreSQL cascades remain the schema-level safety net, but an
+        # account reset must not silently depend on a connection having foreign
+        # keys enabled (the failure mode that can leave Mini App rows visible).
+        for table in reversed(PublicBase.metadata.sorted_tables):
+            if table.name == PublicUser.__tablename__ or "owner_id" not in table.c:
+                continue
+            self.session.execute(sql_delete(table).where(table.c.owner_id == owner_id))
+        self.session.query(RateLimitBucket).filter(
+            RateLimitBucket.subject_key == f"owner:{owner_id}"
+        ).delete(synchronize_session=False)
+        self.session.query(InviteCode).filter(
+            InviteCode.created_by_owner_id == owner_id
+        ).update({"created_by_owner_id": None}, synchronize_session=False)
+        self.session.query(InviteCode).filter(
+            InviteCode.claimed_by_owner_id == owner_id
+        ).update({"claimed_by_owner_id": None}, synchronize_session=False)
+        self.session.flush()
+
         deleted = (
             self.session.query(PublicUser)
             .filter(
@@ -442,6 +463,21 @@ class PrivacyService:
         if deleted != 1:
             raise RecordNotFound("User profile not found.")
         self.session.flush()
+        remaining = 0
+        for table in PublicBase.metadata.sorted_tables:
+            if table.name == PublicUser.__tablename__ or "owner_id" not in table.c:
+                continue
+            remaining += (
+                self.session.execute(
+                    table.select()
+                    .with_only_columns(table.c.owner_id)
+                    .where(table.c.owner_id == owner_id)
+                    .limit(1)
+                ).first()
+                is not None
+            )
+        if remaining:
+            raise RuntimeError("Account deletion did not remove every owned record")
         return True
 
     def _delete_legacy_data(self, telegram_id: int) -> int:

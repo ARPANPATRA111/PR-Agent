@@ -93,7 +93,7 @@ class Settings(BaseSettings):
         description="Queue processed Telegram messages for best-effort deletion",
     )
     message_cleanup_delay_seconds: int = Field(
-        default=172800,
+        default=144000,
         ge=0,
         le=604800,
         description="Retention delay before Telegram message deletion",
@@ -399,7 +399,7 @@ class Settings(BaseSettings):
     )
     vault_enabled: bool = Field(
         default=False,
-        description="Enable the Mini App-only encrypted personal facts vault",
+        description="Enable the create-only encrypted personal facts vault",
     )
     vault_encryption_keys: str = Field(
         default="",

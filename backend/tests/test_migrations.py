@@ -131,6 +131,40 @@ def test_representative_legacy_upgrade_preserves_rows_and_downgrade(tmp_path):
     assert not PUBLIC_TABLES & remaining
 
 
+def test_upgrade_turns_confirmation_on_for_existing_nutrition_preferences(tmp_path):
+    database_url = sqlite_url(tmp_path / "nutrition-default.db")
+    run_alembic(database_url, "upgrade", "l7b9d1f3h5c6")
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO app_users (telegram_id, first_name) "
+                "VALUES (101, 'Existing user')"
+            )
+        )
+        owner_id = connection.execute(
+            text("SELECT id FROM app_users WHERE telegram_id = 101")
+        ).scalar_one()
+        connection.execute(
+            text(
+                "INSERT INTO user_preferences "
+                "(owner_id, timezone, nutrition_confirmation_required) "
+                "VALUES (:owner_id, 'Asia/Kolkata', false)"
+            ),
+            {"owner_id": owner_id},
+        )
+
+    run_alembic(database_url, "upgrade", "head")
+    with engine.connect() as connection:
+        assert connection.execute(
+            text(
+                "SELECT nutrition_confirmation_required FROM user_preferences "
+                "WHERE owner_id = :owner_id"
+            ),
+            {"owner_id": owner_id},
+        ).scalar_one() in {True, 1}
+
+
 @pytest.fixture
 def migrated_engine(tmp_path):
     database_url = sqlite_url(tmp_path / "constraints.db")
