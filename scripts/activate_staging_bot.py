@@ -15,8 +15,12 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from register_bot_commands import register_commands, telegram_call
-from setup_webhook import get_webhook_info, set_webhook
+from register_bot_commands import register_commands, telegram_call  # noqa: E402
+from setup_webhook import (  # noqa: E402
+    ALLOWED_UPDATES,
+    get_webhook_info,
+    set_webhook,
+)
 
 EXPECTED_HOST = "pr-agent-r24-staging-api.onrender.com"
 RETIRED_HOST = "pr-agent-staging-api.onrender.com"
@@ -62,6 +66,7 @@ async def status(token: str) -> None:
     print(f"bot_username=@{bot.get('username', '')}")
     print(f"registered_commands={len(commands)}")
     print(f"webhook_url={info.get('url') or '(not set)'}")
+    print("allowed_updates=" + ",".join(sorted(info.get("allowed_updates") or [])))
     print(f"pending_updates={info.get('pending_update_count', 0)}")
 
 
@@ -79,8 +84,16 @@ async def activate(api_url: str, token: str, secret: str) -> None:
     expected_url = f"{api_url}/webhook"
     if actual_url != expected_url:
         raise RuntimeError("Telegram reported an unexpected webhook URL")
+    actual_updates = set(info["result"].get("allowed_updates") or [])
+    missing_updates = set(ALLOWED_UPDATES) - actual_updates
+    if missing_updates:
+        missing = ", ".join(sorted(missing_updates))
+        raise RuntimeError(
+            "Telegram webhook is missing required update types: " + missing
+        )
     await register_commands(token, verify_only=True)
     print(f"webhook_url={actual_url}")
+    print("allowed_updates=" + ",".join(sorted(actual_updates)))
     print("activation_verified=true")
 
 

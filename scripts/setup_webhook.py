@@ -8,6 +8,8 @@ from pathlib import Path
 backend_dir = Path(__file__).parent.parent / "backend"
 sys.path.insert(0, str(backend_dir))
 
+ALLOWED_UPDATES = ["message", "callback_query"]
+
 
 async def set_webhook(url: str, token: str, secret: str) -> dict:
     import httpx
@@ -19,7 +21,10 @@ async def set_webhook(url: str, token: str, secret: str) -> dict:
             f"https://api.telegram.org/bot{token}/setWebhook",
             json={
                 "url": webhook_url,
-                "allowed_updates": ["message"],
+                # Inline confirmation buttons arrive as callback_query updates.
+                # Register both types explicitly so an account migration or
+                # webhook reactivation cannot silently disable Correct/Wrong.
+                "allowed_updates": ALLOWED_UPDATES,
                 "secret_token": secret,
             },
         )
@@ -121,6 +126,8 @@ def main():
         if result.get("ok"):
             info = result["result"]
             print(f"\n   URL: {info.get('url') or '(not set)'}")
+            allowed = ", ".join(info.get("allowed_updates") or []) or "(none)"
+            print(f"   Allowed updates: {allowed}")
             print(f"   Pending updates: {info.get('pending_update_count', 0)}")
             print(f"   Last error: {info.get('last_error_message', 'None')}")
             if info.get("last_error_date"):

@@ -19,6 +19,79 @@ def load_script(name: str):
     return module
 
 
+@pytest.mark.asyncio
+async def test_webhook_registration_includes_inline_button_updates(monkeypatch):
+    module = load_script("setup_webhook.py")
+    captured = {}
+
+    class FakeResponse:
+        @staticmethod
+        def json():
+            return {"ok": True, "result": True}
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, url, **kwargs):
+            captured["url"] = url
+            captured.update(kwargs)
+            return FakeResponse()
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: FakeClient())
+
+    result = await module.set_webhook(
+        "https://pr-agent-r24-staging-api.onrender.com",
+        "123456:test-token",
+        "valid_Webhook-Secret_1234567890",
+    )
+
+    assert result["ok"] is True
+    assert captured["json"]["allowed_updates"] == [
+        "message",
+        "callback_query",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_activation_rejects_webhook_without_callback_queries(monkeypatch):
+    module = load_script("activate_staging_bot.py")
+
+    async def telegram_call(_token, method):
+        assert method == "getMe"
+        return {"ok": True, "result": {"username": "test_bot"}}
+
+    async def register_commands(_token, *, verify_only):
+        return None
+
+    async def set_webhook(_url, _token, _secret):
+        return {"ok": True, "result": True}
+
+    async def get_webhook_info(_token):
+        return {
+            "ok": True,
+            "result": {
+                "url": "https://pr-agent-r24-staging-api.onrender.com/webhook",
+                "allowed_updates": ["message"],
+            },
+        }
+
+    monkeypatch.setattr(module, "telegram_call", telegram_call)
+    monkeypatch.setattr(module, "register_commands", register_commands)
+    monkeypatch.setattr(module, "set_webhook", set_webhook)
+    monkeypatch.setattr(module, "get_webhook_info", get_webhook_info)
+
+    with pytest.raises(RuntimeError, match="callback_query"):
+        await module.activate(
+            "https://pr-agent-r24-staging-api.onrender.com",
+            "123456:test-token",
+            "valid_Webhook-Secret_1234567890",
+        )
+
+
 @pytest.mark.parametrize(
     "url",
     [

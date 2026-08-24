@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import create_engine, event
@@ -842,6 +843,12 @@ def test_multi_intent_resumes_report_after_food_confirmation(assistant_db):
 
 
 def test_mighty_voice_intent_confirms_four_independent_actions_together(assistant_db):
+    future_reminder = (
+        (datetime.now(UTC) + timedelta(days=2))
+        .astimezone(ZoneInfo("Asia/Kolkata"))
+        .replace(tzinfo=None)
+        .isoformat(timespec="seconds")
+    )
     assistant = build_assistant(
         assistant_db,
         FakeProvider(
@@ -872,7 +879,7 @@ def test_mighty_voice_intent_confirms_four_independent_actions_together(assistan
                         "kind": "create_reminder",
                         "title": "Send the release update",
                         "schedule_type": "once",
-                        "start_at_local": "2026-08-24T09:30:00",
+                        "start_at_local": future_reminder,
                         "timezone": "Asia/Kolkata",
                         "weekday": None,
                     },
